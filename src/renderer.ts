@@ -36,6 +36,7 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private carSprites: SpriteLoader | null;
   private roadSprites: SpriteLoader | null;
+  private displaySpeed = 0; // interpolated for smooth digit transition
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -194,63 +195,108 @@ export class Renderer {
 
   // ── HUD — OutRun-style bottom-left: speed number + segmented tach bar ────
 
+  // ── HUD — retro OutRun digital speedometer + 3-row RPM visualizer ───────
+
   private renderHUD(w: number, h: number, speed: number): void {
     const { ctx } = this;
-    const kmh   = Math.round(speed * (290 / PLAYER_MAX_SPEED));
+    const time  = performance.now() / 1000;
     const ratio = speed / PLAYER_MAX_SPEED;
 
+    // Smooth digit interpolation (~8-frame half-life)
+    this.displaySpeed += (speed - this.displaySpeed) * 0.10;
+    const kmh = Math.round(this.displaySpeed * (290 / PLAYER_MAX_SPEED));
+
     ctx.save();
-
-    const padX = Math.round(w * 0.028);
-    const padY = Math.round(h * 0.030);
-
-    // ── segmented tachometer bar ──────────────────────────────────────────
-    const NUM_SEGS = 16;
-    const segH   = Math.round(h * 0.020);
-    const segW   = Math.round(w * 0.012);
-    const segGap = Math.max(1, Math.round(w * 0.003));
-    const barX   = padX;
-    const barY   = h - padY;   // bottom edge of bar
-
-    // ── speed number ──────────────────────────────────────────────────────
-    const numSize = Math.round(h * 0.090);
-    ctx.font      = `bold italic ${numSize}px 'Arial Black', Arial, sans-serif`;
-    const numW    = ctx.measureText(`${kmh}`).width;
-    const numBot  = barY - segH - Math.round(h * 0.016);
-
-    // dark panel behind everything
-    const lblSize = Math.round(h * 0.036);
-    const panelW  = numW + Math.round(lblSize * 2.4) + 24;
-    const panelH  = numSize + segH + Math.round(h * 0.022);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(padX - 10, numBot - numSize - 6, panelW, panelH + 8);
-
-    // speed digits — large, red-orange
-    ctx.fillStyle    = '#FF4400';
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(`${kmh}`, padX, numBot);
 
-    // "km/" stacked over "h" to the right of the number
-    ctx.font      = `bold ${lblSize}px Arial, sans-serif`;
-    ctx.fillStyle = '#FFFFFF';
-    const lblX = padX + numW + 6;
-    ctx.fillText('km/', lblX, numBot - Math.round(numSize * 0.38));
-    ctx.fillText('h',   lblX + Math.round(lblSize * 0.28), numBot);
+    // ── layout constants ──────────────────────────────────────────────────
+    const padX    = Math.round(w * 0.025);
+    const padY    = Math.round(h * 0.028);
+    const NUM_SEGS = 20;
+    const segW    = Math.round(w * 0.0095);
+    const segH    = Math.round(h * 0.0135);
+    const segGap  = Math.max(1, Math.round(w * 0.0022));
+    const rowGap  = Math.round(h * 0.007);
+    const barW    = NUM_SEGS * (segW + segGap) - segGap;
 
-    // ── segmented bar (tachometer / RPM readout) ──────────────────────────
-    const filled = Math.round(ratio * NUM_SEGS);
-    for (let i = 0; i < NUM_SEGS; i++) {
-      const x = barX + i * (segW + segGap);
-      if (i < filled) {
-        const t = i / (NUM_SEGS - 1);
-        ctx.fillStyle = t < 0.60 ? '#00CC00' : t < 0.85 ? '#FFCC00' : '#FF3300';
-      } else {
-        ctx.fillStyle = '#1A1A1A';
+    // positions — build upward from screen bottom
+    const row3Bot = h - padY;
+    const row2Bot = row3Bot - segH - rowGap;
+    const row1Bot = row2Bot - segH - rowGap;
+    const numSize = Math.round(h * 0.086);
+    const lblSize = Math.round(h * 0.030);
+    const lblBot  = row1Bot - rowGap * 2;
+    const numBot  = lblBot - lblSize - Math.round(h * 0.004);
+    const panelTop = numBot - numSize - 4;
+
+    // ── background panel ──────────────────────────────────────────────────
+    ctx.fillStyle = 'rgba(0,0,0,0.52)';
+    ctx.fillRect(padX - 8, panelTop, barW + 16, row3Bot - panelTop + 4);
+
+    // ── speed number — Impact font with dark shadow for chunky retro look ─
+    const numStr = `${kmh}`;
+    ctx.font = `bold ${numSize}px Impact, 'Arial Black', sans-serif`;
+
+    ctx.fillStyle = '#330000';   // thick shadow (drawn at 4 diagonal offsets)
+    ctx.fillText(numStr, padX + 2, numBot + 2);
+    ctx.fillText(numStr, padX - 2, numBot + 2);
+    ctx.fillText(numStr, padX + 2, numBot - 2);
+    ctx.fillText(numStr, padX - 2, numBot - 2);
+
+    ctx.fillStyle = '#FF2200';   // main saturated red
+    ctx.fillText(numStr, padX, numBot);
+
+    // ── km/h label ────────────────────────────────────────────────────────
+    ctx.font = `bold ${lblSize}px Impact, 'Arial Black', sans-serif`;
+    ctx.fillStyle = '#550000';
+    ctx.fillText('km/h', padX + 1, lblBot + 1);
+    ctx.fillStyle = '#FF4422';
+    ctx.fillText('km/h', padX, lblBot);
+
+    // ── static pixel-grain texture (deterministic — no per-frame flicker) ─
+    ctx.globalAlpha = 0.10;
+    ctx.fillStyle   = '#FF2200';
+    for (let gy = panelTop; gy < row3Bot; gy += 3) {
+      for (let gx = padX; gx < padX + barW; gx += 3) {
+        if ((gx * 7 + gy * 13) % 19 < 2) ctx.fillRect(gx, gy, 1, 1);
       }
-      ctx.fillRect(x, barY - segH, segW, segH);
+    }
+    ctx.globalAlpha = 1;
+
+    // ── 3-row RPM / tachometer bars ───────────────────────────────────────
+    // Each row oscillates at a different frequency simulating analog noise.
+    // Higher speed → higher base fill; oscillation amplitude shrinks at max.
+    const amp   = 0.04 * (1 - ratio * 0.65);
+    const freq  = 5 + (1 - ratio) * 12;   // faster oscillation at low speed
+
+    const fills = [
+      Math.max(0, Math.min(1, ratio * 0.92 + Math.sin(time * freq)             * amp)),
+      Math.max(0, Math.min(1, ratio * 0.86 + Math.sin(time * freq * 0.87 + 1)  * amp)),
+      Math.max(0, Math.min(1, ratio * 0.78 + Math.sin(time * freq * 0.73 + 2)  * amp)),
+    ];
+    const rowBots  = [row1Bot, row2Bot, row3Bot];
+    const rowAlpha = [1.0, 0.82, 0.65];
+
+    for (let row = 0; row < 3; row++) {
+      const rBot   = rowBots[row];
+      const filled = Math.round(fills[row] * NUM_SEGS);
+      ctx.globalAlpha = rowAlpha[row];
+      for (let i = 0; i < NUM_SEGS; i++) {
+        const x = padX + i * (segW + segGap);
+        const t = i / (NUM_SEGS - 1);
+        if (i < filled) {
+          // Red (left) → Orange (mid) → Green (right)
+          ctx.fillStyle = t < 0.33 ? '#CC0000' : t < 0.66 ? '#FF6600' : '#00BB00';
+        } else {
+          // Dark inactive tint matches zone colour
+          ctx.fillStyle = t < 0.33 ? '#280000' : t < 0.66 ? '#281200' : '#002800';
+        }
+        ctx.fillRect(x, rBot - segH, segW, segH);
+      }
     }
 
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
