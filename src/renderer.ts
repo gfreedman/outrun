@@ -115,8 +115,8 @@ export class Renderer {
       ctx.fillStyle = color.grass;
       ctx.fillRect(0, sy2, w, sy1 - sy2);
 
-      drawTrapezoid(ctx, sx1, sy1, sw1 * 1.25, sx2, sy2, sw2 * 1.25, color.rumble);
-      drawTrapezoid(ctx, sx1, sy1, sw1,        sx2, sy2, sw2,        color.road);
+      drawTrapezoid(ctx, sx1, sy1, sw1 * 1.25,  sx2, sy2, sw2 * 1.25,  color.rumble);
+      drawTrapezoid(ctx, sx1, sy1, sw1 * 1.005, sx2, sy2, sw2 * 1.005, color.road); // 0.5% overlap seals red bleed
 
       if (color.lane) {
         const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
