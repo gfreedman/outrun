@@ -8,6 +8,7 @@ import {
   PLAYER_COAST_RATE,
   PLAYER_BRAKE_MAX, PLAYER_BRAKE_RAMP,
   PLAYER_STEERING,
+  OFFROAD_MAX_RATIO, OFFROAD_DECEL, OFFROAD_RECOVERY_TIME,
   SEGMENT_COUNT, SEGMENT_LENGTH, DRAW_DISTANCE,
   ROAD_WIDTH,
 } from './constants';
@@ -20,8 +21,11 @@ export class Game {
   private playerZ = 0;
   private playerX = 0;  // normalized: -1 = left road edge, 0 = center, +1 = right edge
   private speed   = 0;
-  private steerAngle = 0; // continuous -1 (full left) … 0 (straight) … +1 (full right)
-  private brakeHeld  = 0; // seconds brake has been held (for ramp buildup)
+  private steerAngle       = 0;   // continuous -1…+1
+  private brakeHeld        = 0;   // seconds brake held (ramp buildup)
+  private offRoad          = false;
+  private offRoadRecovery  = 1;   // 0 = just returned to asphalt, 1 = fully recovered
+  private jitterY          = 0;   // horizon pixel offset for bumpy terrain feel
 
   private lastTimestamp = 0;
   private rafId = 0;
@@ -92,9 +96,10 @@ export class Game {
     this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
 
     // ── steering: faster at speed, zero when stopped ──
+    // playerX > 1 or < -1 means off-road; allow up to ±2 before hard wall
     if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * speedRatio * dt;
     if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * speedRatio * dt;
-    this.playerX = Math.max(-1, Math.min(1, this.playerX));
+    this.playerX = Math.max(-2, Math.min(2, this.playerX));
 
     // steerAngle: ramp toward ±1 while key held, spring back when released
     const STEER_RATE = 3.0; // full sweep in ~0.33s
@@ -102,6 +107,26 @@ export class Game {
     else if (input.isDown('ArrowRight')) this.steerAngle += STEER_RATE * dt;
     else                                 this.steerAngle *= Math.max(0, 1 - STEER_RATE * dt * 4);
     this.steerAngle = Math.max(-1, Math.min(1, this.steerAngle));
+
+    // ── off-road friction ──
+    this.offRoad = Math.abs(this.playerX) > 1;
+    if (this.offRoad) {
+      // Extra grass drag (fights throttle too) + hard speed cap
+      this.speed -= OFFROAD_DECEL * dt;
+      this.speed  = Math.min(this.speed, PLAYER_MAX_SPEED * OFFROAD_MAX_RATIO);
+      this.offRoadRecovery = 0;
+      // Bumpy horizon jitter — random per-frame oscillation simulates rough terrain
+      this.jitterY = (Math.random() - 0.5) * 8;
+    } else {
+      // Gradually restore full speed cap after returning to asphalt
+      this.offRoadRecovery = Math.min(1, this.offRoadRecovery + dt / OFFROAD_RECOVERY_TIME);
+      if (this.offRoadRecovery < 1) {
+        const recoveryMax = PLAYER_MAX_SPEED * (OFFROAD_MAX_RATIO + (1 - OFFROAD_MAX_RATIO) * this.offRoadRecovery);
+        this.speed = Math.min(this.speed, recoveryMax);
+      }
+      this.jitterY = 0;
+    }
+    this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
 
     // ── advance position ──
     this.playerZ = ((this.playerZ + this.speed * dt) % trackLength + trackLength) % trackLength;
@@ -117,6 +142,7 @@ export class Game {
       w, h,
       this.speed,
       this.steerAngle,
+      this.jitterY,
     );
   }
 }

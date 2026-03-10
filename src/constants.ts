@@ -36,6 +36,14 @@ export const PLAYER_BRAKE_RAMP  = 0.18;  // s to ramp from first press to full f
 // at top speed. 2.0 = can cross full road in ~1 second at max speed.
 export const PLAYER_STEERING    = 2.0;  // road-widths per second at max speed
 
+// ── Off-road friction ────────────────────────────────────────────────────────
+// Triggered when |playerX| > 1 (outside the ±1 normalised road edge).
+// Speed is hard-capped at OFFROAD_MAX_RATIO × MAX and extra friction drags it
+// there quickly. On return to asphalt, the cap lifts over RECOVERY_TIME seconds.
+export const OFFROAD_MAX_RATIO     = 0.30;   // 30% of max speed on grass
+export const OFFROAD_DECEL         = 3500;   // u/s² extra friction on grass
+export const OFFROAD_RECOVERY_TIME = 1.5;    // seconds to recover full speed
+
 // Color palette — authentic OutRun / Jake Gordon reference values
 export const COLORS = {
   // Sky

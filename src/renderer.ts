@@ -51,15 +51,14 @@ export class Renderer {
 
   // ── sky ───────────────────────────────────────────────────────────────────
 
-  private renderSky(w: number, h: number): void {
+  private renderSky(w: number, horizonY: number): void {
     const { ctx } = this;
-    const half = h / 2;
-    const grad = ctx.createLinearGradient(0, 0, 0, half);
+    const grad = ctx.createLinearGradient(0, 0, 0, horizonY);
     grad.addColorStop(0,    COLORS.SKY_TOP);
     grad.addColorStop(0.55, COLORS.SKY_MID);
     grad.addColorStop(1,    COLORS.SKY_HORIZON);
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, half);
+    ctx.fillRect(0, 0, w, horizonY);
   }
 
   // ── road + roadside sprites ───────────────────────────────────────────────
@@ -71,10 +70,11 @@ export class Renderer {
     drawDistance: number,
     w: number,
     h: number,
+    horizonY: number,
   ): void {
     const { ctx } = this;
     const halfW   = w / 2;
-    const halfH   = h / 2;
+    const halfH   = horizonY;
     const cameraX = playerX * ROAD_WIDTH;
     const cameraZ = playerZ;
     const totalLen = SEGMENT_COUNT * SEGMENT_LENGTH;
@@ -239,12 +239,14 @@ export class Renderer {
     h: number,
     speed: number,
     steerAngle: number,
+    horizonOffset: number = 0,
   ): void {
     const { ctx } = this;
+    const horizonY = Math.round(h / 2 + horizonOffset);
     ctx.save();
     ctx.clearRect(0, 0, w, h);
-    this.renderSky(w, h);
-    this.renderRoad(segments, playerZ, playerX, drawDistance, w, h);
+    this.renderSky(w, horizonY);
+    this.renderRoad(segments, playerZ, playerX, drawDistance, w, h, horizonY);
     this.renderCar(w, h, steerAngle);
     this.renderHUD(w, h, speed);
     ctx.restore();
