@@ -155,7 +155,20 @@ def remove_enclosed_bg(arr, bg_color, tol=70):
     border_labels = set(int(x) for x in labeled[border_mask & (labeled > 0)])
     for lbl in range(1, n + 1):
         if lbl not in border_labels:
-            arr[labeled == lbl, 3] = 0
+            region = (labeled == lbl)
+            # Fill with average of surrounding car pixels rather than zeroing —
+            # zeroing leaves a transparent hole that shows the sky through the hood.
+            surround = binary_dilation(region, iterations=4) & ~region & (arr[:,:,3] == 255)
+            if surround.any():
+                fill_r = int(arr[surround, 0].astype(float).mean())
+                fill_g = int(arr[surround, 1].astype(float).mean())
+                fill_b = int(arr[surround, 2].astype(float).mean())
+            else:
+                fill_r, fill_g, fill_b = int(bg_color[0]), int(bg_color[1]), int(bg_color[2])
+            arr[region, 0] = fill_r
+            arr[region, 1] = fill_g
+            arr[region, 2] = fill_b
+            arr[region, 3] = 255
     return arr
 
 
