@@ -7,6 +7,7 @@ import {
 import {
   SpriteLoader, SpriteId,
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
+  CAR_PIVOT_OFFSETS,
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
 } from './sprites';
 
@@ -149,21 +150,27 @@ export class Renderer {
   // steerDir: -1 = left, 0 = straight, +1 = right
   // speedRatio: 0–1 (determines hard vs slight turn frame)
 
-  private renderCar(w: number, h: number, steerDir: number, speedRatio: number): void {
+  private renderCar(w: number, h: number, steerAngle: number): void {
     const { ctx } = this;
 
     if (!this.carSprites?.isReady()) return;
 
-    // Map steering + speed → 37-frame index (0=hard-left … 18=straight … 36=hard-right)
-    // Base of 0.6 ensures a visible ~55° angle even at rest; full speed reaches 90°
-    const steerValue  = steerDir * Math.min(1, 0.6 + speedRatio * 0.4);
-    const frameIndex  = Math.round(steerValue * CAR_SPRITE_CENTER) + CAR_SPRITE_CENTER;
-    const rect        = carFrameRect(frameIndex);
+    // steerAngle is continuous -1…+1; map directly to 37-frame index
+    const frameIndex = Math.round(steerAngle * CAR_SPRITE_CENTER) + CAR_SPRITE_CENTER;
+    const rect       = carFrameRect(frameIndex);
 
     const carH = Math.min(h * 0.20, 190);
     const carW = carH * (CAR_SPRITE_FRAME_W / CAR_SPRITE_FRAME_H);
-    const cx  = w / 2 + steerDir * w * 0.05;
-    const bot = h - h * 0.04;
+    const bot  = h - h * 0.04;
+
+    // Apply per-frame pivot correction so the rear axle stays centred on screen
+    // rather than the bounding box centre drifting as the car turns.
+    const pivotOffset     = CAR_PIVOT_OFFSETS[frameIndex] ?? 0;
+    const pivotCorrection = (pivotOffset / CAR_SPRITE_FRAME_W) * carW;
+    const cx = w / 2 + steerAngle * w * 0.05 + pivotCorrection;
+
+    const drawX = Math.round(cx - carW / 2);
+    const drawY = Math.round(bot - carH);
 
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.beginPath();
@@ -171,7 +178,7 @@ export class Renderer {
     ctx.fill();
 
     ctx.imageSmoothingEnabled = false;
-    this.carSprites.draw(ctx, rect, cx - carW / 2, bot - carH, carW, carH);
+    this.carSprites.draw(ctx, rect, drawX, drawY, Math.round(carW), Math.round(carH));
     ctx.imageSmoothingEnabled = true;
   }
 
@@ -231,14 +238,14 @@ export class Renderer {
     w: number,
     h: number,
     speed: number,
-    steerDir: number,
+    steerAngle: number,
   ): void {
     const { ctx } = this;
     ctx.save();
     ctx.clearRect(0, 0, w, h);
     this.renderSky(w, h);
     this.renderRoad(segments, playerZ, playerX, drawDistance, w, h);
-    this.renderCar(w, h, steerDir, speed / PLAYER_MAX_SPEED);
+    this.renderCar(w, h, steerAngle);
     this.renderHUD(w, h, speed);
     ctx.restore();
   }

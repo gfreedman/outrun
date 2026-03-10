@@ -457,14 +457,43 @@ cell_w = max_w + PAD * 2
 cell_h = max_h + PAD * 2
 print(f"  Max frame: {max_w}×{max_h}  →  cell: {cell_w}×{cell_h}")
 
+def find_pivot_x(frame_img):
+    """
+    Estimate the horizontal position of the rear axle center in a frame.
+    Samples the bottom 15% of visible car pixels — that's where the rear
+    bumper / axle sits regardless of steering angle.
+    Returns x in frame pixel coordinates.
+    """
+    arr   = np.array(frame_img)
+    alpha = arr[:,:,3]
+    ys, xs = np.where(alpha > 10)
+    if len(ys) == 0:
+        return frame_img.width // 2
+    y_bot    = int(ys.max())
+    y_car_h  = y_bot - int(ys.min())
+    y_sample = max(int(ys.min()), y_bot - max(5, int(y_car_h * 0.15)))
+    bot_cols = np.where(alpha[y_sample:y_bot+1, :].max(axis=0) > 10)[0]
+    if len(bot_cols) == 0:
+        return frame_img.width // 2
+    return int((int(bot_cols[0]) + int(bot_cols[-1])) / 2)
+
+pivot_offsets = []   # populated by to_cell; units: sprite pixels, +ve = pivot left of cell center
+
 def to_cell(frame):
+    pivot_x_in_frame = find_pivot_x(frame)
     cell = Image.new("RGBA", (cell_w, cell_h), (0,0,0,0))
     ox   = (cell_w - frame.width)  // 2
     oy   = (cell_h - frame.height) // 2
     cell.paste(frame, (ox, oy), frame)
+    # Record where the pivot lands relative to the cell center.
+    # Positive = pivot is LEFT of cell center → renderer must shift draw RIGHT to align.
+    pivot_x_in_cell = ox + pivot_x_in_frame
+    pivot_offsets.append(cell_w // 2 - pivot_x_in_cell)
     return cell
 
 cells = [to_cell(f) for f in strip_frames]
+print(f"  Pivot offsets computed (37 frames)")
+print(f"  Offsets: {pivot_offsets}")
 
 strip = Image.new("RGBA", (cell_w * total, cell_h), (0,0,0,0))
 for i, cell in enumerate(cells):
@@ -497,13 +526,15 @@ print(f"  player_car_sprites_4x.png  {W1*4}×{H1*4}")
 # ── Phase 7: Metadata ─────────────────────────────────────────────────────────
 frames_meta = [
     {"index": idx, "name": name, "x": idx*cell_w, "y": 0,
-     "w": cell_w, "h": cell_h, "source": src}
+     "w": cell_w, "h": cell_h, "source": src,
+     "pivotOffsetX": pivot_offsets[idx]}
     for idx, (name, src) in enumerate(zip(names, sources))
 ]
 meta = {
     "frameWidth":  cell_w, "frameHeight": cell_h,
     "totalFrames": total,  "centerIndex": 18, "scale": "1x",
     "hybridNote": "L2-L13 left.png (correct occupants); L14-L19 flipped right.png",
+    "pivotOffsets": pivot_offsets,
     "frames": frames_meta,
 }
 with open("player_car_sprites.json", "w") as f:

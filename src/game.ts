@@ -17,7 +17,7 @@ export class Game {
   private playerZ = 0;
   private playerX = 0;  // normalized: -1 = left road edge, 0 = center, +1 = right edge
   private speed   = 0;
-  private steerDir = 0; // -1 / 0 / +1
+  private steerAngle = 0; // continuous -1 (full left) … 0 (straight) … +1 (full right)
 
   private lastTimestamp = 0;
   private rafId = 0;
@@ -71,8 +71,12 @@ export class Game {
     if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * speedRatio * dt;
     this.playerX = Math.max(-1, Math.min(1, this.playerX));
 
-    // steerDir drives car sprite frame selection
-    this.steerDir = input.isDown('ArrowLeft') ? -1 : input.isDown('ArrowRight') ? 1 : 0;
+    // steerAngle: ramp toward ±1 while key held, spring back when released
+    const STEER_RATE = 3.0; // full sweep in ~0.33s
+    if (input.isDown('ArrowLeft'))       this.steerAngle -= STEER_RATE * dt;
+    else if (input.isDown('ArrowRight')) this.steerAngle += STEER_RATE * dt;
+    else                                 this.steerAngle *= Math.max(0, 1 - STEER_RATE * dt * 4);
+    this.steerAngle = Math.max(-1, Math.min(1, this.steerAngle));
 
     // ── advance position ──
     this.playerZ = ((this.playerZ + this.speed * dt) % trackLength + trackLength) % trackLength;
@@ -87,7 +91,7 @@ export class Game {
       DRAW_DISTANCE,
       w, h,
       this.speed,
-      this.steerDir,
+      this.steerAngle,
     );
   }
 }
