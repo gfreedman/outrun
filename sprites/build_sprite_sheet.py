@@ -258,25 +258,30 @@ def defringe(arr):
     border = (np.roll(transp,1,0)|np.roll(transp,-1,0)|np.roll(transp,1,1)|np.roll(transp,-1,1))
     arr[(a>0)&(a<128)&border&(((r+g+b)//3)>180), 3] = 0
 
-    # Pass E: opaque gray edge pixels (main fringe source here — binary alpha in source)
+    # Pass E: opaque bright/gray edge pixels — run 4 rounds, eroding inward
     def edge_mask(op, tr):
         return op & (np.roll(tr,1,0)|np.roll(tr,-1,0)|np.roll(tr,1,1)|np.roll(tr,-1,1))
 
-    for _ in range(2):   # two passes
+    for _ in range(4):
         a = arr[:,:,3].astype(np.int32)
         r = arr[:,:,0].astype(np.int32); g = arr[:,:,1].astype(np.int32); b = arr[:,:,2].astype(np.int32)
         w = (r+g+b)//3
         c = np.abs(r-g)+np.abs(g-b)+np.abs(r-b)
         op = (a==255); tr = (a==0)
         edge = edge_mask(op, tr)
-        arr[edge & (w > 165) & (c < 50), 3] = 0
-        # also remove pure-gray interior pixels
+        # Gray/white low-chroma edge pixels (classic fringe)
+        arr[edge & (w > 155) & (c < 60), 3] = 0
+        # Also catch white-tinted colored edge pixels: all channels elevated
+        # (e.g. white-blended red → R=230,G=150,B=150 — min channel is high)
+        min_ch = np.minimum(np.minimum(r, g), b)
+        arr[edge & (min_ch > 160), 3] = 0
+        # Remove pure-gray interior pixels
         a2 = arr[:,:,3].astype(np.int32)
         r2=arr[:,:,0].astype(np.int32);g2=arr[:,:,1].astype(np.int32);b2=arr[:,:,2].astype(np.int32)
         w2=(r2+g2+b2)//3; c2=np.abs(r2-g2)+np.abs(g2-b2)+np.abs(r2-b2)
         arr[(a2==255)&(w2>190)&(c2<15), 3] = 0
 
-    # Pass G: recolor opaque gray edge pixels toward car interior
+    # Pass G: recolor remaining edge pixels toward car interior color
     a = arr[:,:,3].astype(np.int32)
     r3=arr[:,:,0].astype(np.float32);g3=arr[:,:,1].astype(np.float32);b3=arr[:,:,2].astype(np.float32)
     c3=(np.abs(r3-g3)+np.abs(g3-b3)+np.abs(r3-b3))
@@ -284,14 +289,27 @@ def defringe(arr):
     edge3 = edge_mask(op3, tr3)
     car_px = op3 & (c3 > 60)
     car_f  = car_px.astype(np.float32)
-    sz = 9
+    sz = 13
     car_cnt = uniform_filter(car_f, size=sz, mode='constant') * sz * sz
     for ch_a, ch_idx in [(r3,0),(g3,1),(b3,2)]:
         ch_sum = uniform_filter(np.where(car_px, ch_a, 0.0), size=sz, mode='constant') * sz * sz
         avg    = np.where(car_cnt > 0, ch_sum / np.maximum(car_cnt, 1), ch_a)
-        gray_edge = edge3 & (c3 < 80)
+        gray_edge = edge3 & (c3 < 100)
         arr[:,:,ch_idx] = np.where(gray_edge & (car_cnt > 0),
                                    np.clip(avg, 0, 255).astype(np.uint8), arr[:,:,ch_idx])
+
+    # Pass H: final hard sweep — white matte removal on remaining edge pixels.
+    # After G recoloring, any edge pixel where the minimum channel is still high
+    # is white-contaminated. Zero it.
+    a = arr[:,:,3].astype(np.int32)
+    op = (a==255); tr = (a==0)
+    edge_h = edge_mask(op, tr)
+    r_h=arr[:,:,0].astype(np.int32); g_h=arr[:,:,1].astype(np.int32); b_h=arr[:,:,2].astype(np.int32)
+    min_h = np.minimum(np.minimum(r_h, g_h), b_h)
+    w_h   = (r_h + g_h + b_h) // 3
+    c_h   = np.abs(r_h-g_h)+np.abs(g_h-b_h)+np.abs(r_h-b_h)
+    arr[edge_h & (min_h > 150), 3] = 0
+    arr[edge_h & (w_h > 170) & (c_h < 80), 3] = 0
 
     return arr
 
