@@ -83,8 +83,9 @@ export class Game {
       const t         = this.brakeHeld / PLAYER_BRAKE_RAMP;
       this.speed     -= PLAYER_BRAKE_MAX * t * t * dt;
     } else {
-      // Coast: speed-proportional drag, floor at 20% to avoid sticky low-speed feel
-      const coastRate = PLAYER_COAST_RATE * Math.max(0.2, speedRatio);
+      // Coast: linearly scales from 50% COAST_RATE at rest to 100% at max speed.
+      // Gives ~2.4s stop from 100 km/h while preserving ~4.6s stop from max.
+      const coastRate = PLAYER_COAST_RATE * (0.5 + 0.5 * speedRatio);
       this.speed     -= coastRate * dt;
       this.brakeHeld  = Math.max(0, this.brakeHeld - dt * 4);
     }
