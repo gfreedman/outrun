@@ -125,6 +125,18 @@ export class Renderer {
         drawTrapezoid(ctx, sx1 + lo1, sy1, lw1, sx2 + lo2, sy2, lw2, color.lane);
       }
 
+      // ── road edge stripes — thick outer + thin inner, always white ─────────
+      // Thick: spans ~87%–96% of road half-width from centre
+      // Thin:  spans ~77%–81% of road half-width from centre (gap between them)
+      const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;   // thick half-width / offset
+      const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;   // thin  half-width / offset
+      const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
+      const enW2 = sw2 * 0.020, enO2 = sw2 * 0.790;
+      drawTrapezoid(ctx, sx1 - etO1, sy1, etW1, sx2 - etO2, sy2, etW2, '#FFFFFF'); // left thick
+      drawTrapezoid(ctx, sx1 - enO1, sy1, enW1, sx2 - enO2, sy2, enW2, '#FFFFFF'); // left thin
+      drawTrapezoid(ctx, sx1 + etO1, sy1, etW1, sx2 + etO2, sy2, etW2, '#FFFFFF'); // right thick
+      drawTrapezoid(ctx, sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2, '#FFFFFF'); // right thin
+
       // ── roadside sprites ──────────────────────────────────────────────────
       if (seg.sprites && this.roadSprites?.isReady() && sy1 >= halfH) {
         for (const si of seg.sprites) {
@@ -182,50 +194,66 @@ export class Renderer {
     this.carSprites.draw(ctx, rect, drawX, drawY, Math.round(carW), Math.round(carH));
   }
 
-  // ── HUD ───────────────────────────────────────────────────────────────────
+  // ── HUD — OutRun-style bottom-left: speed number + segmented tach bar ────
 
   private renderHUD(w: number, h: number, speed: number): void {
     const { ctx } = this;
     const kmh   = Math.round(speed * (290 / PLAYER_MAX_SPEED));
     const ratio = speed / PLAYER_MAX_SPEED;
 
-    const padX = Math.round(w * 0.025);
-    const padY = Math.round(h * 0.04);
-    const barW = Math.round(w * 0.17);
-    const barH = Math.round(h * 0.021);
-    const barX = w - padX - barW;
-    const barY = h - padY - barH;
+    ctx.save();
 
-    ctx.fillStyle = 'rgba(0,0,0,0.58)';
-    ctx.fillRect(barX - 8, barY - Math.round(barH * 2.6), barW + 16, Math.round(barH * 4.0));
+    const padX = Math.round(w * 0.028);
+    const padY = Math.round(h * 0.030);
 
-    ctx.textBaseline = 'alphabetic';
-    ctx.textAlign    = 'right';
+    // ── segmented tachometer bar ──────────────────────────────────────────
+    const NUM_SEGS = 16;
+    const segH   = Math.round(h * 0.020);
+    const segW   = Math.round(w * 0.012);
+    const segGap = Math.max(1, Math.round(w * 0.003));
+    const barX   = padX;
+    const barY   = h - padY;   // bottom edge of bar
 
-    ctx.font      = `bold ${Math.round(h * 0.019)}px 'Courier New',monospace`;
-    ctx.fillStyle = '#999';
-    ctx.fillText('KM/H', w - padX, barY - Math.round(barH * 2.2));
+    // ── speed number ──────────────────────────────────────────────────────
+    const numSize = Math.round(h * 0.090);
+    ctx.font      = `bold italic ${numSize}px 'Arial Black', Arial, sans-serif`;
+    const numW    = ctx.measureText(`${kmh}`).width;
+    const numBot  = barY - segH - Math.round(h * 0.016);
 
-    ctx.font      = `bold ${Math.round(h * 0.054)}px 'Courier New',monospace`;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(`${kmh}`, w - padX - Math.round(barW * 0.36), barY - Math.round(barH * 0.8));
+    // dark panel behind everything
+    const lblSize = Math.round(h * 0.036);
+    const panelW  = numW + Math.round(lblSize * 2.4) + 24;
+    const panelH  = numSize + segH + Math.round(h * 0.022);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(padX - 10, numBot - numSize - 6, panelW, panelH + 8);
 
-    ctx.font      = `bold ${Math.round(h * 0.020)}px 'Courier New',monospace`;
-    ctx.fillStyle = '#888';
-    ctx.fillText('SPEED', w - padX, barY - Math.round(barH * 0.8));
-
-    ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(barX, barY, barW, barH);
-
-    const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
-    barGrad.addColorStop(0,   '#00CC44');
-    barGrad.addColorStop(0.6, '#FFCC00');
-    barGrad.addColorStop(1,   '#FF2200');
-    ctx.fillStyle = barGrad;
-    ctx.fillRect(barX, barY, Math.round(barW * ratio), barH);
-
+    // speed digits — large, red-orange
+    ctx.fillStyle    = '#FF4400';
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`${kmh}`, padX, numBot);
+
+    // "km/" stacked over "h" to the right of the number
+    ctx.font      = `bold ${lblSize}px Arial, sans-serif`;
+    ctx.fillStyle = '#FFFFFF';
+    const lblX = padX + numW + 6;
+    ctx.fillText('km/', lblX, numBot - Math.round(numSize * 0.38));
+    ctx.fillText('h',   lblX + Math.round(lblSize * 0.28), numBot);
+
+    // ── segmented bar (tachometer / RPM readout) ──────────────────────────
+    const filled = Math.round(ratio * NUM_SEGS);
+    for (let i = 0; i < NUM_SEGS; i++) {
+      const x = barX + i * (segW + segGap);
+      if (i < filled) {
+        const t = i / (NUM_SEGS - 1);
+        ctx.fillStyle = t < 0.60 ? '#00CC00' : t < 0.85 ? '#FFCC00' : '#FF3300';
+      } else {
+        ctx.fillStyle = '#1A1A1A';
+      }
+      ctx.fillRect(x, barY - segH, segW, segH);
+    }
+
+    ctx.restore();
   }
 
   // ── public ────────────────────────────────────────────────────────────────
