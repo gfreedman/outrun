@@ -3,7 +3,10 @@ import { Renderer } from './renderer';
 import { InputManager } from './input';
 import { SpriteLoader } from './sprites';
 import {
-  PLAYER_MAX_SPEED, PLAYER_ACCEL, PLAYER_DECEL, PLAYER_BRAKE_DECEL,
+  PLAYER_MAX_SPEED,
+  PLAYER_ACCEL_LOW, PLAYER_ACCEL_MID,
+  PLAYER_COAST_RATE,
+  PLAYER_BRAKE_MAX, PLAYER_BRAKE_RAMP,
   PLAYER_STEERING,
   SEGMENT_COUNT, SEGMENT_LENGTH, DRAW_DISTANCE,
   ROAD_WIDTH,
@@ -18,6 +21,7 @@ export class Game {
   private playerX = 0;  // normalized: -1 = left road edge, 0 = center, +1 = right edge
   private speed   = 0;
   private steerAngle = 0; // continuous -1 (full left) … 0 (straight) … +1 (full right)
+  private brakeHeld  = 0; // seconds brake has been held (for ramp buildup)
 
   private lastTimestamp = 0;
   private rafId = 0;
@@ -56,13 +60,33 @@ export class Game {
     const trackLength = SEGMENT_COUNT * SEGMENT_LENGTH;
     const speedRatio  = this.speed / PLAYER_MAX_SPEED;
 
-    // ── throttle / brake ──
+    // ── throttle / brake — "Alive & Kinetic" three-phase physics ──
     if (input.isDown('ArrowUp')) {
-      this.speed += PLAYER_ACCEL * dt;
+      // Phase 1 (0–15%): smoothstep launch weight LOW→MID (tyres finding grip)
+      // Phase 2 (15–80%): flat-out MID thrust
+      // Phase 3 (80–100%): MID tapers linearly to 0 (fighting aero drag)
+      let accel: number;
+      if (speedRatio < 0.15) {
+        const t = speedRatio / 0.15;
+        const smooth = t * t * (3 - 2 * t);
+        accel = PLAYER_ACCEL_LOW + (PLAYER_ACCEL_MID - PLAYER_ACCEL_LOW) * smooth;
+      } else if (speedRatio < 0.80) {
+        accel = PLAYER_ACCEL_MID;
+      } else {
+        accel = PLAYER_ACCEL_MID * (1 - speedRatio) / 0.20;
+      }
+      this.speed     += accel * dt;
+      this.brakeHeld  = 0;
     } else if (input.isDown('ArrowDown')) {
-      this.speed -= PLAYER_BRAKE_DECEL * dt;
+      // Progressive ease-in² buildup over BRAKE_RAMP seconds
+      this.brakeHeld  = Math.min(this.brakeHeld + dt, PLAYER_BRAKE_RAMP);
+      const t         = this.brakeHeld / PLAYER_BRAKE_RAMP;
+      this.speed     -= PLAYER_BRAKE_MAX * t * t * dt;
     } else {
-      this.speed -= PLAYER_DECEL * dt;
+      // Coast: speed-proportional drag, floor at 20% to avoid sticky low-speed feel
+      const coastRate = PLAYER_COAST_RATE * Math.max(0.2, speedRatio);
+      this.speed     -= coastRate * dt;
+      this.brakeHeld  = Math.max(0, this.brakeHeld - dt * 4);
     }
     this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
 

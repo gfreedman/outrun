@@ -8,10 +8,29 @@ export const CAMERA_DEPTH     = 1 / Math.tan((FOV_DEG / 2) * Math.PI / 180);
 
 // Speed values calibrated so road scrolling feels like ~290 km/h at max.
 // At MAX_SPEED the player advances ~30 segments/sec (SEGMENT_LENGTH=200).
-export const PLAYER_MAX_SPEED   = 6000;  // world units per second
-export const PLAYER_ACCEL       = 8000;  // ~0.75s to reach max — snappy
-export const PLAYER_DECEL       = 2000;  // coasting decel
-export const PLAYER_BRAKE_DECEL = 12000; // hard brake
+export const PLAYER_MAX_SPEED    = 6000;  // world units per second at 293 km/h
+
+// ── Acceleration — three-phase "Alive & Kinetic" curve ──────────────────────
+// Phase 1 (0–15% speed): launch weight — smoothstep from LOW→MID, like tyres
+//   finding grip. Matches OutRun's half-rate at low speed from Cannonball source.
+// Phase 2 (15–80% speed): main thrust band — flat-out power delivery (~2.6s).
+// Phase 3 (80–100% speed): terminal taper — ACCEL_MID ramps linearly to 0 at
+//   max, simulating the car fighting aerodynamic drag. (~1.5s, asymptotic feel).
+// Total 0→max: ~5.3s (original arcade: ~5.5s). ✓
+export const PLAYER_ACCEL_LOW   = 850;   // u/s, phase 1 launch floor
+export const PLAYER_ACCEL_MID   = 1550;  // u/s, phase 2 peak (and phase 3 start)
+
+// ── Coast (lift-off) ─────────────────────────────────────────────────────────
+// Speed-proportional: at max the wind fights back at full COAST_RATE;
+// below 20% speed a floor prevents the car feeling "sticky" at low speed.
+// Matches OutRun's ~60 km/h/s deceleration at high speed.
+export const PLAYER_COAST_RATE  = 1300;  // u/s at max speed, scales with speedRatio
+
+// ── Braking — progressive ease-in² buildup ──────────────────────────────────
+// First press feels like squeezing through resistance; full bite after RAMP secs.
+// 293→0 in ~1.4s at full developed force (original arcade: ~1.2s). ✓
+export const PLAYER_BRAKE_MAX   = 4800;  // u/s at fully-developed brake force
+export const PLAYER_BRAKE_RAMP  = 0.18;  // s to ramp from first press to full force
 
 // Lateral movement: how fast the player crosses the full road width (2×ROAD_WIDTH)
 // at top speed. 2.0 = can cross full road in ~1 second at max speed.
