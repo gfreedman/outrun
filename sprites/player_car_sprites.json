@@ -1,0 +1,343 @@
+{
+  "frameWidth": 299,
+  "frameHeight": 149,
+  "totalFrames": 37,
+  "centerIndex": 18,
+  "scale": "1x",
+  "hybridNote": "L2-L13 left.png (correct occupants); L14-L19 flipped right.png",
+  "frames": [
+    {
+      "index": 0,
+      "name": "L19_90deg_left",
+      "x": 0,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped"
+    },
+    {
+      "index": 1,
+      "name": "L18_85deg_left",
+      "x": 299,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped"
+    },
+    {
+      "index": 2,
+      "name": "L17_80deg_left",
+      "x": 598,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped"
+    },
+    {
+      "index": 3,
+      "name": "L16_75deg_left",
+      "x": 897,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped"
+    },
+    {
+      "index": 4,
+      "name": "L15_70deg_left",
+      "x": 1196,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped"
+    },
+    {
+      "index": 5,
+      "name": "L14_65deg_left",
+      "x": 1495,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped"
+    },
+    {
+      "index": 6,
+      "name": "L13_60deg_left",
+      "x": 1794,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 7,
+      "name": "L12_55deg_left",
+      "x": 2093,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 8,
+      "name": "L11_50deg_left",
+      "x": 2392,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 9,
+      "name": "L10_45deg_left",
+      "x": 2691,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 10,
+      "name": "L9_40deg_left",
+      "x": 2990,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 11,
+      "name": "L8_35deg_left",
+      "x": 3289,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 12,
+      "name": "L7_30deg_left",
+      "x": 3588,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 13,
+      "name": "L6_25deg_left",
+      "x": 3887,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_flipped_fallback"
+    },
+    {
+      "index": 14,
+      "name": "L5_20deg_left",
+      "x": 4186,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "left_real"
+    },
+    {
+      "index": 15,
+      "name": "L4_15deg_left",
+      "x": 4485,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "left_real"
+    },
+    {
+      "index": 16,
+      "name": "L3_10deg_left",
+      "x": 4784,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "left_real"
+    },
+    {
+      "index": 17,
+      "name": "L2_5deg_left",
+      "x": 5083,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "left_real"
+    },
+    {
+      "index": 18,
+      "name": "STRAIGHT_0deg",
+      "x": 5382,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "shared"
+    },
+    {
+      "index": 19,
+      "name": "R2_5deg_right",
+      "x": 5681,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 20,
+      "name": "R3_10deg_right",
+      "x": 5980,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 21,
+      "name": "R4_15deg_right",
+      "x": 6279,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 22,
+      "name": "R5_20deg_right",
+      "x": 6578,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 23,
+      "name": "R6_25deg_right",
+      "x": 6877,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 24,
+      "name": "R7_30deg_right",
+      "x": 7176,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 25,
+      "name": "R8_35deg_right",
+      "x": 7475,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 26,
+      "name": "R9_40deg_right",
+      "x": 7774,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 27,
+      "name": "R10_45deg_right",
+      "x": 8073,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 28,
+      "name": "R11_50deg_right",
+      "x": 8372,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 29,
+      "name": "R12_55deg_right",
+      "x": 8671,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 30,
+      "name": "R13_60deg_right",
+      "x": 8970,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 31,
+      "name": "R14_65deg_right",
+      "x": 9269,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 32,
+      "name": "R15_70deg_right",
+      "x": 9568,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 33,
+      "name": "R16_75deg_right",
+      "x": 9867,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 34,
+      "name": "R17_80deg_right",
+      "x": 10166,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 35,
+      "name": "R18_85deg_right",
+      "x": 10465,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    },
+    {
+      "index": 36,
+      "name": "R19_90deg_right",
+      "x": 10764,
+      "y": 0,
+      "w": 299,
+      "h": 149,
+      "source": "right_real"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "outrun",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "esbuild src/main.ts --bundle --outfile=dist/script.js --sourcemap --watch",
+    "build": "esbuild src/main.ts --bundle --outfile=dist/script.js --minify",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
