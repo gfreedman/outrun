@@ -159,7 +159,7 @@ export class Renderer {
     const frameIndex = Math.round(steerAngle * CAR_SPRITE_CENTER) + CAR_SPRITE_CENTER;
     const rect       = carFrameRect(frameIndex);
 
-    const carH = Math.min(h * 0.20, 190);
+    const carH = Math.min(h * 0.35, 340);
     const carW = carH * (CAR_SPRITE_FRAME_W / CAR_SPRITE_FRAME_H);
     const bot  = h - h * 0.04;
 
