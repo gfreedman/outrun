@@ -113,9 +113,11 @@ export class Game {
     // ── off-road friction ──
     this.offRoad = Math.abs(this.playerX) > 1;
     if (this.offRoad) {
-      // Extra grass drag (fights throttle too) + hard speed cap
+      // Grass drag decelerates from whatever speed was carried in.
+      // No instant snap — high-speed entry travels further before slowing.
+      // OFFROAD_DECEL (3500) > PLAYER_ACCEL_MID (1550) so the car can never
+      // accelerate on grass; no explicit cap needed.
       this.speed -= OFFROAD_DECEL * dt;
-      this.speed  = Math.min(this.speed, PLAYER_MAX_SPEED * OFFROAD_MAX_RATIO);
       this.offRoadRecovery = 0;
       // Bumpy horizon jitter — random per-frame oscillation simulates rough terrain
       this.jitterY = (Math.random() - 0.5) * 8;
