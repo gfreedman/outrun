@@ -129,6 +129,36 @@ def flood_fill_bg(arr, bg_color, tol=BG_TOL, inner_xs=()):
     return arr
 
 
+def remove_enclosed_bg(arr, bg_color, tol=70):
+    """
+    Zero opaque background-coloured pixels enclosed within the car silhouette.
+    After flood_fill_bg has cleared outer background, any remaining opaque
+    gray pixel whose connected component doesn't touch the image border is
+    trapped inside the car outline and must be background — zero it.
+    """
+    arr = arr.copy()
+    r = arr[:,:,0].astype(np.int32)
+    g = arr[:,:,1].astype(np.int32)
+    b = arr[:,:,2].astype(np.int32)
+    ch   = np.abs(r-g) + np.abs(g-b) + np.abs(r-b)
+    dist = (np.abs(r - float(bg_color[0])) +
+            np.abs(g - float(bg_color[1])) +
+            np.abs(b - float(bg_color[2])))
+    candidates = (arr[:,:,3] > 0) & (ch < 35) & (dist < tol)
+    labeled, n = sp_label(candidates)
+    if n == 0:
+        return arr
+    # Components touching the image border are reachable exterior — keep them
+    border_mask = np.zeros(labeled.shape, dtype=bool)
+    border_mask[0,:] = border_mask[-1,:] = True
+    border_mask[:,0] = border_mask[:,-1] = True
+    border_labels = set(int(x) for x in labeled[border_mask & (labeled > 0)])
+    for lbl in range(1, n + 1):
+        if lbl not in border_labels:
+            arr[labeled == lbl, 3] = 0
+    return arr
+
+
 def remove_isolated_checker(arr):
     """Zero gray pixels that are not adjacent to colored car pixels."""
     arr   = arr.copy()
@@ -195,6 +225,7 @@ def extract_frame(full_arr, cx1, cy1, cx2, cy2, bg_color, mult=EXTRACT_MULT):
 
     region = full_arr[ey1:ey2, ex1:ex2, :].copy()
     region = flood_fill_bg(region, bg_color)
+    region = remove_enclosed_bg(region, bg_color)
     region = remove_isolated_checker(region)
     region = keep_largest(region)
 

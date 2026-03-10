@@ -1,48 +1,48 @@
 {
-  "frameWidth": 299,
+  "frameWidth": 296,
   "frameHeight": 149,
   "totalFrames": 37,
   "centerIndex": 18,
   "scale": "1x",
   "hybridNote": "L2-L13 left.png (correct occupants); L14-L19 flipped right.png",
   "pivotOffsets": [
-    3,
+    2,
     -23,
     -23,
-    -25,
-    -25,
+    -24,
+    -24,
     -32,
-    -31,
-    -42,
-    -42,
-    -14,
-    -14,
-    -26,
     -29,
-    -4,
-    -16,
+    -40,
+    -40,
+    -14,
+    -14,
+    -20,
+    -28,
+    -3,
+    -14,
     -12,
-    -13,
-    1,
+    -14,
+    2,
     3,
-    1,
-    8,
-    11,
+    0,
+    9,
     12,
-    4,
-    29,
-    27,
+    12,
+    5,
+    30,
+    23,
     15,
     15,
-    43,
-    43,
-    33,
+    42,
+    42,
+    32,
     34,
-    26,
-    26,
+    27,
+    27,
     25,
     25,
-    -2
+    -1
   ],
   "frames": [
     {
@@ -50,17 +50,17 @@
       "name": "L19_90deg_left",
       "x": 0,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped",
-      "pivotOffsetX": 3
+      "pivotOffsetX": 2
     },
     {
       "index": 1,
       "name": "L18_85deg_left",
-      "x": 299,
+      "x": 296,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped",
       "pivotOffsetX": -23
@@ -68,9 +68,9 @@
     {
       "index": 2,
       "name": "L17_80deg_left",
-      "x": 598,
+      "x": 592,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped",
       "pivotOffsetX": -23
@@ -78,29 +78,29 @@
     {
       "index": 3,
       "name": "L16_75deg_left",
-      "x": 897,
+      "x": 888,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped",
-      "pivotOffsetX": -25
+      "pivotOffsetX": -24
     },
     {
       "index": 4,
       "name": "L15_70deg_left",
-      "x": 1196,
+      "x": 1184,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped",
-      "pivotOffsetX": -25
+      "pivotOffsetX": -24
     },
     {
       "index": 5,
       "name": "L14_65deg_left",
-      "x": 1495,
+      "x": 1480,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped",
       "pivotOffsetX": -32
@@ -108,39 +108,39 @@
     {
       "index": 6,
       "name": "L13_60deg_left",
-      "x": 1794,
+      "x": 1776,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
-      "pivotOffsetX": -31
+      "pivotOffsetX": -29
     },
     {
       "index": 7,
       "name": "L12_55deg_left",
-      "x": 2093,
+      "x": 2072,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
-      "pivotOffsetX": -42
+      "pivotOffsetX": -40
     },
     {
       "index": 8,
       "name": "L11_50deg_left",
-      "x": 2392,
+      "x": 2368,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
-      "pivotOffsetX": -42
+      "pivotOffsetX": -40
     },
     {
       "index": 9,
       "name": "L10_45deg_left",
-      "x": 2691,
+      "x": 2664,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
       "pivotOffsetX": -14
@@ -148,9 +148,9 @@
     {
       "index": 10,
       "name": "L9_40deg_left",
-      "x": 2990,
+      "x": 2960,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
       "pivotOffsetX": -14
@@ -158,49 +158,49 @@
     {
       "index": 11,
       "name": "L8_35deg_left",
-      "x": 3289,
+      "x": 3256,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
-      "pivotOffsetX": -26
+      "pivotOffsetX": -20
     },
     {
       "index": 12,
       "name": "L7_30deg_left",
-      "x": 3588,
+      "x": 3552,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
-      "pivotOffsetX": -29
+      "pivotOffsetX": -28
     },
     {
       "index": 13,
       "name": "L6_25deg_left",
-      "x": 3887,
+      "x": 3848,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_flipped_fallback",
-      "pivotOffsetX": -4
+      "pivotOffsetX": -3
     },
     {
       "index": 14,
       "name": "L5_20deg_left",
-      "x": 4186,
+      "x": 4144,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "left_real",
-      "pivotOffsetX": -16
+      "pivotOffsetX": -14
     },
     {
       "index": 15,
       "name": "L4_15deg_left",
-      "x": 4485,
+      "x": 4440,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "left_real",
       "pivotOffsetX": -12
@@ -208,29 +208,29 @@
     {
       "index": 16,
       "name": "L3_10deg_left",
-      "x": 4784,
+      "x": 4736,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "left_real",
-      "pivotOffsetX": -13
+      "pivotOffsetX": -14
     },
     {
       "index": 17,
       "name": "L2_5deg_left",
-      "x": 5083,
+      "x": 5032,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "left_real",
-      "pivotOffsetX": 1
+      "pivotOffsetX": 2
     },
     {
       "index": 18,
       "name": "STRAIGHT_0deg",
-      "x": 5382,
+      "x": 5328,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "shared",
       "pivotOffsetX": 3
@@ -238,39 +238,39 @@
     {
       "index": 19,
       "name": "R2_5deg_right",
-      "x": 5681,
+      "x": 5624,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 1
+      "pivotOffsetX": 0
     },
     {
       "index": 20,
       "name": "R3_10deg_right",
-      "x": 5980,
+      "x": 5920,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 8
+      "pivotOffsetX": 9
     },
     {
       "index": 21,
       "name": "R4_15deg_right",
-      "x": 6279,
+      "x": 6216,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 11
+      "pivotOffsetX": 12
     },
     {
       "index": 22,
       "name": "R5_20deg_right",
-      "x": 6578,
+      "x": 6512,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
       "pivotOffsetX": 12
@@ -278,39 +278,39 @@
     {
       "index": 23,
       "name": "R6_25deg_right",
-      "x": 6877,
+      "x": 6808,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 4
+      "pivotOffsetX": 5
     },
     {
       "index": 24,
       "name": "R7_30deg_right",
-      "x": 7176,
+      "x": 7104,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 29
+      "pivotOffsetX": 30
     },
     {
       "index": 25,
       "name": "R8_35deg_right",
-      "x": 7475,
+      "x": 7400,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 27
+      "pivotOffsetX": 23
     },
     {
       "index": 26,
       "name": "R9_40deg_right",
-      "x": 7774,
+      "x": 7696,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
       "pivotOffsetX": 15
@@ -318,9 +318,9 @@
     {
       "index": 27,
       "name": "R10_45deg_right",
-      "x": 8073,
+      "x": 7992,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
       "pivotOffsetX": 15
@@ -328,39 +328,39 @@
     {
       "index": 28,
       "name": "R11_50deg_right",
-      "x": 8372,
+      "x": 8288,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 43
+      "pivotOffsetX": 42
     },
     {
       "index": 29,
       "name": "R12_55deg_right",
-      "x": 8671,
+      "x": 8584,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 43
+      "pivotOffsetX": 42
     },
     {
       "index": 30,
       "name": "R13_60deg_right",
-      "x": 8970,
+      "x": 8880,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 33
+      "pivotOffsetX": 32
     },
     {
       "index": 31,
       "name": "R14_65deg_right",
-      "x": 9269,
+      "x": 9176,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
       "pivotOffsetX": 34
@@ -368,29 +368,29 @@
     {
       "index": 32,
       "name": "R15_70deg_right",
-      "x": 9568,
+      "x": 9472,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 26
+      "pivotOffsetX": 27
     },
     {
       "index": 33,
       "name": "R16_75deg_right",
-      "x": 9867,
+      "x": 9768,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": 26
+      "pivotOffsetX": 27
     },
     {
       "index": 34,
       "name": "R17_80deg_right",
-      "x": 10166,
+      "x": 10064,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
       "pivotOffsetX": 25
@@ -398,9 +398,9 @@
     {
       "index": 35,
       "name": "R18_85deg_right",
-      "x": 10465,
+      "x": 10360,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
       "pivotOffsetX": 25
@@ -408,12 +408,12 @@
     {
       "index": 36,
       "name": "R19_90deg_right",
-      "x": 10764,
+      "x": 10656,
       "y": 0,
-      "w": 299,
+      "w": 296,
       "h": 149,
       "source": "right_real",
-      "pivotOffsetX": -2
+      "pivotOffsetX": -1
     }
   ]
 }
