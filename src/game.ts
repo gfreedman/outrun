@@ -95,10 +95,12 @@ export class Game {
     }
     this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
 
-    // ── steering: faster at speed, zero when stopped ──
+    // ── steering: faster at speed, minimum floor so player can always escape grass ──
     // playerX > 1 or < -1 means off-road; allow up to ±2 before hard wall
-    if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * speedRatio * dt;
-    if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * speedRatio * dt;
+    // Floor of 0.3 ensures steering works even when off-road friction kills speed.
+    const steerRatio = Math.max(0.3, speedRatio);
+    if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * steerRatio * dt;
+    if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * dt;
     this.playerX = Math.max(-2, Math.min(2, this.playerX));
 
     // steerAngle: ramp toward ±1 while key held, spring back when released
