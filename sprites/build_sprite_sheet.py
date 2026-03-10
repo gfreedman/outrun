@@ -342,6 +342,18 @@ def defringe(arr):
     arr[edge_h & (min_h > 150), 3] = 0
     arr[edge_h & (w_h > 170) & (c_h < 80), 3] = 0
 
+    # Pass I: remove isolated stray pixels — opaque pixels with fewer than 3
+    # opaque 8-connected neighbours.  Runs 2 rounds to catch clusters of 2.
+    for _ in range(2):
+        a = arr[:,:,3].astype(np.int32)
+        op = (a == 255)
+        neighbour_count = sum(
+            np.roll(np.roll(op, dy, 0), dx, 1)
+            for dy in (-1, 0, 1) for dx in (-1, 0, 1)
+            if not (dy == 0 and dx == 0)
+        )
+        arr[op & (neighbour_count < 3), 3] = 0
+
     return arr
 
 # ── Main ──────────────────────────────────────────────────────────────────────

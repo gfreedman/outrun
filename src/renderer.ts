@@ -177,9 +177,9 @@ export class Renderer {
     ctx.ellipse(cx, bot + 4, carW * 0.4, 6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.imageSmoothingEnabled = false;
-    this.carSprites.draw(ctx, rect, drawX, drawY, Math.round(carW), Math.round(carH));
     ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    this.carSprites.draw(ctx, rect, drawX, drawY, Math.round(carW), Math.round(carH));
   }
 
   // ── HUD ───────────────────────────────────────────────────────────────────
