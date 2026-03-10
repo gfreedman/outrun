@@ -8,10 +8,17 @@ function makeProjectedPoint(worldZ: number): ProjectedPoint {
   };
 }
 
-function makeColor(even: boolean): SegmentColor {
-  return even
-    ? { road: COLORS.ROAD_LIGHT, grass: COLORS.GRASS_LIGHT, rumble: COLORS.RUMBLE_RED,   lane: COLORS.LANE }
-    : { road: COLORS.ROAD_DARK,  grass: COLORS.GRASS_DARK,  rumble: COLORS.RUMBLE_WHITE, lane: '' };
+// Grass/rumble bands: groups of 8 segments → ~3.75 transitions/sec at max speed (no flicker).
+// Lane dashes: groups of 4 → shorter dashes at double frequency, matching OutRun's centre-line look.
+function makeColor(i: number): SegmentColor {
+  const band = Math.floor(i / 8) % 2 === 0;
+  const dash = Math.floor(i / 4) % 2 === 0;
+  return {
+    road:   band ? COLORS.ROAD_LIGHT  : COLORS.ROAD_DARK,
+    grass:  band ? COLORS.GRASS_LIGHT : COLORS.GRASS_DARK,
+    rumble: band ? COLORS.RUMBLE_RED  : COLORS.RUMBLE_WHITE,
+    lane:   dash ? COLORS.LANE        : '',
+  };
 }
 
 export class Road {
@@ -28,7 +35,7 @@ export class Road {
         p1: makeProjectedPoint(i * SEGMENT_LENGTH),
         p2: makeProjectedPoint((i + 1) * SEGMENT_LENGTH),
         curve: 0,
-        color: makeColor(Math.floor(i / 2) % 2 === 0),
+        color: makeColor(i),
       };
 
       this.segments.push(seg);

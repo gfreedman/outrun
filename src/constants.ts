@@ -43,9 +43,9 @@ export const COLORS = {
   SKY_MID:      '#72D7EE',  // vibrant caribbean blue
   SKY_HORIZON:  '#C8EEFF',  // pale near horizon
 
-  // Road — subtle alternation; visual rhythm comes from rumble + grass
-  ROAD_LIGHT:   '#6B6B6B',
-  ROAD_DARK:    '#696969',
+  // Road — authentic OutRun light gray; subtle alternation for band rhythm
+  ROAD_LIGHT:   '#9A9A9A',
+  ROAD_DARK:    '#777777',
 
   // Rumble strips — iconic OutRun red/white
   RUMBLE_RED:   '#CC0000',
