@@ -115,27 +115,25 @@ export class Renderer {
       ctx.fillStyle = color.grass;
       ctx.fillRect(0, sy2, w, sy1 - sy2);
 
-      drawTrapezoid(ctx, sx1, sy1, sw1 * 1.25,  sx2, sy2, sw2 * 1.25,  color.rumble);
-      drawTrapezoid(ctx, sx1, sy1, sw1 * 1.01, sx2, sy2, sw2 * 1.01, color.road); // 1% overlap, fully buries rumble edge
+      drawTrapezoid(ctx, sx1, sy1, sw1, sx2, sy2, sw2, color.road);
 
       if (color.lane) {
+        // centre lane dashes
         const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
         const lw2 = sw2 * 0.06, lo2 = sw2 * 0.33;
         drawTrapezoid(ctx, sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2, color.lane);
         drawTrapezoid(ctx, sx1 + lo1, sy1, lw1, sx2 + lo2, sy2, lw2, color.lane);
-      }
 
-      // ── road edge stripes — thick outer + thin inner, always white ─────────
-      // Thick: spans ~87%–96% of road half-width from centre
-      // Thin:  spans ~77%–81% of road half-width from centre (gap between them)
-      const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;   // thick half-width / offset
-      const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;   // thin  half-width / offset
-      const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
-      const enW2 = sw2 * 0.020, enO2 = sw2 * 0.790;
-      drawTrapezoid(ctx, sx1 - etO1, sy1, etW1, sx2 - etO2, sy2, etW2, '#FFFFFF'); // left thick
-      drawTrapezoid(ctx, sx1 - enO1, sy1, enW1, sx2 - enO2, sy2, enW2, '#FFFFFF'); // left thin
-      drawTrapezoid(ctx, sx1 + etO1, sy1, etW1, sx2 + etO2, sy2, etW2, '#FFFFFF'); // right thick
-      drawTrapezoid(ctx, sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2, '#FFFFFF'); // right thin
+        // edge stripes — dashed (same period as centre lanes): thick + thin per side
+        const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
+        const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
+        const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
+        const enW2 = sw2 * 0.020, enO2 = sw2 * 0.790;
+        drawTrapezoid(ctx, sx1 - etO1, sy1, etW1, sx2 - etO2, sy2, etW2, '#FFFFFF');
+        drawTrapezoid(ctx, sx1 - enO1, sy1, enW1, sx2 - enO2, sy2, enW2, '#FFFFFF');
+        drawTrapezoid(ctx, sx1 + etO1, sy1, etW1, sx2 + etO2, sy2, etW2, '#FFFFFF');
+        drawTrapezoid(ctx, sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2, '#FFFFFF');
+      }
 
       // ── roadside sprites ──────────────────────────────────────────────────
       if (seg.sprites && this.roadSprites?.isReady() && sy1 >= halfH) {
