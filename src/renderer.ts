@@ -101,11 +101,11 @@ export class Renderer {
       const sc2 = CAMERA_DEPTH / cz2;
 
       const sx1 = halfW - cameraX * sc1 * halfW;
-      const sy1 = halfH + CAMERA_HEIGHT * sc1 * halfH;
+      const sy1 = Math.round(halfH + CAMERA_HEIGHT * sc1 * halfH); // integer y → no sub-pixel bleed
       const sw1 = ROAD_WIDTH * sc1 * halfW;
 
       const sx2 = halfW - cameraX * sc2 * halfW;
-      const sy2 = halfH + CAMERA_HEIGHT * sc2 * halfH;
+      const sy2 = Math.round(halfH + CAMERA_HEIGHT * sc2 * halfH); // integer y → no sub-pixel bleed
       const sw2 = ROAD_WIDTH * sc2 * halfW;
 
       if (sy2 >= sy1) continue;
@@ -116,7 +116,7 @@ export class Renderer {
       ctx.fillRect(0, sy2, w, sy1 - sy2);
 
       drawTrapezoid(ctx, sx1, sy1, sw1 * 1.25,  sx2, sy2, sw2 * 1.25,  color.rumble);
-      drawTrapezoid(ctx, sx1, sy1, sw1 * 1.005, sx2, sy2, sw2 * 1.005, color.road); // 0.5% overlap seals red bleed
+      drawTrapezoid(ctx, sx1, sy1, sw1 * 1.01, sx2, sy2, sw2 * 1.01, color.road); // 1% overlap, fully buries rumble edge
 
       if (color.lane) {
         const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
