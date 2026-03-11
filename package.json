@@ -4,10 +4,13 @@
   "scripts": {
     "dev": "esbuild src/main.ts --bundle --outfile=dist/script.js --sourcemap --watch",
     "build": "esbuild src/main.ts --bundle --outfile=dist/script.js --minify",
-    "test": "vitest"
+    "test": "vitest",
+    "test:run": "vitest run",
+    "prepare": "husky"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
+    "husky": "^9.1.7",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }
