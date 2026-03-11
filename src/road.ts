@@ -259,53 +259,6 @@ export class Road
     // ── 7. Long finish straight ───────────────────────────────────────────
     r(1,  50,  1,   0,  0);               // 52 segs — relief & prep for lap
 
-    this.placePalmTrees();
-  }
-
-  // ── Roadside sprite placement ─────────────────────────────────────────────
-
-  /**
-   * Iterates over every segment and assigns palm tree sprites to some of them.
-   *
-   * Placement rules:
-   *   On curves: trees on BOTH sides every 4 segments — denser placement
-   *              gives the player visual cues about the bend's severity.
-   *   On straights: one tree every 8 segments, alternating left and right —
-   *                 sparser so the road feels open and fast.
-   *
-   * worldX is measured in world units from road centre.
-   * ROAD_EDGE = 2200 puts trees just outside the road boundary (ROAD_WIDTH = 2000).
-   */
-  private placePalmTrees(): void
-  {
-    const ROAD_EDGE = 2200;   // world units from centre to tree line
-
-    for (let i = 0; i < this.segments.length; i++)
-    {
-      const seg     = this.segments[i];
-      const onCurve = Math.abs(seg.curve) > ROAD_CURVE.NONE;
-
-      if (onCurve)
-      {
-        // Dense bilateral placement on curves — every 4 segments, both sides
-        if (i % 4 === 0)
-        {
-          seg.sprites = [
-            { id: 'PALM_SMALL', worldX: -ROAD_EDGE },
-            { id: 'PALM_SMALL', worldX:  ROAD_EDGE },
-          ];
-        }
-      }
-      else
-      {
-        // Sparse alternating placement on straights — every 8 segments, one side
-        if (i % 8 === 0)
-        {
-          const side = (Math.floor(i / 8) % 2 === 0) ? -ROAD_EDGE : ROAD_EDGE;
-          seg.sprites = [{ id: 'PALM_SMALL', worldX: side }];
-        }
-      }
-    }
   }
 
   // ── Lookup ────────────────────────────────────────────────────────────────
