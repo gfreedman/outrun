@@ -227,8 +227,8 @@ function drawSegDigit(
 ): void
 {
   const mask = SEG_DIGIT[digit] ?? SEG_DIGIT[0];
-  const g    = Math.max(1, Math.round(t * 0.55));  // end-gap keeps segment tips crisp
-  const hw   = dh / 2;                              // midpoint between top and bottom
+  const g    = 1;      // hard 1-px tip gap — proportional gaps eat the segments at small sizes
+  const hw   = dh / 2; // midpoint between top and bottom
 
   /**
    * Draws one rectangular segment at the given position.
@@ -634,10 +634,14 @@ export class Renderer
     const padX     = Math.round(w * 0.025);
     const padY     = Math.round(h * 0.028);
 
-    // 7-segment digit sizing — width ≈ 58% of height matches the classic ratio
-    const digitH   = Math.round(h * 0.080);
-    const digitW   = Math.round(digitH * 0.58);
-    const digitT   = Math.max(2, Math.round(digitH * 0.13));
+    // 7-segment digit sizing.
+    // Height: 10% of canvas height so the digits are clearly legible.
+    // Width:  65% of height — classic 7-segment displays are taller than wide.
+    // Thickness: ~14% of height gives chunky, readable segments.
+    // Gap between cells: small fixed proportion of width.
+    const digitH   = Math.round(h * 0.10);
+    const digitW   = Math.round(digitH * 0.65);
+    const digitT   = Math.max(2, Math.round(digitH * 0.14));
     const digitGap = Math.max(2, Math.round(digitW * 0.14));
 
     // Speed bar — single thin row beneath the digits
