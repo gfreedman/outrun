@@ -721,41 +721,47 @@ export class Renderer
     //
     // Three fixed cells, always in the same screen positions so the HUD
     // never shifts as the number of significant digits changes.
-    // We skip (leave blank) any leading-zero cell — just like a real dash.
+    // Leading-zero cells are left completely blank.
     //
-    // ON  = bright red  (lit segment)
-    // OFF = very dark   (unlit segment outline, barely visible)
+    // Drop shadow technique (same as the original arcade):
+    //   Pass 1 — draw the same segments in solid black, offset 3px right
+    //            and 3px down.  This sits behind the coloured segments.
+    //   Pass 2 — draw the segments in bright red at the true position.
+    // The black layer makes the digits readable on any background colour.
 
-    const ON  = '#FF2200';
-    const OFF = '';        // empty = don't draw unlit segments at all
+    const ON  = '#FF2200';   // lit segment colour
+    const SHD = '#000000';   // drop-shadow colour
+    const OFF = '';          // unlit segments are invisible
 
     const showHundreds = hundreds > 0;
     const showTens     = showHundreds || tens > 0;
 
+    const so = 3;   // shadow offset in pixels (right and down)
+
+    // Pass 1 — black shadow, offset
     if (showHundreds)
-    {
-      drawSegDigit(ctx, hundreds,
-        L.padX,
-        L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
-    }
+      drawSegDigit(ctx, hundreds, L.padX + so,                              L.digitY + so, L.digitW, L.digitH, L.digitT, SHD, OFF);
     if (showTens)
-    {
-      drawSegDigit(ctx, tens,
-        L.padX + (L.digitW + L.digitGap),
-        L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
-    }
-    drawSegDigit(ctx, ones,
-      L.padX + 2 * (L.digitW + L.digitGap),
-      L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
+      drawSegDigit(ctx, tens,     L.padX + (L.digitW + L.digitGap) + so,   L.digitY + so, L.digitW, L.digitH, L.digitT, SHD, OFF);
+    drawSegDigit(ctx, ones,       L.padX + 2*(L.digitW + L.digitGap) + so, L.digitY + so, L.digitW, L.digitH, L.digitT, SHD, OFF);
+
+    // Pass 2 — red digits, true position
+    if (showHundreds)
+      drawSegDigit(ctx, hundreds, L.padX,                            L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
+    if (showTens)
+      drawSegDigit(ctx, tens,     L.padX + (L.digitW + L.digitGap), L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
+    drawSegDigit(ctx, ones,       L.padX + 2*(L.digitW + L.digitGap), L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
 
     // ── "km/h" label ──────────────────────────────────────────────────────
     //
-    // Yellow, smaller than the digits.  A 1-pixel dark shadow adds depth
-    // so it stays legible over bright sky or grass backgrounds.
+    // Same two-pass drop shadow as the digits: black at +so offset first,
+    // then yellow on top.
 
     ctx.font         = L.kphFont;
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle    = '#000000';
+    ctx.fillText('km/h', L.kphX + so, L.kphY + so);
     ctx.fillStyle    = '#FFD700';
     ctx.fillText('km/h', L.kphX, L.kphY);
 
