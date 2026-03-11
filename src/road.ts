@@ -127,60 +127,60 @@ export class Road {
       -ROAD_CURVE.EASY, ROAD_HILL.NONE);
   }
 
-  // ── road layout: Coconut Beach rhythm ────────────────────────────────────
+  // ── road layout: graded difficulty test track ────────────────────────────
+  // Designed to showcase all curve/hill combinations and stress-test the
+  // grip/understeer mechanic. ~550 segments ≈ 18s at max speed.
 
   private resetRoad(): void {
     this.segments = [];
     this.lastY    = 0;
 
-    // 1. Opening straight — build speed
-    this.addStraight(ROAD_LENGTH.SHORT);
+    // Shorthand so the layout reads clearly
+    const r = (enter: number, hold: number, leave: number, curve: number, hill: number) =>
+      this.addRoad(enter, hold, leave, curve, hill);
 
-    // 2. Gentle right curve — introduce turning
-    this.addCurve(ROAD_LENGTH.MEDIUM, ROAD_CURVE.EASY);
+    const CE = ROAD_CURVE.EASY;   // 2
+    const CM = ROAD_CURVE.MEDIUM; // 4
+    const CH = ROAD_CURVE.HARD;   // 6
+    const HL = ROAD_HILL.LOW;     // 20
+    const HM = ROAD_HILL.MEDIUM;  // 40
 
-    // 3. Short straight
-    this.addStraight(ROAD_LENGTH.SHORT);
+    // ── 1. Opening straight ────────────────────────────────────────────────
+    r(1, 20, 1, 0, 0);                     // 22 segs — build speed
 
-    // 4. Gentle left curve
-    this.addCurve(ROAD_LENGTH.MEDIUM, -ROAD_CURVE.EASY);
+    // ── 2. Easy intro chicane (right → left) ──────────────────────────────
+    r(10, 15, 10, CE, 0);                  // 35 easy right
+    r(10, 15, 10, -CE, 0);                 // 35 easy left
+    r(1, 12, 1, 0, 0);                     // 14 straight
 
-    // 5. Uphill climb — first "ooh" moment
-    this.addHill(ROAD_LENGTH.MEDIUM, ROAD_HILL.MEDIUM);
+    // ── 3. Medium corners ─────────────────────────────────────────────────
+    r(10, 15, 10, CM, 0);                  // 35 medium right
+    r(1, 10, 1, 0, 0);                     // 12 straight
+    r(10, 15, 10, -CM, 0);                 // 35 medium left
+    r(1, 12, 1, 0, 0);                     // 14 straight
 
-    // 6. Brief crest straight
-    this.addStraight(ROAD_LENGTH.SHORT);
+    // ── 4. Hill + curve combo ─────────────────────────────────────────────
+    r(10, 15, 10, 0, HM);                  // 35 uphill
+    r(10, 15, 10, CE, -HM);                // 35 downhill right — crest blind exit
+    r(1, 10, 1, 0, 0);                     // 12 straight
 
-    // 7. Downhill descent
-    this.addHill(ROAD_LENGTH.MEDIUM, -ROAD_HILL.MEDIUM);
+    // ── 5. Hard corners — grip test ───────────────────────────────────────
+    r(10, 15, 10, CH, 0);                  // 35 hard right
+    r(10, 15, 10, -CH, 0);                 // 35 hard left chicane
+    r(1, 10, 1, 0, 0);                     // 12 straight breathing room
+    r(10, 15, 10, CH, HL);                 // 35 hard right over low hill
+    r(10, 15, 10, 0, -HM);                 // 35 downhill relief
+    r(1, 12, 1, 0, 0);                     // 14 straight
 
-    // 8. S-curves — the skill test
-    this.addSCurves();
+    // ── 6. S-curve section ────────────────────────────────────────────────
+    r(10, 15, 10, -CE, 0);                 // 35 easy left
+    r(10, 15, 10, CM, 0);                  // 35 medium right
+    r(10, 15, 10, -CH, 0);                 // 35 hard left
+    r(10, 15, 10, CE, 0);                  // 35 easy right
+    r(1, 10, 1, 0, 0);                     // 12 straight
 
-    // 9. Long straight with rolling gentle hills — breathing room
-    this.addRoad(ROAD_LENGTH.LONG, ROAD_LENGTH.LONG, ROAD_LENGTH.LONG,
-      ROAD_CURVE.NONE, ROAD_HILL.LOW);
-    this.addRoad(ROAD_LENGTH.LONG, ROAD_LENGTH.LONG, ROAD_LENGTH.LONG,
-      ROAD_CURVE.NONE, -ROAD_HILL.LOW);
-
-    // 10. Hard right curve OVER a hill — the real test (can't see exit)
-    this.addCurve(ROAD_LENGTH.MEDIUM, ROAD_CURVE.HARD, ROAD_HILL.HIGH);
-
-    // 11. Downhill straight — reward/relief
-    this.addHill(ROAD_LENGTH.MEDIUM, -ROAD_HILL.MEDIUM);
-    this.addStraight(ROAD_LENGTH.SHORT);
-
-    // 12. Medium left curve
-    this.addCurve(ROAD_LENGTH.MEDIUM, -ROAD_CURVE.MEDIUM);
-
-    // 13. Hard right curve
-    this.addCurve(ROAD_LENGTH.MEDIUM, ROAD_CURVE.HARD);
-
-    // 14. Hard left curve
-    this.addCurve(ROAD_LENGTH.MEDIUM, -ROAD_CURVE.HARD);
-
-    // 15. Long finish straight
-    this.addStraight(ROAD_LENGTH.LONG);
+    // ── 7. Long finish straight ───────────────────────────────────────────
+    r(1, 50, 1, 0, 0);                     // 52 segs — relief & prep for lap
 
     this.placePalmTrees();
   }

@@ -146,6 +146,19 @@ export class Renderer {
       dx += seg.curve;
     }
 
+    // ── Horizon cap: fill gap between halfH and farthest segment so road ────────
+    // converges to a point instead of cutting off into grass at the horizon.
+    // Each segment's grass fillRect only covers sy2→sy1; the strip from halfH
+    // to sy2_farthest is only the initial solid fill — this plugs that gap.
+    if (projected.length > 0) {
+      const far = projected[projected.length - 1];
+      if (far.sy2 > halfH) {
+        ctx.fillStyle = COLORS.GRASS_LIGHT;
+        ctx.fillRect(0, halfH, w, far.sy2 - halfH);
+        drawTrapezoid(ctx, far.sx2, halfH, 0, far.sx2, far.sy2, far.sw2, COLORS.ROAD_LIGHT);
+      }
+    }
+
     // ── Phase 2: render back-to-front (painter's algorithm) ─────────────────
 
     for (let i = projected.length - 1; i >= 0; i--) {
@@ -212,8 +225,8 @@ export class Renderer {
 
     if (!this.carSprites?.isReady()) return;
 
-    // steerAngle is continuous -1…+1; map directly to 37-frame index
-    const frameIndex = Math.round(steerAngle * CAR_SPRITE_CENTER) + CAR_SPRITE_CENTER;
+    // steerAngle -1…+1; cap at 60% of sprite range so nose never points sideways
+    const frameIndex = Math.round(steerAngle * CAR_SPRITE_CENTER * 0.6) + CAR_SPRITE_CENTER;
     const rect       = carFrameRect(frameIndex);
 
     const carH = Math.min(h * 0.20, 190);

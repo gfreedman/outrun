@@ -100,8 +100,12 @@ export class Game {
     // playerX > 1 or < -1 means off-road; allow up to ±2 before hard wall
     // Floor of 0.3 ensures steering works even when off-road friction kills speed.
     const steerRatio = Math.max(0.3, speedRatio);
-    if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * steerRatio * dt;
-    if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * dt;
+    // Grip/understeer: steering authority tapers at speed (tyres lose lateral grip).
+    // At rest: full authority. At max speed: 50% (quadratic roll-off).
+    // Combined with centrifugal force this creates the "on the edge" feel at 290 km/h.
+    const gripFactor = Math.max(0.5, 1 - speedRatio * speedRatio * 0.5);
+    if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * steerRatio * gripFactor * dt;
+    if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * gripFactor * dt;
     this.playerX = Math.max(-2, Math.min(2, this.playerX));
 
     // ── centrifugal force: curves push the player sideways ──
