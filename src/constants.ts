@@ -86,7 +86,7 @@ export const PLAYER_BRAKE_RAMP  = 0.10;
  * measured in road-widths per second at maximum speed.
  * 2.0 = the car can cross the entire road in roughly one second at top speed.
  */
-export const PLAYER_STEERING    = 2.3;
+export const PLAYER_STEERING    = 2.42;
 
 // ── Off-road friction ─────────────────────────────────────────────────────────
 
