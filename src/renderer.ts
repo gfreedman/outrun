@@ -70,6 +70,20 @@ const HUD_ROW_ALPHA = [1.0, 0.82, 0.65] as const;
 /** Number of LED segments in each tachometer row. */
 const HUD_NUM_SEGS = 20;
 
+/**
+ * Tachometer colour zone boundary indices (first segment of each new zone).
+ * Zone 0 = red:    i ∈ [0, HUD_ZONE_SPLIT[0])
+ * Zone 1 = orange: i ∈ [HUD_ZONE_SPLIT[0], HUD_ZONE_SPLIT[1])
+ * Zone 2 = green:  i ∈ [HUD_ZONE_SPLIT[1], HUD_NUM_SEGS)
+ *
+ * Pre-computed at module load so the tach loop does zero arithmetic to find them.
+ */
+const HUD_ZONE_SPLIT  = [Math.round(HUD_NUM_SEGS * 0.33), Math.round(HUD_NUM_SEGS * 0.66)] as const;
+const HUD_ZONE_S      = [0, HUD_ZONE_SPLIT[0], HUD_ZONE_SPLIT[1]]    as const;
+const HUD_ZONE_E      = [HUD_ZONE_SPLIT[0], HUD_ZONE_SPLIT[1], HUD_NUM_SEGS] as const;
+const HUD_COLOR_LIT   = ['#CC0000', '#FF6600', '#00BB00'] as const;
+const HUD_COLOR_UNLIT = ['#280000', '#281200', '#002800'] as const;
+
 // ── ProjectedSeg ──────────────────────────────────────────────────────────────
 
 /**
@@ -198,6 +212,13 @@ export class Renderer
   /** Canvas height when hudLayout was last computed. */
   private hudH = 0;
 
+  /**
+   * Pre-rendered offscreen grain texture for the HUD panel.
+   * Built once on first render and again on resize — then composited each
+   * frame with a single drawImage instead of ~70 individual fillRect calls.
+   */
+  private grainCanvas: OffscreenCanvas | null = null;
+
   /** Smoothed speed value for the HUD display — prevents digit jitter. */
   private displaySpeed = 0;
 
@@ -236,6 +257,11 @@ export class Renderer
       sx1: 0, sy1: 0, sw1: 0,
       sx2: 0, sy2: 0, sw2: 0,
     }));
+
+    // Set once here; ctx.save/restore preserves these settings each frame
+    // so there is no need to repeat them inside renderCar every frame.
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.imageSmoothingQuality = 'high';
   }
 
   // ── Sky ───────────────────────────────────────────────────────────────────
@@ -504,8 +530,6 @@ export class Renderer
     ctx.ellipse(cx, bot + 4, carW * 0.4, 6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
     this.carSprites.draw(ctx, rect, drawX, drawY, Math.round(carW), Math.round(carH));
   }
 
@@ -551,6 +575,43 @@ export class Renderer
     };
   }
 
+  // ── Grain canvas builder ──────────────────────────────────────────────────
+
+  /**
+   * Pre-renders the static pixel-grain texture for the HUD panel to an
+   * OffscreenCanvas.  Called once on first render and on every window resize.
+   *
+   * Subsequent frames composite the result with a single ctx.drawImage() call
+   * instead of iterating the grain loop (~70 fillRect calls) every frame.
+   *
+   * The pattern formula (ax * 7 + ay * 13) % 19 < 2 uses absolute canvas
+   * coordinates so the texture is identical to the original per-frame version.
+   *
+   * @param L - Current HUD layout (provides barW, panelTop, row3Bot, padX).
+   */
+  private buildGrainCanvas(L: HudLayout): void
+  {
+    const gW   = L.barW;
+    const gH   = L.row3Bot - L.panelTop;
+    const off  = new OffscreenCanvas(gW, gH);
+    const gCtx = off.getContext('2d')!;
+    gCtx.fillStyle = '#FF2200';
+
+    for (let gy = 0; gy < gH; gy += 3)
+    {
+      for (let gx = 0; gx < gW; gx += 3)
+      {
+        // Map local offscreen coords back to absolute canvas coords so the
+        // grain pattern matches exactly what the original loop produced.
+        const ax = gx + L.padX;
+        const ay = gy + L.panelTop;
+        if ((ax * 7 + ay * 13) % 19 < 2) gCtx.fillRect(gx, gy, 1, 1);
+      }
+    }
+
+    this.grainCanvas = off;
+  }
+
   // ── HUD ───────────────────────────────────────────────────────────────────
 
   /**
@@ -580,6 +641,7 @@ export class Renderer
     if (w !== this.hudW || h !== this.hudH)
     {
       this.hudLayout = this.computeHudLayout(w, h);
+      this.buildGrainCanvas(this.hudLayout);
       this.hudW = w;
       this.hudH = h;
     }
@@ -617,17 +679,13 @@ export class Renderer
     ctx.fillStyle = '#FF4422';
     ctx.fillText('km/h', L.padX, L.lblBot);
 
-    // Static pixel-grain texture (deterministic — no per-frame flicker)
-    ctx.globalAlpha = 0.10;
-    ctx.fillStyle   = '#FF2200';
-    for (let gy = L.panelTop; gy < L.row3Bot; gy += 3)
+    // Pre-rendered grain: one drawImage instead of ~70 fillRects every frame
+    if (this.grainCanvas)
     {
-      for (let gx = L.padX; gx < L.padX + L.barW; gx += 3)
-      {
-        if ((gx * 7 + gy * 13) % 19 < 2) ctx.fillRect(gx, gy, 1, 1);
-      }
+      ctx.globalAlpha = 0.10;
+      ctx.drawImage(this.grainCanvas, L.padX, L.panelTop);
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
 
     // 3-row tachometer bars
     const amp  = 0.04 * (1 - ratio * 0.65);
@@ -641,24 +699,42 @@ export class Renderer
     const rowFills = [fill0, fill1, fill2];
     const rowBots  = [L.row1Bot, L.row2Bot, L.row3Bot];
 
+    // 3-row tachometer — batched by colour zone.
+    // Instead of 20 × (fillStyle + fillRect) per row, we group all segments
+    // of each colour into one beginPath/rect.../fill pass.
+    // Max 6 fillStyle changes per row (lit + unlit for each of 3 zones),
+    // versus 20 previously — a 3× reduction in canvas state changes.
     for (let row = 0; row < 3; row++)
     {
       const rBot   = rowBots[row];
       const filled = Math.round(rowFills[row] * HUD_NUM_SEGS);
-      ctx.globalAlpha = HUD_ROW_ALPHA[row];  // constant array — no allocation
+      ctx.globalAlpha = HUD_ROW_ALPHA[row];
+      const y = rBot - L.segH;
 
-      for (let i = 0; i < HUD_NUM_SEGS; i++)
+      for (let zone = 0; zone < 3; zone++)
       {
-        // segStride pre-computed (segW + segGap) avoids repeated addition
-        const x = L.padX + i * L.segStride;
-        // tInv pre-computed 1/(NUM_SEGS-1) avoids repeated division
-        const t = i * L.tInv;
+        const zs  = HUD_ZONE_S[zone];
+        const ze  = HUD_ZONE_E[zone];
+        // `lit` = first unlit index in this zone (clamped to zone bounds)
+        const lit = Math.max(zs, Math.min(filled, ze));
 
-        ctx.fillStyle = i < filled
-          ? (t < 0.33 ? '#CC0000' : t < 0.66 ? '#FF6600' : '#00BB00')
-          : (t < 0.33 ? '#280000' : t < 0.66 ? '#281200' : '#002800');
+        // Draw the lit portion of this zone in one path
+        if (lit > zs)
+        {
+          ctx.fillStyle = HUD_COLOR_LIT[zone];
+          ctx.beginPath();
+          for (let i = zs; i < lit; i++) ctx.rect(L.padX + i * L.segStride, y, L.segW, L.segH);
+          ctx.fill();
+        }
 
-        ctx.fillRect(x, rBot - L.segH, L.segW, L.segH);
+        // Draw the unlit portion of this zone in one path
+        if (ze > lit)
+        {
+          ctx.fillStyle = HUD_COLOR_UNLIT[zone];
+          ctx.beginPath();
+          for (let i = lit; i < ze; i++) ctx.rect(L.padX + i * L.segStride, y, L.segW, L.segH);
+          ctx.fill();
+        }
       }
     }
 
