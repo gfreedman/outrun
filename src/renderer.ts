@@ -92,13 +92,15 @@ const SEG_DIGIT = [
 const BAR_SEGS = 20;
 
 /**
- * Segment index boundaries for the speed bar's three colour zones.
- *   Cyan  zone (~60%): segments [0,            BAR_CYAN_END)  — cruising speed
- *   Green zone (~35%): segments [BAR_CYAN_END,  BAR_GREEN_END) — high speed
- *   Pink  cap  (~5%):  segments [BAR_GREEN_END, BAR_SEGS)     — redline
+ * Speed bar colour zones — sourced from the original OutRun (1986) Sega
+ * System 16 hardware palette as faithfully as RGB hex allows:
+ *   Steel-blue zone (~80%): pale desaturated cyan-blue — low to mid speed
+ *   Green zone      (~20%): medium green               — high speed
  */
-const BAR_CYAN_END  = Math.round(BAR_SEGS * 0.60);  // = 12
-const BAR_GREEN_END = BAR_SEGS - 1;                   // = 19  (last segment = pink)
+const BAR_BLUE_END    = Math.round(BAR_SEGS * 0.80);  // = 16
+const BAR_COLOR_BLUE  = '#8899BB';   // pale steel-blue  (System 16 low–mid)
+const BAR_COLOR_GREEN = '#33BB44';   // medium green      (System 16 high speed)
+const BAR_COLOR_UNLIT = '#0D0D0D';   // near-black        (segment off)
 
 // ── ProjectedSeg ──────────────────────────────────────────────────────────────
 
@@ -647,11 +649,13 @@ export class Renderer
     const digitT   = Math.max(2, Math.round(digitH * 0.14));
     const digitGap = Math.max(2, Math.round(digitW * 0.14));
 
-    // Speed bar — single thin row beneath the digits
-    const barH      = Math.max(5, Math.round(h * 0.018));
+    // Speed bar — chunky segments matching the arcade cabinet proportions.
+    // Height is ~3.2% of canvas height (was 1.8%) for visible, chunky blocks.
+    // Gap between segments is a hard 2px so it doesn't scale up on large displays.
+    const barH      = Math.max(8, Math.round(h * 0.032));
     const barGap    = Math.max(4, Math.round(h * 0.010));   // gap between digits and bar
-    const barSegGap = Math.max(1, Math.round(w * 0.0025));
-    const barSegW   = Math.max(6, Math.round(w * 0.011));
+    const barSegGap = 2;                                    // hard 2px — matches arcade look
+    const barSegW   = Math.max(8, Math.round(w * 0.013));
 
     // Build positions upward from bottom edge
     const barBotY   = h - padY;
@@ -783,10 +787,9 @@ export class Renderer
     for (let i = 0; i < BAR_SEGS; i++)
     {
       let color: string;
-      if (i >= filled)            color = '#111111';
-      else if (i < BAR_CYAN_END)  color = '#00CCFF';
-      else if (i < BAR_GREEN_END) color = '#00EE44';
-      else                        color = '#FF44BB';
+      if (i >= filled)           color = BAR_COLOR_UNLIT;
+      else if (i < BAR_BLUE_END) color = BAR_COLOR_BLUE;
+      else                       color = BAR_COLOR_GREEN;
 
       // Only update fillStyle when the colour actually changes — avoids
       // redundant canvas state writes on the long run of same-colour segments.
