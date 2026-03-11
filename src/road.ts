@@ -1,30 +1,88 @@
+/**
+ * road.ts
+ *
+ * Builds and stores the array of road segments that define the track layout.
+ *
+ * Key idea — pseudo-3D road geometry:
+ *   The road is modelled as a long array of flat "slices", each SEGMENT_LENGTH
+ *   world units deep.  Every slice knows its horizontal curve value and its
+ *   vertical Y position.  The renderer projects each slice through a virtual
+ *   camera to produce the 2-D trapezoid the player sees on screen.
+ *
+ *   Think of it like a deck of cards laid in a line stretching into the distance.
+ *   Each card is one RoadSegment.  Bend or tilt the line of cards and you get
+ *   curves and hills.
+ */
+
 import { RoadSegment, ProjectedPoint, SegmentColor } from './types';
-import { SEGMENT_LENGTH, COLORS, ROAD_LENGTH, ROAD_CURVE, ROAD_HILL } from './constants';
+import { SEGMENT_LENGTH, COLORS, ROAD_CURVE, ROAD_HILL } from './constants';
 
-// ── easing helpers ────────────────────────────────────────────────────────────
+// ── Easing functions ──────────────────────────────────────────────────────────
+//
+// "Easing" makes transitions smooth — instead of snapping instantly from
+// value A to value B, we glide between them following a curved path.
+// percent goes from 0.0 (start) to 1.0 (end).
 
-function easeIn(a: number, b: number, percent: number): number {
+/**
+ * Eases IN: starts slow, ends fast.  Like a car pulling away from rest.
+ * Uses a quadratic curve: slow at the beginning, accelerating toward the end.
+ *
+ * @param a       - Start value.
+ * @param b       - End value.
+ * @param percent - Progress from 0 (at a) to 1 (at b).
+ * @returns Interpolated value between a and b.
+ */
+function easeIn(a: number, b: number, percent: number): number
+{
   return a + (b - a) * Math.pow(percent, 2);
 }
-function easeOut(a: number, b: number, percent: number): number {
-  return a + (b - a) * (1 - Math.pow(1 - percent, 2));
-}
-function easeInOut(a: number, b: number, percent: number): number {
+
+/**
+ * Eases IN and OUT: starts slow, accelerates, then slows again at the end.
+ * Uses a cosine curve — the smoothest possible S-shaped transition.
+ * Used for both curve and hill height changes so bends feel gradual.
+ *
+ * @param a       - Start value.
+ * @param b       - End value.
+ * @param percent - Progress from 0 (at a) to 1 (at b).
+ * @returns Interpolated value between a and b.
+ */
+function easeInOut(a: number, b: number, percent: number): number
+{
   return a + (b - a) * ((-Math.cos(percent * Math.PI) / 2) + 0.5);
 }
 
-// ── projected point factory ───────────────────────────────────────────────────
+// ── Internal factory helpers ───────────────────────────────────────────────────
 
-function makeProjectedPoint(worldZ: number, worldY: number = 0): ProjectedPoint {
+/**
+ * Creates a ProjectedPoint at a given world-space Z and Y position.
+ * The screen fields are all zero at creation; the renderer fills them in each frame.
+ *
+ * @param worldZ - Depth along the road (how far ahead this point is).
+ * @param worldY - Height above the flat ground (positive = uphill, negative = downhill).
+ * @returns A fresh ProjectedPoint ready to be assigned to p1 or p2.
+ */
+function makeProjectedPoint(worldZ: number, worldY: number = 0): ProjectedPoint
+{
   return {
     world:  { x: 0, y: worldY, z: worldZ },
     screen: { x: 0, y: 0, w: 0, scale: 0 },
   };
 }
 
-// Grass/rumble: groups of 8 → ~3.75 transitions/sec at max speed.
-// Lane dashes: groups of 4 → double frequency, matching OutRun centre-line look.
-function makeColor(i: number): SegmentColor {
+/**
+ * Computes the colour set for segment number i.
+ *
+ * The road uses two alternating colour bands (groups of 8 segments each).
+ * Within each band, the grass and rumble strip share the same light/dark state,
+ * while the centre-line lane dash alternates twice as fast (groups of 4)
+ * to give the classic dashed-line look as the road scrolls past.
+ *
+ * @param i - Segment index (0-based).
+ * @returns SegmentColor with road, grass, rumble, and lane colours.
+ */
+function makeColor(i: number): SegmentColor
+{
   const band = Math.floor(i / 8) % 2 === 0;
   const dash = Math.floor(i / 4) % 2 === 0;
   return {
@@ -35,28 +93,53 @@ function makeColor(i: number): SegmentColor {
   };
 }
 
-// ── Road ──────────────────────────────────────────────────────────────────────
+// ── Road class ────────────────────────────────────────────────────────────────
 
-export class Road {
+export class Road
+{
+  /** All segments in order from start to end of the track. */
   segments: RoadSegment[] = [];
+
+  /**
+   * The Y (height) coordinate of the last segment added.
+   * Tracked so that hill sections chain smoothly — each new section
+   * starts from where the previous one ended.
+   */
   private lastY = 0;
 
-  constructor() {
+  /** Builds the track layout immediately on construction. */
+  constructor()
+  {
     this.resetRoad();
   }
 
-  get count(): number {
+  /** Total number of segments in the track. Used for wrap-around maths. */
+  get count(): number
+  {
     return this.segments.length;
   }
 
-  // ── core builder ─────────────────────────────────────────────────────────
+  // ── Core builder ─────────────────────────────────────────────────────────
 
-  private addSegment(curve: number, y: number): void {
-    const i = this.segments.length;
-    const seg: RoadSegment = {
+  /**
+   * Appends one segment to the road array.
+   *
+   * p1 is the NEAR edge of the strip (worldZ = i * SEGMENT_LENGTH, y = lastY).
+   * p2 is the FAR  edge of the strip (worldZ = (i+1) * SEGMENT_LENGTH, y = y).
+   *
+   * After adding, lastY is updated so the next segment starts at this segment's far end.
+   *
+   * @param curve - Horizontal bend strength for this segment (0 = straight, 6 = hard).
+   * @param y     - World-space height of this segment's far edge.
+   */
+  private addSegment(curve: number, y: number): void
+  {
+    const i      = this.segments.length;
+    const seg: RoadSegment =
+    {
       index: i,
-      p1: makeProjectedPoint(i * SEGMENT_LENGTH, this.lastY),
-      p2: makeProjectedPoint((i + 1) * SEGMENT_LENGTH, y),
+      p1:    makeProjectedPoint(i * SEGMENT_LENGTH, this.lastY),
+      p2:    makeProjectedPoint((i + 1) * SEGMENT_LENGTH, y),
       curve,
       color: makeColor(i),
     };
@@ -64,28 +147,46 @@ export class Road {
     this.segments.push(seg);
   }
 
-  // Adds a road section with eased entry, constant hold, and eased exit.
-  // curve and hill are the TARGET values during the hold phase.
+  /**
+   * Adds a road section made of three phases: ease in → hold → ease out.
+   *
+   * This is what makes OutRun's curves feel natural — instead of snapping to a
+   * fixed bend angle, the road gradually winds up to the target curve over
+   * `enter` segments, holds it for `hold` segments, then unwinds over `leave`
+   * segments.  Hills work the same way along the Y axis.
+   *
+   * @param enter - Number of segments to ease IN to the target curve/hill.
+   * @param hold  - Number of segments to hold the target curve/hill constant.
+   * @param leave - Number of segments to ease OUT back to zero curve/flat.
+   * @param curve - Target horizontal bend during the hold phase.
+   * @param hill  - Total world-unit height change over the whole section.
+   *                Positive = uphill, negative = downhill.
+   *                Small vs CAMERA_HEIGHT (1000): HIGH=60 ≈ 6% grade.
+   */
   private addRoad(
     enter: number, hold: number, leave: number,
-    curve: number, hill: number,
-  ): void {
+    curve: number, hill:  number,
+  ): void
+  {
     const startY = this.lastY;
-    const endY   = startY + hill; // hill is total world-unit height change (NOT per-segment)
+    const endY   = startY + hill;   // total rise/fall, NOT per-segment
 
-    for (let n = 0; n < enter; n++) {
+    for (let n = 0; n < enter; n++)
+    {
       this.addSegment(
         easeIn(0, curve, n / enter),
         easeInOut(startY, endY, n / (enter + hold + leave)),
       );
     }
-    for (let n = 0; n < hold; n++) {
+    for (let n = 0; n < hold; n++)
+    {
       this.addSegment(
         curve,
         easeInOut(startY, endY, (enter + n) / (enter + hold + leave)),
       );
     }
-    for (let n = 0; n < leave; n++) {
+    for (let n = 0; n < leave; n++)
+    {
       this.addSegment(
         easeIn(curve, 0, n / leave),
         easeInOut(startY, endY, (enter + hold + n) / (enter + hold + leave)),
@@ -93,49 +194,25 @@ export class Road {
     }
   }
 
-  // ── convenience methods ───────────────────────────────────────────────────
+  // ── Track layout ──────────────────────────────────────────────────────────
 
-  private addStraight(length: number = ROAD_LENGTH.MEDIUM): void {
-    this.addRoad(1, length, 1, ROAD_CURVE.NONE, ROAD_HILL.NONE);
-  }
-
-  private addCurve(
-    length: number = ROAD_LENGTH.MEDIUM,
-    curve: number  = ROAD_CURVE.MEDIUM,
-    hill: number   = ROAD_HILL.NONE,
-  ): void {
-    this.addRoad(length, length, length, curve, hill);
-  }
-
-  private addHill(
-    length: number = ROAD_LENGTH.MEDIUM,
-    hill: number   = ROAD_HILL.MEDIUM,
-  ): void {
-    this.addRoad(length, length, length, ROAD_CURVE.NONE, hill);
-  }
-
-  private addSCurves(): void {
-    this.addRoad(ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM,
-      -ROAD_CURVE.EASY, ROAD_HILL.NONE);
-    this.addRoad(ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM,
-       ROAD_CURVE.MEDIUM, ROAD_HILL.NONE);
-    this.addRoad(ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM,
-      -ROAD_CURVE.HARD, ROAD_HILL.NONE);
-    this.addRoad(ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM,
-       ROAD_CURVE.EASY, ROAD_HILL.NONE);
-    this.addRoad(ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM, ROAD_LENGTH.MEDIUM,
-      -ROAD_CURVE.EASY, ROAD_HILL.NONE);
-  }
-
-  // ── road layout: graded difficulty test track ────────────────────────────
-  // Designed to showcase all curve/hill combinations and stress-test the
-  // grip/understeer mechanic. ~550 segments ≈ 18s at max speed.
-
-  private resetRoad(): void {
+  /**
+   * Clears all existing segments and builds the full test track from scratch.
+   *
+   * Layout philosophy — graded difficulty:
+   *   Start easy (straight, gentle curves) so the player can build speed.
+   *   Introduce hills mid-track for the "ooh!" blind-crest moment.
+   *   Escalate to hard corners so the grip/understeer mechanic is stress-tested.
+   *   End with a long straight as relief and to let the road wrap cleanly.
+   *
+   * Total: ~550 segments ≈ 18 seconds at max speed before the track loops.
+   */
+  private resetRoad(): void
+  {
     this.segments = [];
     this.lastY    = 0;
 
-    // Shorthand so the layout reads clearly
+    // Short alias so the layout table below reads like a design spreadsheet
     const r = (enter: number, hold: number, leave: number, curve: number, hill: number) =>
       this.addRoad(enter, hold, leave, curve, hill);
 
@@ -146,76 +223,106 @@ export class Road {
     const HM = ROAD_HILL.MEDIUM;  // 40
 
     // ── 1. Opening straight ────────────────────────────────────────────────
-    r(1, 20, 1, 0, 0);                     // 22 segs — build speed
+    r(1, 20, 1,   0,  0);                 // 22 segs — build speed from rest
 
     // ── 2. Easy intro chicane (right → left) ──────────────────────────────
-    r(10, 15, 10, CE, 0);                  // 35 easy right
-    r(10, 15, 10, -CE, 0);                 // 35 easy left
-    r(1, 12, 1, 0, 0);                     // 14 straight
+    r(10, 15, 10,  CE,  0);               // 35 easy right
+    r(10, 15, 10, -CE,  0);               // 35 easy left
+    r(1,  12,  1,   0,  0);               // 14 straight
 
     // ── 3. Medium corners ─────────────────────────────────────────────────
-    r(10, 15, 10, CM, 0);                  // 35 medium right
-    r(1, 10, 1, 0, 0);                     // 12 straight
-    r(10, 15, 10, -CM, 0);                 // 35 medium left
-    r(1, 12, 1, 0, 0);                     // 14 straight
+    r(10, 15, 10,  CM,  0);               // 35 medium right
+    r(1,  10,  1,   0,  0);               // 12 straight
+    r(10, 15, 10, -CM,  0);               // 35 medium left
+    r(1,  12,  1,   0,  0);               // 14 straight
 
     // ── 4. Hill + curve combo ─────────────────────────────────────────────
-    r(10, 15, 10, 0, HM);                  // 35 uphill
-    r(10, 15, 10, CE, -HM);                // 35 downhill right — crest blind exit
-    r(1, 10, 1, 0, 0);                     // 12 straight
+    r(10, 15, 10,   0,  HM);              // 35 uphill
+    r(10, 15, 10,  CE, -HM);              // 35 downhill right — blind crest exit
+    r(1,  10,  1,   0,   0);              // 12 straight
 
     // ── 5. Hard corners — grip test ───────────────────────────────────────
-    r(10, 15, 10, CH, 0);                  // 35 hard right
-    r(10, 15, 10, -CH, 0);                 // 35 hard left chicane
-    r(1, 10, 1, 0, 0);                     // 12 straight breathing room
-    r(10, 15, 10, CH, HL);                 // 35 hard right over low hill
-    r(10, 15, 10, 0, -HM);                 // 35 downhill relief
-    r(1, 12, 1, 0, 0);                     // 14 straight
+    r(10, 15, 10,  CH,   0);              // 35 hard right
+    r(10, 15, 10, -CH,   0);              // 35 hard left chicane
+    r(1,  10,  1,   0,   0);              // 12 straight breathing room
+    r(10, 15, 10,  CH,  HL);              // 35 hard right over low hill
+    r(10, 15, 10,   0, -HM);              // 35 downhill relief
+    r(1,  12,  1,   0,   0);              // 14 straight
 
     // ── 6. S-curve section ────────────────────────────────────────────────
-    r(10, 15, 10, -CE, 0);                 // 35 easy left
-    r(10, 15, 10, CM, 0);                  // 35 medium right
-    r(10, 15, 10, -CH, 0);                 // 35 hard left
-    r(10, 15, 10, CE, 0);                  // 35 easy right
-    r(1, 10, 1, 0, 0);                     // 12 straight
+    r(10, 15, 10, -CE,  0);               // 35 easy left
+    r(10, 15, 10,  CM,  0);               // 35 medium right
+    r(10, 15, 10, -CH,  0);               // 35 hard left
+    r(10, 15, 10,  CE,  0);               // 35 easy right
+    r(1,  10,  1,   0,  0);               // 12 straight
 
     // ── 7. Long finish straight ───────────────────────────────────────────
-    r(1, 50, 1, 0, 0);                     // 52 segs — relief & prep for lap
+    r(1,  50,  1,   0,  0);               // 52 segs — relief & prep for lap
 
     this.placePalmTrees();
   }
 
-  // ── roadside sprite placement ─────────────────────────────────────────────
+  // ── Roadside sprite placement ─────────────────────────────────────────────
 
-  private placePalmTrees(): void {
-    const ROAD_EDGE = 2200; // world units from center to tree (just outside ROAD_WIDTH=2000)
+  /**
+   * Iterates over every segment and assigns palm tree sprites to some of them.
+   *
+   * Placement rules:
+   *   On curves: trees on BOTH sides every 4 segments — denser placement
+   *              gives the player visual cues about the bend's severity.
+   *   On straights: one tree every 8 segments, alternating left and right —
+   *                 sparser so the road feels open and fast.
+   *
+   * worldX is measured in world units from road centre.
+   * ROAD_EDGE = 2200 puts trees just outside the road boundary (ROAD_WIDTH = 2000).
+   */
+  private placePalmTrees(): void
+  {
+    const ROAD_EDGE = 2200;   // world units from centre to tree line
 
-    for (let i = 0; i < this.segments.length; i++) {
-      const seg = this.segments[i];
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg     = this.segments[i];
       const onCurve = Math.abs(seg.curve) > ROAD_CURVE.NONE;
 
-      if (onCurve) {
-        // Denser on curves — visual cue; place both sides every 4 segments
-        if (i % 4 === 0) {
+      if (onCurve)
+      {
+        // Dense bilateral placement on curves — every 4 segments, both sides
+        if (i % 4 === 0)
+        {
           seg.sprites = [
-            { id: 'PALM', worldX: -ROAD_EDGE },
-            { id: 'PALM', worldX:  ROAD_EDGE },
+            { id: 'PALM_SMALL', worldX: -ROAD_EDGE },
+            { id: 'PALM_SMALL', worldX:  ROAD_EDGE },
           ];
         }
-      } else {
-        // Sparser on straights, alternating sides every 8 segments
-        if (i % 8 === 0) {
+      }
+      else
+      {
+        // Sparse alternating placement on straights — every 8 segments, one side
+        if (i % 8 === 0)
+        {
           const side = (Math.floor(i / 8) % 2 === 0) ? -ROAD_EDGE : ROAD_EDGE;
-          seg.sprites = [{ id: 'PALM', worldX: side }];
+          seg.sprites = [{ id: 'PALM_SMALL', worldX: side }];
         }
       }
     }
   }
 
-  // ── lookup ────────────────────────────────────────────────────────────────
+  // ── Lookup ────────────────────────────────────────────────────────────────
 
-  findSegment(playerZ: number): RoadSegment {
-    const n = this.count;
+  /**
+   * Returns the segment the player is currently standing on.
+   *
+   * playerZ increases as the player moves forward.  We divide by SEGMENT_LENGTH
+   * to find which "slot" the player is in, then wrap around using modulo so the
+   * track loops seamlessly when the player reaches the end.
+   *
+   * @param playerZ - Player's current depth position in world units.
+   * @returns The RoadSegment beneath the player.
+   */
+  findSegment(playerZ: number): RoadSegment
+  {
+    const n   = this.count;
     const idx = Math.floor(playerZ / SEGMENT_LENGTH) % n;
     return this.segments[(idx + n) % n];
   }
