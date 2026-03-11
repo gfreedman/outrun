@@ -518,7 +518,6 @@ export class Renderer
       {
         ctx.fillStyle = COLORS.SAND_LIGHT;
         ctx.fillRect(0, halfH, w, far.sy2 - halfH);
-        drawTrapezoid(ctx, far.sx2, halfH, 0, far.sx2, far.sy2, far.sw2, COLORS.ROAD_LIGHT);
       }
     }
 
@@ -713,10 +712,11 @@ export class Renderer
     }
     const L = this.hudLayout!;
 
-    // Smooth the displayed speed slightly so digits don't tick too fast at
-    // high speed, but still respond quickly enough to feel live.
-    this.displaySpeed += (speed - this.displaySpeed) * 0.12;
-    const kmh      = Math.min(999, Math.max(0, Math.round(this.displaySpeed * (290 / PLAYER_MAX_SPEED))));
+    // Display actual speed directly — physics integration is already smooth
+    // enough that no smoothing filter is needed, and a filter causes the
+    // readout to lag at 0 after returning from off-road.
+    this.displaySpeed = speed;
+    const kmh      = Math.min(999, Math.max(0, Math.round(speed * (290 / PLAYER_MAX_SPEED))));
     const hundreds = Math.floor(kmh / 100);
     const tens     = Math.floor((kmh % 100) / 10);
     const ones     = kmh % 10;

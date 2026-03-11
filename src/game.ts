@@ -258,8 +258,12 @@ export class Game
     const steerRatio = Math.max(0.3, speedRatio);
     const gripFactor = Math.max(0.68, 1 - speedRatio * speedRatio * 0.5);
 
-    if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * steerRatio * gripFactor * dt;
-    if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * gripFactor * dt;
+    // Lateral movement requires forward speed — a stopped car cannot slide sideways.
+    if (this.speed > 0)
+    {
+      if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * steerRatio * gripFactor * dt;
+      if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * gripFactor * dt;
+    }
 
     // Hard wall at ±2 — can't go further off-road than one road-width off the edge
     this.playerX = Math.max(-2, Math.min(2, this.playerX));
@@ -342,9 +346,14 @@ export class Game
     if (this.offRoad)
     {
       this.speed           -= OFFROAD_DECEL * dt;
+      // If the player is pressing throttle off-road, maintain a minimum crawl
+      // speed (~15 km/h) so the car isn't completely frozen and the speedometer
+      // reads non-zero while steering back to the road.
+      if (input.isDown('ArrowUp'))
+        this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * 0.05);
       this.offRoadRecovery  = 0;
-      // Random horizon jitter simulates rough grass terrain
-      this.jitterY = (Math.random() - 0.5) * 8;
+      // Random horizon jitter simulates rough grass terrain — only when moving
+      this.jitterY = this.speed > 0 ? (Math.random() - 0.5) * 8 : 0;
     }
     else
     {

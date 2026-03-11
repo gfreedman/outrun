@@ -193,8 +193,8 @@ export const COLORS =
 
   // Sand / shoulder — Coconut Beach palette from the Sega System 16 hardware.
   // Two warm alternating tones create the scrolling banding rhythm.
-  SAND_LIGHT:  '#D4B483',  // warm pale sand (dominant shoulder colour)
-  SAND_DARK:   '#C09A5A',  // slightly deeper amber-tan (alternating stripe)
+  SAND_LIGHT:  '#EDE0C8',  // warm pale sand (dominant shoulder colour)
+  SAND_DARK:   '#E0CEB0',  // slightly deeper amber-tan (alternating stripe)
 
   // Centre lane dash colour
   LANE:         '#CCCCCC',
