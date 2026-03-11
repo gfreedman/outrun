@@ -18,7 +18,7 @@ export const ROAD_WIDTH     = 2000;
 export const SEGMENT_LENGTH = 200;
 
 /** How many segments ahead of the player are drawn each frame. */
-export const DRAW_DISTANCE  = 150;
+export const DRAW_DISTANCE  = 200;
 
 /**
  * Horizontal field-of-view in degrees.
@@ -37,9 +37,9 @@ export const CAMERA_DEPTH   = 1 / Math.tan((FOV_DEG / 2) * Math.PI / 180);
 
 /**
  * Top speed in world units per second.
- * Calibrated so the road scrolls at roughly 290 km/h (≈30 segments/sec).
+ * Calibrated so the road scrolls at roughly 450 km/h (≈45 segments/sec).
  */
-export const PLAYER_MAX_SPEED   = 6000;
+export const PLAYER_MAX_SPEED   = 9000;
 
 // ── Acceleration — three-phase "Alive & Kinetic" curve ───────────────────────
 
@@ -48,13 +48,13 @@ export const PLAYER_MAX_SPEED   = 6000;
  * Tyres are still finding grip so power delivery is limited.
  * A smoothstep ramp blends from ACCEL_LOW up to ACCEL_MID over this band.
  */
-export const PLAYER_ACCEL_LOW   = 850;
+export const PLAYER_ACCEL_LOW   = 1400;
 
 /**
  * Peak acceleration during the main thrust band (15–80% of max).
  * Also used as the starting point of the terminal taper (80–100%).
  */
-export const PLAYER_ACCEL_MID   = 1550;
+export const PLAYER_ACCEL_MID   = 2800;
 
 // ── Coasting (lift-off deceleration) ─────────────────────────────────────────
 
@@ -100,7 +100,7 @@ export const OFFROAD_MAX_RATIO      = 0.30;
  * Extra deceleration force applied while the car is on grass, in world units/s².
  * Must be greater than PLAYER_ACCEL_MID so the car cannot accelerate off-road.
  */
-export const OFFROAD_DECEL          = 3500;
+export const OFFROAD_DECEL          = 5500;
 
 /**
  * Time in seconds for full speed recovery after returning to the asphalt.
@@ -137,7 +137,7 @@ export const ROAD_HILL   = { NONE: 0, LOW: 20, MEDIUM: 40, HIGH: 60 } as const;
  * Steering authority at full speed is ~1.0 road-widths/sec after grip reduction,
  * creating the tight on-the-limit feel of 290 km/h cornering.
  */
-export const CENTRIFUGAL    = 0.3;
+export const CENTRIFUGAL    = 0.5;
 
 /**
  * How fast the sky background shifts horizontally when on a curve.
