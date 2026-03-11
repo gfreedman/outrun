@@ -87,7 +87,7 @@ function makeColor(i: number): SegmentColor
   const dash = Math.floor(i / 4) % 2 === 0;
   return {
     road:   band ? COLORS.ROAD_LIGHT  : COLORS.ROAD_DARK,
-    grass:  band ? COLORS.GRASS_LIGHT : COLORS.GRASS_DARK,
+    grass:  band ? COLORS.SAND_LIGHT : COLORS.SAND_DARK,
     rumble: band ? COLORS.RUMBLE_RED  : COLORS.RUMBLE_WHITE,
     lane:   dash ? COLORS.LANE        : '',
   };

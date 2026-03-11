@@ -427,7 +427,7 @@ export class Renderer
 
     // Solid grass fill — prevents a bare gap between the horizon and the
     // farthest visible road segment on flat sections.
-    ctx.fillStyle = COLORS.GRASS_LIGHT;
+    ctx.fillStyle = COLORS.SAND_LIGHT;
     ctx.fillRect(0, halfH, w, halfH);
 
     const startIndex  = Math.floor(playerZ / SEGMENT_LENGTH) % segmentCount;
@@ -516,7 +516,7 @@ export class Renderer
       const far = this.projPool[this.projCount - 1];
       if (far.sy2 > halfH)
       {
-        ctx.fillStyle = COLORS.GRASS_LIGHT;
+        ctx.fillStyle = COLORS.SAND_LIGHT;
         ctx.fillRect(0, halfH, w, far.sy2 - halfH);
         drawTrapezoid(ctx, far.sx2, halfH, 0, far.sx2, far.sy2, far.sw2, COLORS.ROAD_LIGHT);
       }

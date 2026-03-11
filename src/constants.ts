@@ -191,9 +191,10 @@ export const COLORS =
   RUMBLE_RED:   '#CC0000',
   RUMBLE_WHITE: '#FFFFFF',
 
-  // Grass verges — saturated arcade greens that alternate in bands
-  GRASS_LIGHT:  '#10AA10',
-  GRASS_DARK:   '#009A00',
+  // Sand / shoulder — Coconut Beach palette from the Sega System 16 hardware.
+  // Two warm alternating tones create the scrolling banding rhythm.
+  SAND_LIGHT:  '#D4B483',  // warm pale sand (dominant shoulder colour)
+  SAND_DARK:   '#C09A5A',  // slightly deeper amber-tan (alternating stripe)
 
   // Centre lane dash colour
   LANE:         '#CCCCCC',
