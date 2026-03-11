@@ -19,7 +19,7 @@ from scipy.ndimage import label as sp_label, binary_dilation, uniform_filter
 PAD          = 8      # transparent padding added around each extracted frame
 BG_CHROMA    = 20     # max chroma for a pixel to be treated as background
 BG_TOL       = 80     # L1 distance from estimated BG colour for flood-fill
-EXTRACT_MULT = 1.6    # how much wider to extract (× cell width) — captures overflow
+EXTRACT_MULT = 2.2    # how much wider to extract (× cell width) — captures overflow
 
 SRC_RIGHT = "right.png"
 SRC_LEFT  = "left.png"

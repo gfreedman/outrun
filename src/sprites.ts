@@ -40,7 +40,7 @@ export interface SpriteRect
  *   index = Math.round(steerAngle * CAR_SPRITE_CENTER * 0.6) + CAR_SPRITE_CENTER
  * The 0.6 cap prevents the nose from pointing sideways at full lock.
  */
-export const CAR_SPRITE_FRAME_W = 300;   // pixels per frame
+export const CAR_SPRITE_FRAME_W = 312;   // pixels per frame
 export const CAR_SPRITE_FRAME_H = 149;   // pixels per frame
 export const CAR_SPRITE_TOTAL   = 37;    // total frames in the strip
 export const CAR_SPRITE_CENTER  = 18;    // index of the straight-ahead frame
@@ -71,9 +71,9 @@ export function carFrameRect(index: number): SpriteRect
  * Generated offline by sprites/build_sprite_sheet.py.
  */
 export const CAR_PIVOT_OFFSETS: number[] = [
-  3, -23, -23, -25, -25, -32, -31, -42, -42, -15, -15, -25, -28,
-  -3, -10, -9, -9, 6, 3, 3, 9, 12, 12, 5, 30, 28, 17, 17,
-  44, 44, 33, 34, 26, 26, 25, 25, -2,
+  3, -13, -12, -41, -41, -32, -31, -29, -33, -36, -36, -25, -28,
+  -3, -10, -9, -9, 6, 3, 3, 9, 12, 12, 5, 30, 28, 38, 38,
+  36, 31, 33, 34, 43, 43, 14, 15, -2,
 ];
 
 // ── Roadside sprites ──────────────────────────────────────────────────────────
