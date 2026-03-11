@@ -293,8 +293,9 @@ export class Game
       if (centForce > availGrip * DRIFT_ONSET)
       {
         const excess   = centForce - availGrip * DRIFT_ONSET;
-        // Slide direction matches centrifugal direction (centrifugal = -curve sign)
-        const slideDir = playerSegment.curve > 0 ? 1 : -1;
+        // Centrifugal does playerX -= curve, so positive curve pushes LEFT (-1 direction).
+        // Slide must reinforce the same direction, not fight it.
+        const slideDir = playerSegment.curve > 0 ? -1 : 1;
         this.slideVelocity += slideDir * excess * DRIFT_RATE * dt;
       }
     }
@@ -309,8 +310,8 @@ export class Game
     const decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
     this.slideVelocity *= Math.max(0, 1 - decayRate * dt);
 
-    // Hard cap: can't slide faster than 1.5 road-widths/sec
-    this.slideVelocity = Math.max(-1.5, Math.min(1.5, this.slideVelocity));
+    // Hard cap: whisper of slide only — 0.15 road-widths/sec maximum
+    this.slideVelocity = Math.max(-0.15, Math.min(0.15, this.slideVelocity));
 
     // ── steerAngle: visual-only, drives car sprite frame selection ─────────
     //
@@ -373,7 +374,7 @@ export class Game
     // During a slide, the car body counter-steers into the drift —
     // slide right → car points left (negative steer).  Scale factor 0.5
     // keeps it subtle: full 1.5 wu/s slide = 0.75 extra steer angle.
-    const driftVisual    = -this.slideVelocity * 0.5;
+    const driftVisual    = -this.slideVelocity * 0.15;
     const renderSteer    = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
 
     renderer.render(

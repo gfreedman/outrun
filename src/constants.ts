@@ -146,25 +146,25 @@ export const CENTRIFUGAL    = 0.5;
  * 0.5 = slide starts when centrifugal force exceeds 50% of steering grip.
  * Lower = more slidey. Higher = more planted.
  */
-export const DRIFT_ONSET = 0.5;
+export const DRIFT_ONSET = 0.88;
 
 /**
  * How fast lateral slide velocity accumulates when over the drift threshold.
  * Higher = rear snaps out more aggressively.
  */
-export const DRIFT_RATE  = 3.0;
+export const DRIFT_RATE  = 0.4;
 
 /**
  * How fast the slide decays on its own (tyres self-aligning torque).
  * Lower = longer, looser slides. Higher = car catches itself quickly.
  */
-export const DRIFT_DECAY = 1.5;
+export const DRIFT_DECAY = 5.0;
 
 /**
  * How fast the slide decays when the player actively counter-steers.
  * Higher than DRIFT_DECAY so counter-steer input meaningfully shortens the slide.
  */
-export const DRIFT_CATCH = 6.0;
+export const DRIFT_CATCH = 10.0;
 
 /**
  * How fast the sky background shifts horizontally when on a curve.
