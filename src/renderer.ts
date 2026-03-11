@@ -97,10 +97,12 @@ const BAR_SEGS = 20;
  *   Steel-blue zone (~80%): pale desaturated cyan-blue — low to mid speed
  *   Green zone      (~20%): medium green               — high speed
  */
-const BAR_BLUE_END    = Math.round(BAR_SEGS * 0.80);  // = 16
-const BAR_COLOR_BLUE  = '#8899BB';   // pale steel-blue  (System 16 low–mid)
-const BAR_COLOR_GREEN = '#33BB44';   // medium green      (System 16 high speed)
-const BAR_COLOR_UNLIT = '#0D0D0D';   // near-black        (segment off)
+const BAR_BLUE_END    = Math.round(BAR_SEGS * 0.80);  // = 16  (steel-blue → green)
+const BAR_LAST        = BAR_SEGS - 1;                  // = 19  (pink redline cap)
+const BAR_COLOR_BLUE  = '#8899BB';            // pale steel-blue  (System 16 low–mid)
+const BAR_COLOR_GREEN = '#33BB44';            // medium green     (System 16 high speed)
+const BAR_COLOR_PINK  = '#FF44CC';            // pink             (redline cap, last seg)
+const BAR_COLOR_UNLIT = 'rgba(80,80,80,0.5)'; // 50% transparent — background shows through
 
 // ── ProjectedSeg ──────────────────────────────────────────────────────────────
 
@@ -788,6 +790,7 @@ export class Renderer
     {
       let color: string;
       if (i >= filled)           color = BAR_COLOR_UNLIT;
+      else if (i === BAR_LAST)   color = BAR_COLOR_PINK;
       else if (i < BAR_BLUE_END) color = BAR_COLOR_BLUE;
       else                       color = BAR_COLOR_GREEN;
 
