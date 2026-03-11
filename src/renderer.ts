@@ -60,29 +60,45 @@ import
 // ── Module-level constants ─────────────────────────────────────────────────────
 
 /**
- * Fixed alpha (opacity) for each of the three tachometer bar rows.
- * Declared outside the class so this array is created exactly ONCE,
- * not on every frame inside renderHUD().
- * Row 0 = top row (most prominent), row 2 = bottom row (most faded).
+ * 7-segment bitmask for each digit 0–9.
+ *
+ * A classic 7-segment display has seven rectangular segments labelled a–g:
+ *    aaa
+ *   f   b
+ *   f   b
+ *    ggg
+ *   e   c
+ *   e   c
+ *    ddd
+ *
+ * Each entry below stores which segments should be LIT for that digit.
+ * The bit positions are: bit0=a, bit1=b, bit2=c, bit3=d, bit4=e, bit5=f, bit6=g.
+ * Example: '8' lights all 7 segments → 0x7F = 0111 1111.
  */
-const HUD_ROW_ALPHA = [1.0, 0.82, 0.65] as const;
+const SEG_DIGIT = [
+  0x3F,  // 0: a b c d e f   (all except middle)
+  0x06,  // 1: b c
+  0x5B,  // 2: a b d e g
+  0x4F,  // 3: a b c d g
+  0x66,  // 4: b c f g
+  0x6D,  // 5: a c d f g
+  0x7D,  // 6: a c d e f g
+  0x07,  // 7: a b c
+  0x7F,  // 8: a b c d e f g  (all)
+  0x6F,  // 9: a b c d f g
+] as const;
 
-/** Number of LED segments in each tachometer row. */
-const HUD_NUM_SEGS = 20;
+/** Total number of rectangular segments in the speed bar. */
+const BAR_SEGS = 20;
 
 /**
- * Tachometer colour zone boundary indices (first segment of each new zone).
- * Zone 0 = red:    i ∈ [0, HUD_ZONE_SPLIT[0])
- * Zone 1 = orange: i ∈ [HUD_ZONE_SPLIT[0], HUD_ZONE_SPLIT[1])
- * Zone 2 = green:  i ∈ [HUD_ZONE_SPLIT[1], HUD_NUM_SEGS)
- *
- * Pre-computed at module load so the tach loop does zero arithmetic to find them.
+ * Segment index boundaries for the speed bar's three colour zones.
+ *   Cyan  zone (~60%): segments [0,            BAR_CYAN_END)  — cruising speed
+ *   Green zone (~35%): segments [BAR_CYAN_END,  BAR_GREEN_END) — high speed
+ *   Pink  cap  (~5%):  segments [BAR_GREEN_END, BAR_SEGS)     — redline
  */
-const HUD_ZONE_SPLIT  = [Math.round(HUD_NUM_SEGS * 0.33), Math.round(HUD_NUM_SEGS * 0.66)] as const;
-const HUD_ZONE_S      = [0, HUD_ZONE_SPLIT[0], HUD_ZONE_SPLIT[1]]    as const;
-const HUD_ZONE_E      = [HUD_ZONE_SPLIT[0], HUD_ZONE_SPLIT[1], HUD_NUM_SEGS] as const;
-const HUD_COLOR_LIT   = ['#CC0000', '#FF6600', '#00BB00'] as const;
-const HUD_COLOR_UNLIT = ['#280000', '#281200', '#002800'] as const;
+const BAR_CYAN_END  = Math.round(BAR_SEGS * 0.60);  // = 12
+const BAR_GREEN_END = BAR_SEGS - 1;                   // = 19  (last segment = pink)
 
 // ── ProjectedSeg ──────────────────────────────────────────────────────────────
 
@@ -109,24 +125,27 @@ interface ProjectedSeg
 /**
  * All pixel positions and font strings needed to draw the HUD.
  * Computed once per canvas size and cached — recomputed only on resize.
- * Avoids recalculating ~20 values every single frame.
+ * Avoids recalculating layout values every single frame.
  */
 interface HudLayout
 {
-  padX: number;
-  segW: number; segH: number; segGap: number;
-  /** segW + segGap, pre-added so the tachometer loop avoids repeated addition. */
-  segStride: number;
-  /** 1 / (HUD_NUM_SEGS - 1), pre-divided for the colour-zone ratio each segment. */
-  tInv: number;
-  barW: number;
-  row3Bot: number; row2Bot: number; row1Bot: number;
-  numSize: number; lblSize: number;
-  lblBot: number; numBot: number; panelTop: number;
-  /** Full CSS font string for the large speed number — e.g. "bold 74px Impact, ...". */
-  fontNum: string;
-  /** Full CSS font string for the "km/h" label. */
-  fontLbl: string;
+  padX:      number;   // left edge of the entire HUD cluster
+  // 7-segment speed digits
+  digitH:    number;   // height of each digit cell in pixels
+  digitW:    number;   // width of each digit cell in pixels
+  digitT:    number;   // segment line thickness in pixels
+  digitGap:  number;   // horizontal gap between adjacent digit cells
+  digitY:    number;   // top Y of the digit row
+  // "km/h" label (yellow, to the right of the digits)
+  kphX:      number;   // left X of the "km/h" text
+  kphY:      number;   // baseline Y of the "km/h" text
+  kphFont:   string;   // CSS font string for the label
+  // Single-row speed bar (below the digits)
+  barX:      number;   // left X of the bar
+  barY:      number;   // top Y of the bar
+  barH:      number;   // height of each segment rectangle
+  barSegW:   number;   // width of each segment rectangle
+  barStride: number;   // barSegW + gap between segments
 }
 
 // ── Helper: drawTrapezoid ─────────────────────────────────────────────────────
@@ -165,6 +184,74 @@ function drawTrapezoid(
   ctx.lineTo(x2 - w2, y2);
   ctx.closePath();
   ctx.fill();
+}
+
+// ── Helper: drawSegDigit ──────────────────────────────────────────────────────
+
+/**
+ * Draws one 7-segment LED digit using filled rectangles.
+ *
+ * Each of the seven segments is a thin rectangle.  The SEG_DIGIT bitmask
+ * (defined above) tells us which segments to light up for the given digit.
+ * Active segments get colorOn; inactive ones get colorOff.
+ * Setting colorOff to a very dark colour reproduces the classic "unlit LED"
+ * look where you can faintly see the segment grid even when it is off.
+ *
+ * Segment layout inside the cell (width dw, height dh, thickness t):
+ *
+ *   |←—— dw ——→|
+ *     t  a  t
+ *    f        b     ← vertical segments span (dh/2 - t - gap) pixels
+ *     t  g  t
+ *    e        c     ← same height as b/f
+ *     t  d  t
+ *
+ * @param ctx      - Canvas 2D rendering context.
+ * @param digit    - Integer 0–9 to display.
+ * @param x        - Left edge of the digit cell in pixels.
+ * @param y        - Top edge of the digit cell in pixels.
+ * @param dw       - Width of the digit cell in pixels.
+ * @param dh       - Height of the digit cell in pixels.
+ * @param t        - Segment thickness in pixels.
+ * @param colorOn  - CSS colour string for lit (active) segments.
+ * @param colorOff - CSS colour string for dark (inactive) segments.
+ */
+function drawSegDigit(
+  ctx:      CanvasRenderingContext2D,
+  digit:    number,
+  x:        number, y: number,
+  dw:       number, dh: number,
+  t:        number,
+  colorOn:  string,
+  colorOff: string,
+): void
+{
+  const mask = SEG_DIGIT[digit] ?? SEG_DIGIT[0];
+  const g    = Math.max(1, Math.round(t * 0.55));  // end-gap keeps segment tips crisp
+  const hw   = dh / 2;                              // midpoint between top and bottom
+
+  /**
+   * Draws one rectangular segment at the given position.
+   * Picks colorOn if the bit is set in mask, colorOff otherwise.
+   * Skips drawing entirely if the rectangle has zero area.
+   *
+   * @param bit - Which bit in mask this segment corresponds to.
+   * @param rx, ry, rw, rh - Rectangle position and size.
+   */
+  const seg = (bit: number, rx: number, ry: number, rw: number, rh: number): void =>
+  {
+    if (rw <= 0 || rh <= 0) return;
+    ctx.fillStyle = (mask >> bit) & 1 ? colorOn : colorOff;
+    ctx.fillRect(Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
+  };
+
+  seg(0, x + t + g,  y,              dw - 2*t - 2*g, t);    // a — top horizontal
+  seg(1, x + dw - t, y + t + g,      t,               hw - t - 2*g);  // b — top-right
+  seg(2, x + dw - t, y + hw + g,     t,               hw - t - 2*g);  // c — bot-right
+  seg(3, x + t + g,  y + dh - t,     dw - 2*t - 2*g, t);    // d — bottom horizontal
+  seg(4, x,          y + hw + g,     t,               hw - t - 2*g);  // e — bot-left
+  seg(5, x,          y + t + g,      t,               hw - t - 2*g);  // f — top-left
+  seg(6, x + t + g,  y + hw - t / 2, dw - 2*t - 2*g, t);    // g — middle horizontal
 }
 
 // ── Renderer ──────────────────────────────────────────────────────────────────
@@ -211,13 +298,6 @@ export class Renderer
 
   /** Canvas height when hudLayout was last computed. */
   private hudH = 0;
-
-  /**
-   * Pre-rendered offscreen grain texture for the HUD panel.
-   * Built once on first render and again on resize — then composited each
-   * frame with a single drawImage instead of ~70 individual fillRect calls.
-   */
-  private grainCanvas: OffscreenCanvas | null = null;
 
   /** Smoothed speed value for the HUD display — prevents digit jitter. */
   private displaySpeed = 0;
@@ -538,99 +618,75 @@ export class Renderer
   /**
    * Computes all pixel positions and font strings for the HUD.
    * Called only when the canvas dimensions change — not every frame.
-   * All values are derived from `w` and `h` so the HUD scales with the window.
+   * All values are derived from w and h so the HUD scales with the window.
+   *
+   * Layout is built upward from the bottom of the canvas:
+   *   1. Speed bar — thin row, padY from the bottom.
+   *   2. 7-segment digit row — immediately above the bar.
+   *   3. "km/h" label — to the right of the digit block.
    *
    * @param w - Canvas width in pixels.
    * @param h - Canvas height in pixels.
-   * @returns A HudLayout object with every pre-computed value.
+   * @returns A HudLayout with every pre-computed value for renderHUD.
    */
   private computeHudLayout(w: number, h: number): HudLayout
   {
-    const padX    = Math.round(w * 0.025);
-    const padY    = Math.round(h * 0.028);
-    const segW    = Math.round(w * 0.0095);
-    const segH    = Math.round(h * 0.0135);
-    const segGap  = Math.max(1, Math.round(w * 0.0022));
-    const rowGap  = Math.round(h * 0.007);
-    const barW    = HUD_NUM_SEGS * (segW + segGap) - segGap;
-    const row3Bot = h - padY;
-    const row2Bot = row3Bot - segH - rowGap;
-    const row1Bot = row2Bot - segH - rowGap;
-    const numSize = Math.round(h * 0.086);
-    const lblSize = Math.round(h * 0.030);
-    const lblBot  = row1Bot - rowGap * 2;
-    const numBot  = lblBot  - lblSize - Math.round(h * 0.004);
-    const panelTop = numBot - numSize - 4;
+    const padX     = Math.round(w * 0.025);
+    const padY     = Math.round(h * 0.028);
+
+    // 7-segment digit sizing — width ≈ 58% of height matches the classic ratio
+    const digitH   = Math.round(h * 0.080);
+    const digitW   = Math.round(digitH * 0.58);
+    const digitT   = Math.max(2, Math.round(digitH * 0.13));
+    const digitGap = Math.max(2, Math.round(digitW * 0.14));
+
+    // Speed bar — single thin row beneath the digits
+    const barH      = Math.max(5, Math.round(h * 0.018));
+    const barGap    = Math.max(4, Math.round(h * 0.010));   // gap between digits and bar
+    const barSegGap = Math.max(1, Math.round(w * 0.0025));
+    const barSegW   = Math.max(6, Math.round(w * 0.011));
+
+    // Build positions upward from bottom edge
+    const barBotY   = h - padY;
+    const barY      = barBotY - barH;
+    const digitBotY = barY - barGap;
+    const digitY    = digitBotY - digitH;
+
+    // "km/h" label: right of the 3-digit block, baseline at digit bottom
+    const numBlockW = 3 * digitW + 2 * digitGap;
+    const kphSize   = Math.max(10, Math.round(digitH * 0.38));
+    const kphX      = padX + numBlockW + Math.max(3, Math.round(digitGap * 1.4));
+    const kphY      = digitY + digitH;  // baseline aligned to bottom of digits
 
     return {
-      padX,
-      segW, segH, segGap,
-      segStride: segW + segGap,   // pre-added: avoids repeated addition in the tach loop
-      tInv: 1 / (HUD_NUM_SEGS - 1), // pre-divided: avoids repeated division in the tach loop
-      barW,
-      row3Bot, row2Bot, row1Bot,
-      numSize, lblSize, lblBot, numBot, panelTop,
-      fontNum: `bold ${numSize}px Impact, 'Arial Black', sans-serif`,
-      fontLbl: `bold ${lblSize}px Impact, 'Arial Black', sans-serif`,
+      padX, digitH, digitW, digitT, digitGap, digitY,
+      kphX, kphY,
+      kphFont: `bold ${kphSize}px Impact, 'Arial Black', sans-serif`,
+      barX: padX, barY, barH,
+      barSegW,
+      barStride: barSegW + barSegGap,
     };
-  }
-
-  // ── Grain canvas builder ──────────────────────────────────────────────────
-
-  /**
-   * Pre-renders the static pixel-grain texture for the HUD panel to an
-   * OffscreenCanvas.  Called once on first render and on every window resize.
-   *
-   * Subsequent frames composite the result with a single ctx.drawImage() call
-   * instead of iterating the grain loop (~70 fillRect calls) every frame.
-   *
-   * The pattern formula (ax * 7 + ay * 13) % 19 < 2 uses absolute canvas
-   * coordinates so the texture is identical to the original per-frame version.
-   *
-   * @param L - Current HUD layout (provides barW, panelTop, row3Bot, padX).
-   */
-  private buildGrainCanvas(L: HudLayout): void
-  {
-    const gW   = L.barW;
-    const gH   = L.row3Bot - L.panelTop;
-    const off  = new OffscreenCanvas(gW, gH);
-    const gCtx = off.getContext('2d')!;
-    gCtx.fillStyle = '#FF2200';
-
-    for (let gy = 0; gy < gH; gy += 3)
-    {
-      for (let gx = 0; gx < gW; gx += 3)
-      {
-        // Map local offscreen coords back to absolute canvas coords so the
-        // grain pattern matches exactly what the original loop produced.
-        const ax = gx + L.padX;
-        const ay = gy + L.panelTop;
-        if ((ax * 7 + ay * 13) % 19 < 2) gCtx.fillRect(gx, gy, 1, 1);
-      }
-    }
-
-    this.grainCanvas = off;
   }
 
   // ── HUD ───────────────────────────────────────────────────────────────────
 
   /**
-   * Draws the OutRun-style digital speedometer and 3-row tachometer.
+   * Draws the OutRun-style HUD: 7-segment speed readout + single speed bar.
    *
-   * Layout (bottom-left):
-   *   - Large red speed number in km/h.
-   *   - "km/h" label.
-   *   - Three rows of segmented LED bars (red → orange → green).
-   *
-   * The tach bars oscillate to simulate analogue gauge noise:
-   *   amplitude shrinks near max speed; frequency rises at low speed.
-   *   Each row has a different phase for visual interest.
+   * Layout (bottom-left, transparent — no background panel):
+   *   - Three fixed digit cells (hundreds / tens / ones), right-aligned.
+   *     Leading zeros are left blank so "5" appears as "  5", not "005".
+   *     Active segments are bright red; inactive segments are near-black.
+   *   - "km/h" label in yellow, to the right of the digit block.
+   *   - Single row of rectangular speed bar segments below the digits:
+   *       cyan  (~60% of bar) → green (~35%) → pink cap (~5%).
+   *     Only the segments up to current speed are lit; the rest are dark.
    *
    * Note: ctx.save/restore is NOT called here — the outer render() call
    * already wraps the entire frame in a single save/restore pair.
    *
-   * @param w     - Canvas width.
-   * @param h     - Canvas height.
+   * @param w     - Canvas width in pixels.
+   * @param h     - Canvas height in pixels.
    * @param speed - Current speed in world units per second.
    */
   private renderHUD(w: number, h: number, speed: number): void
@@ -641,104 +697,96 @@ export class Renderer
     if (w !== this.hudW || h !== this.hudH)
     {
       this.hudLayout = this.computeHudLayout(w, h);
-      this.buildGrainCanvas(this.hudLayout);
       this.hudW = w;
       this.hudH = h;
     }
     const L = this.hudLayout!;
 
-    const time  = performance.now() / 1000;
-    const ratio = speed / PLAYER_MAX_SPEED;
+    // Smooth the displayed speed slightly so digits don't tick too fast at
+    // high speed, but still respond quickly enough to feel live.
+    this.displaySpeed += (speed - this.displaySpeed) * 0.12;
+    const kmh      = Math.min(999, Math.max(0, Math.round(this.displaySpeed * (290 / PLAYER_MAX_SPEED))));
+    const hundreds = Math.floor(kmh / 100);
+    const tens     = Math.floor((kmh % 100) / 10);
+    const ones     = kmh % 10;
 
-    // Smooth the displayed speed over ~8 frames to prevent digit flicker
-    this.displaySpeed += (speed - this.displaySpeed) * 0.10;
-    const kmh = Math.round(this.displaySpeed * (290 / PLAYER_MAX_SPEED));
+    // ── 7-segment digit row ────────────────────────────────────────────────
+    //
+    // Three fixed cells, always in the same screen positions so the HUD
+    // never shifts as the number of significant digits changes.
+    // We skip (leave blank) any leading-zero cell — just like a real dash.
+    //
+    // ON  = bright red  (lit segment)
+    // OFF = very dark   (unlit segment outline, barely visible)
 
+    const ON  = '#FF2200';
+    const OFF = '#2A0400';
+
+    const showHundreds = hundreds > 0;
+    const showTens     = showHundreds || tens > 0;
+
+    if (showHundreds)
+    {
+      drawSegDigit(ctx, hundreds,
+        L.padX,
+        L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
+    }
+    if (showTens)
+    {
+      drawSegDigit(ctx, tens,
+        L.padX + (L.digitW + L.digitGap),
+        L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
+    }
+    drawSegDigit(ctx, ones,
+      L.padX + 2 * (L.digitW + L.digitGap),
+      L.digitY, L.digitW, L.digitH, L.digitT, ON, OFF);
+
+    // ── "km/h" label ──────────────────────────────────────────────────────
+    //
+    // Yellow, smaller than the digits.  A 1-pixel dark shadow adds depth
+    // so it stays legible over bright sky or grass backgrounds.
+
+    ctx.font         = L.kphFont;
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle    = '#3D2200';
+    ctx.fillText('km/h', L.kphX + 1, L.kphY + 1);
+    ctx.fillStyle    = '#FFD700';
+    ctx.fillText('km/h', L.kphX, L.kphY);
 
-    // Background panel
-    ctx.fillStyle = 'rgba(0,0,0,0.52)';
-    ctx.fillRect(L.padX - 8, L.panelTop, L.barW + 16, L.row3Bot - L.panelTop + 4);
+    // ── Single-row speed bar ───────────────────────────────────────────────
+    //
+    // BAR_SEGS rectangles in a single horizontal row, filled left-to-right
+    // up to the current speed percentage.
+    // Colour only changes at the two zone boundaries, so we track the last
+    // colour used and skip the fillStyle call when it hasn't changed.
+    //
+    //   [0 … BAR_CYAN_END)  — cyan  (cruising)
+    //   [BAR_CYAN_END … BAR_GREEN_END) — green (pushing)
+    //   [BAR_GREEN_END … BAR_SEGS)    — pink  (redline cap)
+    //   unlit segments — #111111 (near-black background)
 
-    // Speed number — drawn 4× offset for a shadow, then once in bright red
-    const numStr = `${kmh}`;
-    ctx.font = L.fontNum;
-    ctx.fillStyle = '#330000';
-    ctx.fillText(numStr, L.padX + 2, L.numBot + 2);
-    ctx.fillText(numStr, L.padX - 2, L.numBot + 2);
-    ctx.fillText(numStr, L.padX + 2, L.numBot - 2);
-    ctx.fillText(numStr, L.padX - 2, L.numBot - 2);
-    ctx.fillStyle = '#FF2200';
-    ctx.fillText(numStr, L.padX, L.numBot);
+    const filled   = Math.round((speed / PLAYER_MAX_SPEED) * BAR_SEGS);
+    let lastColor  = '';
 
-    // "km/h" label
-    ctx.font = L.fontLbl;
-    ctx.fillStyle = '#550000';
-    ctx.fillText('km/h', L.padX + 1, L.lblBot + 1);
-    ctx.fillStyle = '#FF4422';
-    ctx.fillText('km/h', L.padX, L.lblBot);
-
-    // Pre-rendered grain: one drawImage instead of ~70 fillRects every frame
-    if (this.grainCanvas)
+    for (let i = 0; i < BAR_SEGS; i++)
     {
-      ctx.globalAlpha = 0.10;
-      ctx.drawImage(this.grainCanvas, L.padX, L.panelTop);
-      ctx.globalAlpha = 1;
-    }
+      let color: string;
+      if (i >= filled)            color = '#111111';
+      else if (i < BAR_CYAN_END)  color = '#00CCFF';
+      else if (i < BAR_GREEN_END) color = '#00EE44';
+      else                        color = '#FF44BB';
 
-    // 3-row tachometer bars
-    const amp  = 0.04 * (1 - ratio * 0.65);
-    const freq = 5 + (1 - ratio) * 12;
-
-    // Compute per-row fill fractions; each row uses a different oscillation phase
-    const fill0 = Math.max(0, Math.min(1, ratio * 0.92 + Math.sin(time * freq)            * amp));
-    const fill1 = Math.max(0, Math.min(1, ratio * 0.86 + Math.sin(time * freq * 0.87 + 1) * amp));
-    const fill2 = Math.max(0, Math.min(1, ratio * 0.78 + Math.sin(time * freq * 0.73 + 2) * amp));
-
-    const rowFills = [fill0, fill1, fill2];
-    const rowBots  = [L.row1Bot, L.row2Bot, L.row3Bot];
-
-    // 3-row tachometer — batched by colour zone.
-    // Instead of 20 × (fillStyle + fillRect) per row, we group all segments
-    // of each colour into one beginPath/rect.../fill pass.
-    // Max 6 fillStyle changes per row (lit + unlit for each of 3 zones),
-    // versus 20 previously — a 3× reduction in canvas state changes.
-    for (let row = 0; row < 3; row++)
-    {
-      const rBot   = rowBots[row];
-      const filled = Math.round(rowFills[row] * HUD_NUM_SEGS);
-      ctx.globalAlpha = HUD_ROW_ALPHA[row];
-      const y = rBot - L.segH;
-
-      for (let zone = 0; zone < 3; zone++)
+      // Only update fillStyle when the colour actually changes — avoids
+      // redundant canvas state writes on the long run of same-colour segments.
+      if (color !== lastColor)
       {
-        const zs  = HUD_ZONE_S[zone];
-        const ze  = HUD_ZONE_E[zone];
-        // `lit` = first unlit index in this zone (clamped to zone bounds)
-        const lit = Math.max(zs, Math.min(filled, ze));
-
-        // Draw the lit portion of this zone in one path
-        if (lit > zs)
-        {
-          ctx.fillStyle = HUD_COLOR_LIT[zone];
-          ctx.beginPath();
-          for (let i = zs; i < lit; i++) ctx.rect(L.padX + i * L.segStride, y, L.segW, L.segH);
-          ctx.fill();
-        }
-
-        // Draw the unlit portion of this zone in one path
-        if (ze > lit)
-        {
-          ctx.fillStyle = HUD_COLOR_UNLIT[zone];
-          ctx.beginPath();
-          for (let i = lit; i < ze; i++) ctx.rect(L.padX + i * L.segStride, y, L.segW, L.segH);
-          ctx.fill();
-        }
+        ctx.fillStyle = color;
+        lastColor     = color;
       }
-    }
 
-    ctx.globalAlpha = 1;
+      ctx.fillRect(L.barX + i * L.barStride, L.barY, L.barSegW, L.barH);
+    }
   }
 
   // ── Public entry point ────────────────────────────────────────────────────
