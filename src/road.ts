@@ -197,68 +197,76 @@ export class Road
   // ── Track layout ──────────────────────────────────────────────────────────
 
   /**
-   * Clears all existing segments and builds the full test track from scratch.
+   * Clears all existing segments and builds the Nürburgring-inspired track.
    *
-   * Layout philosophy — graded difficulty:
-   *   Start easy (straight, gentle curves) so the player can build speed.
-   *   Introduce hills mid-track for the "ooh!" blind-crest moment.
-   *   Escalate to hard corners so the grip/understeer mechanic is stress-tested.
-   *   End with a long straight as relief and to let the road wrap cleanly.
+   * Layout pillars (like the real Nordschleife):
+   *   • Long sustained corners — you're committed for 3–5 seconds.
+   *   • Blind crests MID-corner — you cannot see the exit.
+   *   • Long straights feed DIRECTLY into hard corners — no time to react.
+   *   • Back-to-back hard sections with no breathing room in between.
    *
-   * Total: ~550 segments ≈ 18 seconds at max speed before the track loops.
+   * ~620 segments ≈ 14 seconds at max speed before the lap loops.
    */
   private resetRoad(): void
   {
     this.segments = [];
     this.lastY    = 0;
 
-    // Short alias so the layout table below reads like a design spreadsheet
     const r = (enter: number, hold: number, leave: number, curve: number, hill: number) =>
       this.addRoad(enter, hold, leave, curve, hill);
 
-    const CE = ROAD_CURVE.EASY;   // 2
-    const CM = ROAD_CURVE.MEDIUM; // 4
-    const CH = ROAD_CURVE.HARD;   // 6
+    const CE = ROAD_CURVE.EASY;   // 2  — gentle sweeper
+    const CM = ROAD_CURVE.MEDIUM; // 4  — committed corner
+    const CH = ROAD_CURVE.HARD;   // 6  — survival corner
     const HL = ROAD_HILL.LOW;     // 20
     const HM = ROAD_HILL.MEDIUM;  // 40
+    const HH = ROAD_HILL.HIGH;    // 60 — blind crest territory
 
-    // ── 1. Opening straight ────────────────────────────────────────────────
-    r(1, 20, 1,   0,  0);                 // 22 segs — build speed from rest
+    // ── 1. Launch straight ────────────────────────────────────────────────
+    r(1,  18,  1,    0,   0);             // 20 — build speed, feel the car
 
-    // ── 2. Easy intro chicane (right → left) ──────────────────────────────
-    r(10, 15, 10,  CE,  0);               // 35 easy right
-    r(10, 15, 10, -CE,  0);               // 35 easy left
-    r(1,  12,  1,   0,  0);               // 14 straight
+    // ── 2. Flugplatz — long climbing right sweeper ────────────────────────
+    // Feels manageable at first. At full speed it fights you the whole way.
+    r(12, 55, 12,   CE,  HL);             // 79 — long easy right, climbing
+    r(8,  10,  8,    0, -HL);             // 26 — crest and brief flat
 
-    // ── 3. Medium corners ─────────────────────────────────────────────────
-    r(10, 15, 10,  CM,  0);               // 35 medium right
-    r(1,  10,  1,   0,  0);               // 12 straight
-    r(10, 15, 10, -CM,  0);               // 35 medium left
-    r(1,  12,  1,   0,  0);               // 14 straight
+    // ── 3. Hatzenbach — hard uphill left, blind entry ─────────────────────
+    // The flat before it lures you in full throttle. Don't.
+    r(1,  10,  1,    0,   0);             // 12 — false sense of safety
+    r(10, 35, 10,  -CH,  HM);             // 55 — climbing hard left, no exit visible
 
-    // ── 4. Hill + curve combo ─────────────────────────────────────────────
-    r(10, 15, 10,   0,  HM);              // 35 uphill
-    r(10, 15, 10,  CE, -HM);              // 35 downhill right — blind crest exit
-    r(1,  10,  1,   0,   0);              // 12 straight
+    // ── 4. Blind downhill right — you're over the crest into a right ──────
+    r(10, 25, 10,   CH, -HM);             // 45 — hard right, road drops away fast
 
-    // ── 5. Hard corners — grip test ───────────────────────────────────────
-    r(10, 15, 10,  CH,   0);              // 35 hard right
-    r(10, 15, 10, -CH,   0);              // 35 hard left chicane
-    r(1,  10,  1,   0,   0);              // 12 straight breathing room
-    r(10, 15, 10,  CH,  HL);              // 35 hard right over low hill
-    r(10, 15, 10,   0, -HM);              // 35 downhill relief
-    r(1,  12,  1,   0,   0);              // 14 straight
+    // ── 5. Long downhill straight ─────────────────────────────────────────
+    r(1,  32,  1,    0, -HL);             // 34 — speed builds on the descent
 
-    // ── 6. S-curve section ────────────────────────────────────────────────
-    r(10, 15, 10, -CE,  0);               // 35 easy left
-    r(10, 15, 10,  CM,  0);               // 35 medium right
-    r(10, 15, 10, -CH,  0);               // 35 hard left
-    r(10, 15, 10,  CE,  0);               // 35 easy right
-    r(1,  10,  1,   0,  0);               // 12 straight
+    // ── 6. Adenauer Forst — long sustained medium-left sweeper ───────────
+    // It keeps going. And going. This is where the drift happens.
+    r(15, 55, 15,  -CM,   0);             // 85 — patience and commitment required
 
-    // ── 7. Long finish straight ───────────────────────────────────────────
-    r(1,  50,  1,   0,  0);               // 52 segs — relief & prep for lap
+    // ── 7. Bergwerk — hard right then immediate hard left ─────────────────
+    // Zero gap. If the car is still sliding from the right, the left takes you off.
+    r(1,   5,  1,    0,   0);             // 7  — barely a breath
+    r(10, 28, 10,   CH,   0);             // 48 — hard right
+    r(10, 28, 10,  -CH,   0);             // 48 — hard left, immediate
 
+    // ── 8. Döttinger Höhe — the long flat-out straight ────────────────────
+    // Longest straight on the lap. Build maximum speed. You'll pay for it.
+    r(1,  55,  1,    0,   0);             // 57 — go flat. All of it.
+
+    // ── 9. Tiergarten — hard right over a blind hill crest ────────────────
+    // Maximum speed. Hard right. Climbing. You cannot see the exit. Ever.
+    r(10, 38, 10,   CH,  HH);             // 58 — the hardest moment on the lap
+
+    // ── 10. Schwalbenschwanz — left, road drops beneath you ──────────────
+    r(10, 32, 10,  -CH, -HM);             // 52 — hard left, downhill, drift trap
+
+    // ── 11. Recovery medium right ─────────────────────────────────────────
+    r(10, 22, 10,   CM,   0);             // 42 — breathe. Almost home.
+
+    // ── 12. Finish straight ───────────────────────────────────────────────
+    r(1,  38,  1,    0,   0);             // 40 — lap complete. Do it again.
   }
 
   // ── Lookup ────────────────────────────────────────────────────────────────

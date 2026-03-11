@@ -64,6 +64,7 @@ import
   OFFROAD_MAX_RATIO, OFFROAD_DECEL, OFFROAD_RECOVERY_TIME,
   SEGMENT_LENGTH, DRAW_DISTANCE,
   CENTRIFUGAL,
+  DRIFT_ONSET, DRIFT_RATE, DRIFT_DECAY, DRIFT_CATCH,
 } from './constants';
 
 export class Game
@@ -106,6 +107,13 @@ export class Game
    * 1 = fully recovered (no cap).
    */
   private offRoadRecovery = 1;
+
+  /**
+   * Lateral slide velocity in road-widths per second.
+   * Positive = sliding right, negative = sliding left.
+   * Builds when centrifugal force overwhelms grip; caught with counter-steer.
+   */
+  private slideVelocity = 0;
 
   /**
    * Vertical horizon pixel offset used to simulate bumpy terrain on grass.
@@ -264,6 +272,46 @@ export class Game
     const speedPercent  = this.speed / PLAYER_MAX_SPEED;
     this.playerX -= playerSegment.curve * speedPercent * CENTRIFUGAL * dt;
 
+    // ── Drift / oversteer ──────────────────────────────────────────────────
+    //
+    // When centrifugal force exceeds available grip at speed, the rear steps
+    // out and lateral slide velocity (slideVelocity) begins to build.
+    // The car keeps sliding in that direction until:
+    //   (a) the player counter-steers (opposite key to slide direction), or
+    //   (b) natural tyre self-alignment bleeds it away over time.
+    //
+    // slideVelocity > 0 = sliding rightward (curve pushed left too hard).
+    // slideVelocity < 0 = sliding leftward.
+
+    if (speedRatio > 0.5 && Math.abs(playerSegment.curve) > 0)
+    {
+      // Force centrifugal is applying this frame (road-widths/sec²)
+      const centForce    = Math.abs(playerSegment.curve * speedPercent * CENTRIFUGAL);
+      // Grip available to resist lateral force (tapers with speed)
+      const availGrip    = PLAYER_STEERING * gripFactor;
+      // If centrifugal exceeds the onset fraction of grip, slide builds
+      if (centForce > availGrip * DRIFT_ONSET)
+      {
+        const excess   = centForce - availGrip * DRIFT_ONSET;
+        // Slide direction matches centrifugal direction (centrifugal = -curve sign)
+        const slideDir = playerSegment.curve > 0 ? 1 : -1;
+        this.slideVelocity += slideDir * excess * DRIFT_RATE * dt;
+      }
+    }
+
+    // Apply slide to position
+    this.playerX += this.slideVelocity * dt;
+
+    // Decay: counter-steer catches the slide much faster than natural decay
+    const counterSteering =
+      (this.slideVelocity >  0.02 && input.isDown('ArrowLeft')) ||
+      (this.slideVelocity < -0.02 && input.isDown('ArrowRight'));
+    const decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
+    this.slideVelocity *= Math.max(0, 1 - decayRate * dt);
+
+    // Hard cap: can't slide faster than 1.5 road-widths/sec
+    this.slideVelocity = Math.max(-1.5, Math.min(1.5, this.slideVelocity));
+
     // ── steerAngle: visual-only, drives car sprite frame selection ─────────
     //
     // Ramps toward ±1 while a direction key is held, springs back to 0 on release.
@@ -321,6 +369,13 @@ export class Game
   private draw(): void
   {
     const { renderer, road, w, h } = this;
+
+    // During a slide, the car body counter-steers into the drift —
+    // slide right → car points left (negative steer).  Scale factor 0.5
+    // keeps it subtle: full 1.5 wu/s slide = 0.75 extra steer angle.
+    const driftVisual    = -this.slideVelocity * 0.5;
+    const renderSteer    = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
+
     renderer.render(
       road.segments,
       road.count,
@@ -329,7 +384,7 @@ export class Game
       DRAW_DISTANCE,
       w, h,
       this.speed,
-      this.steerAngle,
+      renderSteer,
       this.jitterY,
     );
   }

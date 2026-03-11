@@ -139,6 +139,33 @@ export const ROAD_HILL   = { NONE: 0, LOW: 20, MEDIUM: 40, HIGH: 60 } as const;
  */
 export const CENTRIFUGAL    = 0.5;
 
+// ── Drift / oversteer ─────────────────────────────────────────────────────────
+
+/**
+ * Fraction of available grip at which the rear steps out and slide begins.
+ * 0.5 = slide starts when centrifugal force exceeds 50% of steering grip.
+ * Lower = more slidey. Higher = more planted.
+ */
+export const DRIFT_ONSET = 0.5;
+
+/**
+ * How fast lateral slide velocity accumulates when over the drift threshold.
+ * Higher = rear snaps out more aggressively.
+ */
+export const DRIFT_RATE  = 3.0;
+
+/**
+ * How fast the slide decays on its own (tyres self-aligning torque).
+ * Lower = longer, looser slides. Higher = car catches itself quickly.
+ */
+export const DRIFT_DECAY = 1.5;
+
+/**
+ * How fast the slide decays when the player actively counter-steers.
+ * Higher than DRIFT_DECAY so counter-steer input meaningfully shortens the slide.
+ */
+export const DRIFT_CATCH = 6.0;
+
 /**
  * How fast the sky background shifts horizontally when on a curve.
  * Accumulated each frame: skyOffset += PARALLAX_SKY * segmentCurve * speedPercent.
