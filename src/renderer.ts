@@ -646,18 +646,16 @@ export class Renderer
     // Width:  65% of height — classic 7-segment displays are taller than wide.
     // Thickness: ~14% of height gives chunky, readable segments.
     // Gap between cells: small fixed proportion of width.
-    const digitH   = Math.round(h * 0.10);
-    const digitW   = Math.round(digitH * 0.65);
+    const digitH   = Math.round(h * 0.075);              // −25% from previous 0.10
+    const digitW   = Math.round(digitH * 0.55);          // slightly skinnier (was 0.65)
     const digitT   = Math.max(2, Math.round(digitH * 0.14));
     const digitGap = Math.max(2, Math.round(digitW * 0.14));
 
-    // Speed bar — chunky segments matching the arcade cabinet proportions.
-    // Height is ~3.2% of canvas height (was 1.8%) for visible, chunky blocks.
-    // Gap between segments is a hard 2px so it doesn't scale up on large displays.
+    // Speed bar — 30% skinnier segments than before (w*0.013 → w*0.0091).
     const barH      = Math.max(8, Math.round(h * 0.032));
-    const barGap    = Math.max(4, Math.round(h * 0.010));   // gap between digits and bar
-    const barSegGap = 2;                                    // hard 2px — matches arcade look
-    const barSegW   = Math.max(8, Math.round(w * 0.013));
+    const barGap    = Math.max(4, Math.round(h * 0.010));
+    const barSegGap = 2;
+    const barSegW   = Math.max(6, Math.round(w * 0.0091));
 
     // Build positions upward from bottom edge
     const barBotY   = h - padY;
