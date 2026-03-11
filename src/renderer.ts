@@ -146,8 +146,6 @@ interface HudLayout
   barH:      number;   // height of each segment rectangle
   barSegW:   number;   // width of each segment rectangle
   barStride: number;   // barSegW + gap between segments
-  // Dark drop-shadow rectangle drawn behind the entire HUD cluster
-  shadowX: number; shadowY: number; shadowW: number; shadowH: number;
 }
 
 // ── Helper: drawTrapezoid ─────────────────────────────────────────────────────
@@ -242,8 +240,11 @@ function drawSegDigit(
    */
   const seg = (bit: number, rx: number, ry: number, rw: number, rh: number): void =>
   {
-    if (rw <= 0 || rh <= 0) return;
-    ctx.fillStyle = (mask >> bit) & 1 ? colorOn : colorOff;
+    // Pick colour: lit segments use colorOn, unlit use colorOff.
+    // If colorOff is '' the caller wants unlit segments invisible — skip them.
+    const color = (mask >> bit) & 1 ? colorOn : colorOff;
+    if (!color || rw <= 0 || rh <= 0) return;
+    ctx.fillStyle = color;
     ctx.fillRect(Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
   };
 
@@ -664,15 +665,6 @@ export class Renderer
     const kphX      = padX + numBlockW + Math.max(3, Math.round(digitGap * 1.4));
     const kphY      = digitY + digitH;  // baseline aligned to bottom of digits
 
-    // Dark shadow rectangle that sits behind the entire HUD cluster.
-    // kphEstW: Impact font "km/h" is roughly kphSize × 2.8 pixels wide.
-    const pad      = 8;
-    const kphEstW  = kphSize * 2.8;
-    const shadowX  = padX - pad;
-    const shadowY  = digitY - pad;
-    const shadowW  = (kphX + kphEstW) - shadowX + pad;
-    const shadowH  = (barY + barH) - shadowY + pad;
-
     return {
       padX, digitH, digitW, digitT, digitGap, digitY,
       kphX, kphY,
@@ -680,7 +672,6 @@ export class Renderer
       barX: padX, barY, barH,
       barSegW,
       barStride: barSegW + barSegGap,
-      shadowX, shadowY, shadowW, shadowH,
     };
   }
 
@@ -718,11 +709,6 @@ export class Renderer
     }
     const L = this.hudLayout!;
 
-    // Dark semi-transparent panel behind the entire HUD cluster so digits
-    // and bar remain readable against any sky / road / grass colour.
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(L.shadowX, L.shadowY, L.shadowW, L.shadowH);
-
     // Smooth the displayed speed slightly so digits don't tick too fast at
     // high speed, but still respond quickly enough to feel live.
     this.displaySpeed += (speed - this.displaySpeed) * 0.12;
@@ -741,7 +727,7 @@ export class Renderer
     // OFF = very dark   (unlit segment outline, barely visible)
 
     const ON  = '#FF2200';
-    const OFF = '#2A0400';
+    const OFF = '';        // empty = don't draw unlit segments at all
 
     const showHundreds = hundreds > 0;
     const showTens     = showHundreds || tens > 0;
@@ -770,8 +756,6 @@ export class Renderer
     ctx.font         = L.kphFont;
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle    = '#3D2200';
-    ctx.fillText('km/h', L.kphX + 1, L.kphY + 1);
     ctx.fillStyle    = '#FFD700';
     ctx.fillText('km/h', L.kphX, L.kphY);
 
