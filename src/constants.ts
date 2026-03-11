@@ -63,7 +63,7 @@ export const PLAYER_ACCEL_MID   = 2800;
  * Scales with current speed: 50% at rest → 100% at max speed.
  * Gives a natural aerodynamic-drag feel without feeling sticky at low speeds.
  */
-export const PLAYER_COAST_RATE  = 1300;
+export const PLAYER_COAST_RATE  = 2200;
 
 // ── Braking ───────────────────────────────────────────────────────────────────
 
@@ -71,13 +71,13 @@ export const PLAYER_COAST_RATE  = 1300;
  * Maximum braking force, in world units/s².
  * Applied at full pedal pressure after the ramp-up period.
  */
-export const PLAYER_BRAKE_MAX   = 4800;
+export const PLAYER_BRAKE_MAX   = 7000;
 
 /**
  * How long (seconds) the brakes take to develop full force.
  * Models the feel of hydraulic brake fluid pressurising under hard braking.
  */
-export const PLAYER_BRAKE_RAMP  = 0.18;
+export const PLAYER_BRAKE_RAMP  = 0.10;
 
 // ── Steering ─────────────────────────────────────────────────────────────────
 
