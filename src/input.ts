@@ -20,22 +20,45 @@ export class InputManager
   private keys: Set<string> = new Set();
 
   /**
+   * Stored references to the listener functions so destroy() can remove them.
+   * Arrow functions passed directly to addEventListener cannot be removed later
+   * because each call to `() => {}` creates a NEW function object — so you must
+   * keep a reference to the exact same function you added.
+   */
+  private readonly onKeyDown: (e: KeyboardEvent) => void;
+  private readonly onKeyUp:   (e: KeyboardEvent) => void;
+
+  /**
    * Registers global keyboard listeners on the browser window.
-   * Called once at game startup; listeners persist for the lifetime of the page.
+   * Call destroy() to remove them if you tear down the game.
    */
   constructor()
   {
-    window.addEventListener('keydown', (e) =>
+    this.onKeyDown = (e: KeyboardEvent) =>
     {
       // Prevent arrow keys from scrolling the browser window while playing
       if (GAME_KEYS.has(e.key)) e.preventDefault();
       this.keys.add(e.key);
-    });
+    };
 
-    window.addEventListener('keyup', (e) =>
+    this.onKeyUp = (e: KeyboardEvent) =>
     {
       this.keys.delete(e.key);
-    });
+    };
+
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup',   this.onKeyUp);
+  }
+
+  /**
+   * Removes the keyboard listeners and clears all held-key state.
+   * Call this when tearing down the game to prevent memory leaks.
+   */
+  destroy(): void
+  {
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup',   this.onKeyUp);
+    this.keys.clear();
   }
 
   /**

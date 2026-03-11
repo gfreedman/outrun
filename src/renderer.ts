@@ -12,25 +12,33 @@
  * There is no real 3D engine here.  Instead, each road segment is projected
  * to screen space using a simple perspective formula:
  *
- *   scale = CAMERA_DEPTH / (worldZ - playerZ)   ← "how small does this look?"
+ *   scale   = CAMERA_DEPTH / (worldZ - playerZ)
  *   screenX = halfW - worldX * scale * halfW
  *   screenY = halfH + CAMERA_HEIGHT * scale * halfH
  *
- * Adjacent segments are drawn as filled trapezoids between their two
- * projected Y values, from the farthest visible segment toward the nearest
- * (painter's algorithm), so nearer geometry covers farther geometry correctly.
+ * Adjacent segments are drawn as filled trapezoids between their projected Y
+ * values, far-to-near (painter's algorithm), so nearer geometry covers farther.
  *
  * ── Two-pass road rendering ─────────────────────────────────────────────────
  *
- * Hills require a trick: a segment behind a hill crest must NOT be drawn even
- * though it exists in the array.  We solve this with two passes:
+ *   Pass 1 (front-to-back): project each segment, track the horizon ceiling
+ *     `maxy`.  Segments whose near edge projects above the ceiling are hidden
+ *     behind a hill crest and skipped.
  *
- *   Pass 1 (front-to-back): project each segment, track the highest (smallest Y)
- *     screen coordinate seen so far as `maxy`.  Any segment whose near edge
- *     projects ABOVE `maxy` is hidden behind a hill and skipped.
+ *   Pass 2 (back-to-front): draw only the visible segments so sprites and
+ *     grass overlay correctly.
  *
- *   Pass 2 (back-to-front): draw only the visible segments using painter's
- *     algorithm so sprites and grass overlay correctly.
+ * ── Performance notes ───────────────────────────────────────────────────────
+ *
+ *   projPool: A fixed-size array of ProjectedSeg objects allocated ONCE in the
+ *     constructor and reused every frame.  Without this, each frame would
+ *     allocate ~200 temporary objects → ~12,000 GC allocs/sec at 60 fps.
+ *
+ *   skyGradient: Cached and only recreated when horizonY changes (resize or
+ *     off-road jitter).  createLinearGradient() is expensive to call 60×/sec.
+ *
+ *   hudLayout: All HUD pixel positions and font strings are cached and only
+ *     recomputed when the canvas dimensions change (resize events only).
  */
 
 import { RoadSegment } from './types';
@@ -49,27 +57,83 @@ import
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
 } from './sprites';
 
+// ── Module-level constants ─────────────────────────────────────────────────────
+
+/**
+ * Fixed alpha (opacity) for each of the three tachometer bar rows.
+ * Declared outside the class so this array is created exactly ONCE,
+ * not on every frame inside renderHUD().
+ * Row 0 = top row (most prominent), row 2 = bottom row (most faded).
+ */
+const HUD_ROW_ALPHA = [1.0, 0.82, 0.65] as const;
+
+/** Number of LED segments in each tachometer row. */
+const HUD_NUM_SEGS = 20;
+
+// ── ProjectedSeg ──────────────────────────────────────────────────────────────
+
+/**
+ * Holds the screen-space projection of one road segment, computed in Pass 1
+ * and consumed in Pass 2.
+ *
+ * We pre-allocate a fixed pool of these objects in the constructor and
+ * overwrite them each frame — no new allocations at runtime.
+ *
+ * sc1 is stored here so Pass 2 can use it directly for sprite scaling
+ * instead of re-deriving it from sw1 (which would require a division).
+ */
+interface ProjectedSeg
+{
+  seg: RoadSegment;
+  sc1: number;
+  sx1: number; sy1: number; sw1: number;
+  sx2: number; sy2: number; sw2: number;
+}
+
+// ── HudLayout ─────────────────────────────────────────────────────────────────
+
+/**
+ * All pixel positions and font strings needed to draw the HUD.
+ * Computed once per canvas size and cached — recomputed only on resize.
+ * Avoids recalculating ~20 values every single frame.
+ */
+interface HudLayout
+{
+  padX: number;
+  segW: number; segH: number; segGap: number;
+  /** segW + segGap, pre-added so the tachometer loop avoids repeated addition. */
+  segStride: number;
+  /** 1 / (HUD_NUM_SEGS - 1), pre-divided for the colour-zone ratio each segment. */
+  tInv: number;
+  barW: number;
+  row3Bot: number; row2Bot: number; row1Bot: number;
+  numSize: number; lblSize: number;
+  lblBot: number; numBot: number; panelTop: number;
+  /** Full CSS font string for the large speed number — e.g. "bold 74px Impact, ...". */
+  fontNum: string;
+  /** Full CSS font string for the "km/h" label. */
+  fontLbl: string;
+}
+
 // ── Helper: drawTrapezoid ─────────────────────────────────────────────────────
 
 /**
  * Fills a four-sided polygon (trapezoid) between two horizontal scan-lines.
  *
  * Used for every road band: asphalt, grass, rumble strips, and lane dashes.
- * The shape has two parallel horizontal edges:
- *   Top edge:    centred at (x2, y2), half-width w2.
  *   Bottom edge: centred at (x1, y1), half-width w1.
+ *   Top edge:    centred at (x2, y2), half-width w2.
  *
- * When w1 > w2 (near edge wider than far edge) the result is the classic
- * converging-road perspective shape.
+ * When w1 > w2 (near wider than far) the result is the classic perspective shape.
  *
- * @param ctx   - Canvas 2D context to draw into.
+ * @param ctx   - Canvas 2D context.
  * @param x1    - Screen X of near (bottom) edge centre.
  * @param y1    - Screen Y of near (bottom) edge.
  * @param w1    - Half-width of near edge in pixels.
  * @param x2    - Screen X of far (top) edge centre.
  * @param y2    - Screen Y of far (top) edge.
  * @param w2    - Half-width of far edge in pixels.
- * @param color - CSS colour string; if empty the call is a no-op.
+ * @param color - CSS colour string; empty string = no-op.
  */
 function drawTrapezoid(
   ctx: CanvasRenderingContext2D,
@@ -97,22 +161,59 @@ export class Renderer
   private carSprites:  SpriteLoader | null;
   private roadSprites: SpriteLoader | null;
 
+  // ── Per-frame reusable projection pool ──────────────────────────────────
+  //
+  // projPool holds pre-allocated ProjectedSeg objects.
+  // projCount tracks how many are populated this frame (reset to 0 each frame).
+  // Size 300 gives headroom beyond DRAW_DISTANCE (200) for safety.
+
+  /** Pre-allocated pool of projection slots.  Never grows after construction. */
+  private readonly projPool: ProjectedSeg[];
+
+  /** Number of valid entries in projPool for the current frame. */
+  private projCount = 0;
+
+  // ── Sky gradient cache ────────────────────────────────────────────────────
+  //
+  // createLinearGradient() is expensive — cache the result and only
+  // regenerate it when the horizon Y position changes.
+
+  /** Cached gradient object; null until first render. */
+  private skyGradient:  CanvasGradient | null = null;
+
+  /** The horizonY value the cached gradient was built for. */
+  private skyGradientH  = -1;
+
+  // ── HUD layout cache ──────────────────────────────────────────────────────
+  //
+  // ~20 layout values (pixel positions, font strings) only need recomputing
+  // when the canvas size changes — not 60 times per second.
+
+  /** Cached layout; null until first render. */
+  private hudLayout: HudLayout | null = null;
+
+  /** Canvas width when hudLayout was last computed. */
+  private hudW = 0;
+
+  /** Canvas height when hudLayout was last computed. */
+  private hudH = 0;
+
   /** Smoothed speed value for the HUD display — prevents digit jitter. */
   private displaySpeed = 0;
 
   /**
    * Accumulated horizontal sky-layer offset for curve parallax.
-   * Each frame the sky shifts slightly in the direction of the current curve,
-   * giving the impression that the background recedes into the bend.
+   * Clamped modulo a large period to prevent unbounded growth over long sessions.
    */
   private skyOffset = 0;
 
   /**
-   * Creates a Renderer attached to the given canvas.
+   * Creates a Renderer attached to the given canvas and pre-allocates all
+   * per-frame reusable buffers so the render loop makes zero heap allocations.
    *
    * @param canvas      - The HTML canvas element to draw into.
-   * @param carSprites  - Pre-constructed loader for the car sprite sheet.
-   * @param roadSprites - Pre-constructed loader for the roadside sprite sheet.
+   * @param carSprites  - Loader for the car sprite sheet.
+   * @param roadSprites - Loader for the roadside sprite sheet.
    */
   constructor(
     canvas: HTMLCanvasElement,
@@ -125,6 +226,16 @@ export class Renderer
     this.ctx         = ctx;
     this.carSprites  = carSprites;
     this.roadSprites = roadSprites;
+
+    // Pre-allocate the projection pool once.  Every field is set to a dummy
+    // value here; they are overwritten before use each frame.
+    this.projPool = Array.from({ length: 300 }, () => (
+    {
+      seg: null! as RoadSegment,
+      sc1: 0,
+      sx1: 0, sy1: 0, sw1: 0,
+      sx2: 0, sy2: 0, sw2: 0,
+    }));
   }
 
   // ── Sky ───────────────────────────────────────────────────────────────────
@@ -132,9 +243,9 @@ export class Renderer
   /**
    * Draws a vertical colour gradient filling the sky area above the horizon.
    *
-   * Three colour stops give the authentic OutRun look:
-   *   Deep blue at the top → vibrant Caribbean blue in the middle →
-   *   pale haze near the horizon.
+   * The gradient is cached: it is only rebuilt when horizonY changes, which
+   * happens only on window resize or during off-road jitter.  At steady state
+   * the same CanvasGradient object is reused every frame.
    *
    * @param w        - Canvas width in pixels.
    * @param horizonY - Screen Y of the horizon line (sky fills 0…horizonY).
@@ -142,40 +253,41 @@ export class Renderer
   private renderSky(w: number, horizonY: number): void
   {
     const { ctx } = this;
-    const grad    = ctx.createLinearGradient(0, 0, 0, horizonY);
-    grad.addColorStop(0,    COLORS.SKY_TOP);
-    grad.addColorStop(0.55, COLORS.SKY_MID);
-    grad.addColorStop(1,    COLORS.SKY_HORIZON);
-    ctx.fillStyle = grad;
+
+    // Only recreate the gradient if the horizon position has changed.
+    if (horizonY !== this.skyGradientH)
+    {
+      const grad = ctx.createLinearGradient(0, 0, 0, horizonY);
+      grad.addColorStop(0,    COLORS.SKY_TOP);
+      grad.addColorStop(0.55, COLORS.SKY_MID);
+      grad.addColorStop(1,    COLORS.SKY_HORIZON);
+      this.skyGradient  = grad;
+      this.skyGradientH = horizonY;
+    }
+
+    ctx.fillStyle = this.skyGradient!;
     ctx.fillRect(0, 0, w, horizonY);
   }
 
   // ── Road + roadside sprites ───────────────────────────────────────────────
 
   /**
-   * Projects and draws the scrolling road, including:
-   *   - Grass verges (full-width fillRect between segments).
-   *   - Road surface trapezoids.
-   *   - Rumble strips, lane dashes, and edge stripes.
-   *   - Roadside palm tree sprites.
+   * Projects and draws the scrolling road in two passes.
    *
-   * Curve rendering:
-   *   Two accumulators (`dx`, `curveX`) produce a quadratic horizontal offset
-   *   so curves look like smooth parabolic bends, not linear skews.
-   *   dx     = rate of change of offset (incremented by seg.curve each step).
-   *   curveX = total accumulated offset (incremented by dx each step).
-   *   These are second-order because curves in OutRun are essentially parabolas.
+   * Pass 1 — front-to-back projection:
+   *   Walk from the nearest segment outward.  Project each segment to screen
+   *   space.  Use `maxy` to skip segments hidden behind hill crests.
+   *   Store visible segments in the pre-allocated projPool.
    *
-   * Hill rendering:
-   *   Each segment carries p1.world.y and p2.world.y.  Factoring those into
-   *   the screen-Y formula (CAMERA_HEIGHT - world.y) shifts segments up when
-   *   the road climbs and down when it descends.
+   * Pass 2 — back-to-front rendering (painter's algorithm):
+   *   Draw from farthest to nearest so near geometry covers far geometry.
+   *   Uses projPool; no new allocations.
    *
    * @param segments      - Full road segment array from Road.
-   * @param segmentCount  - Total number of segments (used for modulo wrap).
-   * @param playerZ       - Player's world Z (depth) position.
+   * @param segmentCount  - Total segment count (for modulo wrap).
+   * @param playerZ       - Player's world Z position.
    * @param playerX       - Player's normalised lateral position (-1…+1).
-   * @param speed         - Current speed (used for parallax rate).
+   * @param speed         - Current speed (for parallax accumulation).
    * @param drawDistance  - How many segments ahead to render.
    * @param w             - Canvas width.
    * @param h             - Canvas height.
@@ -200,109 +312,95 @@ export class Renderer
     const cameraZ  = playerZ;
     const totalLen = segmentCount * SEGMENT_LENGTH;
 
-    // Solid grass fill behind everything — prevents a bare canvas gap
-    // between the horizon line and the farthest visible road segment.
+    // Solid grass fill — prevents a bare gap between the horizon and the
+    // farthest visible road segment on flat sections.
     ctx.fillStyle = COLORS.GRASS_LIGHT;
     ctx.fillRect(0, halfH, w, halfH);
 
-    // Index of the segment directly under the player
     const startIndex  = Math.floor(playerZ / SEGMENT_LENGTH) % segmentCount;
     const baseSegment = segments[startIndex];
     const basePercent = (playerZ % SEGMENT_LENGTH) / SEGMENT_LENGTH;
 
-    // Accumulate sky parallax offset toward the direction of the current curve
+    // Accumulate sky parallax; clamp modulo a large period to prevent
+    // the value growing unbounded over a long play session.
     const speedPercent = speed / PLAYER_MAX_SPEED;
-    this.skyOffset += PARALLAX_SKY * baseSegment.curve * speedPercent;
+    this.skyOffset     = (this.skyOffset + PARALLAX_SKY * baseSegment.curve * speedPercent) % 10000;
 
-    // ── Pass 1: project front-to-back, compute visibility ─────────────────
+    // ── Pass 1: project front-to-back, determine visibility ───────────────
     //
-    // We step from the nearest segment (i=1) out to the farthest (i=drawDistance).
-    // `maxy` is the lowest on-screen Y seen so far for far edges.
-    // A segment is visible only if its near edge (sy1) projects at or below maxy,
-    // meaning it hasn't been "eclipsed" by a hill crest closer to the camera.
+    // `maxy` starts at the horizon (halfH).  Each time we see a segment
+    // whose far edge is higher on screen (smaller Y) than maxy, we tighten
+    // the ceiling.  Any segment whose near edge is above that ceiling is
+    // hidden behind a hill and excluded from projPool.
 
-    interface ProjectedSeg
-    {
-      seg: RoadSegment;
-      sx1: number; sy1: number; sw1: number;
-      sx2: number; sy2: number; sw2: number;
-    }
-
-    const projected: ProjectedSeg[] = [];
-    let maxy   = halfH;                            // nothing rendered yet — horizon is ceiling
-    let dx     = -(baseSegment.curve * basePercent); // interpolate within current segment
+    this.projCount = 0;   // reuse the pool — reset the counter, not the array
+    let maxy   = halfH;
+    let dx     = -(baseSegment.curve * basePercent);
     let curveX = 0;
 
     for (let i = 1; i <= drawDistance; i++)
     {
       const absIdx = startIndex + i;
       const segIdx = absIdx % segmentCount;
-      const wraps  = Math.floor(absIdx / segmentCount);  // how many times we've looped
+      const wraps  = Math.floor(absIdx / segmentCount);
       const seg    = segments[segIdx];
 
-      // World Z coordinates for both edges of this segment, adjusted for track wrap
       const wz1 = seg.p1.world.z + wraps * totalLen;
-      const wz2 = seg.p2.world.z + wraps * totalLen;
-
-      // Camera-relative depth (positive = in front of camera)
       const cz1 = wz1 - cameraZ;
-      const cz2 = wz2 - cameraZ;
 
       if (cz1 <= 0)
       {
-        // Segment is behind the camera — advance accumulators and skip drawing
+        // Behind the camera — advance accumulators only
         curveX += dx;
         dx += seg.curve;
         continue;
       }
 
-      // Perspective scale: larger value = closer to camera = larger on screen
+      const wz2 = seg.p2.world.z + wraps * totalLen;
+      const cz2 = wz2 - cameraZ;
+
+      // Perspective scale — larger means closer to camera
       const sc1 = CAMERA_DEPTH / cz1;
       const sc2 = cz2 > 0 ? CAMERA_DEPTH / cz2 : 0;
 
-      // Horizontal projection: subtract curveX so the road bends left/right
-      const projX1 = (cameraX - curveX)       * sc1;
-      const projX2 = (cameraX - curveX - dx)  * sc2;
+      // Horizontal projection: curve accumulator bends the road left/right
+      const projX1 = (cameraX - curveX)      * sc1;
+      const projX2 = (cameraX - curveX - dx) * sc2;
 
-      // Screen X (centre of road at this depth)
       const sx1 = Math.round(halfW - projX1 * halfW);
       const sx2 = Math.round(halfW - projX2 * halfW);
 
-      // Screen Y: hills shift via (CAMERA_HEIGHT - world.y)
-      //   world.y > 0 (uphill)   → smaller value → segment appears higher on screen
-      //   world.y < 0 (downhill) → larger value  → segment appears lower on screen
+      // Vertical projection: world.y shifts segments up (uphill) or down (downhill)
       const sy1 = Math.round(halfH + (CAMERA_HEIGHT - seg.p1.world.y) * sc1 * halfH);
       const sy2 = Math.round(halfH + (CAMERA_HEIGHT - seg.p2.world.y) * sc2 * halfH);
 
-      // Half-width of road in pixels at each edge depth
       const sw1 = ROAD_WIDTH * sc1 * halfW;
       const sw2 = ROAD_WIDTH * sc2 * halfW;
 
-      // Visibility check: sy1 >= maxy means the near edge is at or below the
-      // current "ceiling" (not hidden behind a hill crest closer to the camera)
       if (sy1 >= maxy)
       {
-        projected.push({ seg, sx1, sy1, sw1, sx2, sy2, sw2 });
-        maxy = Math.min(maxy, sy2);   // tighten ceiling to far edge of this segment
+        // Write directly into the pre-allocated slot — no heap allocation
+        const slot = this.projPool[this.projCount++];
+        slot.seg = seg;
+        slot.sc1 = sc1;   // stored so Pass 2 sprites don't need to re-derive it
+        slot.sx1 = sx1; slot.sy1 = sy1; slot.sw1 = sw1;
+        slot.sx2 = sx2; slot.sy2 = sy2; slot.sw2 = sw2;
+        maxy = Math.min(maxy, sy2);
       }
 
-      // Advance curve accumulators for next segment
       curveX += dx;
       dx     += seg.curve;
     }
 
     // ── Horizon cap ───────────────────────────────────────────────────────
     //
-    // The grass fillRect and road trapezoid for each segment only cover
-    // sy2→sy1 of that segment.  The thin strip from halfH down to the far
-    // edge of the LAST visible segment would show only the initial solid
-    // grass fill, leaving a flat-coloured bar at the horizon instead of a
-    // proper vanishing point.  We plug that gap by drawing a tiny road
-    // wedge and grass strip from halfH to that far edge.
+    // Fills the gap between halfH and the far edge of the farthest visible
+    // segment so the road converges to a point at the horizon rather than
+    // cutting off into flat grass.
 
-    if (projected.length > 0)
+    if (this.projCount > 0)
     {
-      const far = projected[projected.length - 1];
+      const far = this.projPool[this.projCount - 1];
       if (far.sy2 > halfH)
       {
         ctx.fillStyle = COLORS.GRASS_LIGHT;
@@ -312,39 +410,31 @@ export class Renderer
     }
 
     // ── Pass 2: render back-to-front (painter's algorithm) ────────────────
-    //
-    // We iterate the projected array from last (farthest) to first (nearest).
-    // Each nearer segment paints over segments behind it, so road markings
-    // and sprites overlap correctly.
 
-    for (let i = projected.length - 1; i >= 0; i--)
+    for (let i = this.projCount - 1; i >= 0; i--)
     {
-      const p = projected[i];
-      const { seg, sx1, sy1, sw1, sx2, sy2, sw2 } = p;
+      const p                                    = this.projPool[i];
+      const { seg, sc1, sx1, sy1, sw1, sx2, sy2, sw2 } = p;
 
-      // Skip degenerate segments (far edge not above near edge on screen)
-      if (sy2 >= sy1) continue;
+      if (sy2 >= sy1) continue;   // degenerate segment — skip
 
       const { color } = seg;
 
-      // ── Grass verge (full canvas width) ────────────────────────────────
+      // Full-width grass band behind this segment strip
       ctx.fillStyle = color.grass;
       ctx.fillRect(0, sy2, w, sy1 - sy2);
 
-      // ── Asphalt road surface ────────────────────────────────────────────
+      // Asphalt road surface
       drawTrapezoid(ctx, sx1, sy1, sw1, sx2, sy2, sw2, color.road);
 
-      // ── Lane markings (only on "dash" segments) ─────────────────────────
+      // Lane markings — only drawn on alternating "dash" segments
       if (color.lane)
       {
-        // Centre-line dashes: two thin strips, each offset from road centre
         const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
         const lw2 = sw2 * 0.06, lo2 = sw2 * 0.33;
         drawTrapezoid(ctx, sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2, color.lane);
         drawTrapezoid(ctx, sx1 + lo1, sy1, lw1, sx2 + lo2, sy2, lw2, color.lane);
 
-        // Edge stripes: a thick outer stripe and a thinner inner stripe per side.
-        // These are also only drawn on "dash" segments for the dashed-stripe look.
         const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
         const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
         const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
@@ -355,30 +445,22 @@ export class Renderer
         drawTrapezoid(ctx, sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2, '#FFFFFF');
       }
 
-      // ── Roadside sprites ────────────────────────────────────────────────
-      //
-      // Sprites are scaled by the same perspective factor as the road.
-      // sc1 is re-derived from sw1 (sw1 = ROAD_WIDTH * sc1 * halfW).
-      // sx1 already incorporates the curve offset for this segment, so
-      // si.worldX only needs the per-depth scale applied to position correctly.
-
+      // Roadside sprites — scaled by the perspective factor stored in sc1.
+      // Using p.sc1 directly avoids the division sw1 / (ROAD_WIDTH * halfW)
+      // that would otherwise re-derive the same value.
       if (seg.sprites && this.roadSprites?.isReady() && sy1 >= halfH)
       {
-        const sc1 = sw1 / (ROAD_WIDTH * halfW);
-
         for (const si of seg.sprites)
         {
           const rect   = SPRITE_RECTS[si.id as SpriteId];
           const worldH = SPRITE_WORLD_HEIGHT[si.id as SpriteId];
-          if (!rect || !worldH) continue;   // unknown id — skip silently
+          if (!rect || !worldH) continue;
 
-          // Scale sprite height using perspective; skip tiny distant sprites
           const sprH = worldH * sc1 * halfH;
           if (sprH < 2) continue;
 
           const sprW = sprH * (rect.w / rect.h);
           const sprX = sx1 + si.worldX * sc1 * halfW;
-
           this.roadSprites.draw(ctx, rect, sprX - sprW / 2, sy1 - sprH, sprW, sprH);
         }
       }
@@ -388,49 +470,35 @@ export class Renderer
   // ── Player car ────────────────────────────────────────────────────────────
 
   /**
-   * Draws the player's car sprite at the bottom-centre of the screen.
+   * Draws the player's Ferrari at the bottom-centre of the screen.
    *
-   * Frame selection:
-   *   steerAngle is in [-1, +1] where -1 = full left lock, +1 = full right lock.
-   *   We map this to a frame index, capped at 60% of the full range so the
-   *   car nose never appears to point sideways even at maximum steering input.
+   * Frame selection: steerAngle (-1…+1) maps to a sprite frame, capped at
+   * 60% of full range so the nose never points sideways at full lock.
    *
-   * Pivot correction:
-   *   The rear axle of the car should stay fixed at screen centre as the
-   *   steering changes.  Each frame's bounding box is a different width,
-   *   so CAR_PIVOT_OFFSETS pre-computed the per-frame offset needed to
-   *   re-align the axle.
+   * Pivot correction: CAR_PIVOT_OFFSETS keeps the rear axle fixed on screen
+   * as the steering frame changes.
    *
-   * @param w          - Canvas width in pixels.
-   * @param h          - Canvas height in pixels.
-   * @param steerAngle - Continuous steering value in [-1, +1].
+   * @param w          - Canvas width.
+   * @param h          - Canvas height.
+   * @param steerAngle - Steering value in [-1, +1].
    */
   private renderCar(w: number, h: number, steerAngle: number): void
   {
     const { ctx } = this;
-
     if (!this.carSprites?.isReady()) return;
 
-    // Cap frame range at 60%: steerAngle ±1 maps to ±60% of CAR_SPRITE_CENTER
-    const frameIndex = Math.round(steerAngle * CAR_SPRITE_CENTER * 0.6) + CAR_SPRITE_CENTER;
-    const rect       = carFrameRect(frameIndex);
-
-    // Car display size: 20% of screen height, anchored just above the bottom
-    const carH = Math.min(h * 0.20, 190);
-    const carW = carH * (CAR_SPRITE_FRAME_W / CAR_SPRITE_FRAME_H);
-    const bot  = h - h * 0.04;
-
-    // Pivot correction: shift draw position so rear axle stays centred
+    const frameIndex      = Math.round(steerAngle * CAR_SPRITE_CENTER * 0.6) + CAR_SPRITE_CENTER;
+    const rect            = carFrameRect(frameIndex);
+    const carH            = Math.min(h * 0.20, 190);
+    const carW            = carH * (CAR_SPRITE_FRAME_W / CAR_SPRITE_FRAME_H);
+    const bot             = h - h * 0.04;
     const pivotOffset     = CAR_PIVOT_OFFSETS[frameIndex] ?? 0;
     const pivotCorrection = (pivotOffset / CAR_SPRITE_FRAME_W) * carW;
+    const cx              = w / 2 + steerAngle * w * 0.05 + pivotCorrection;
+    const drawX           = Math.round(cx - carW / 2);
+    const drawY           = Math.round(bot - carH);
 
-    // Slight lateral nudge (5% of screen width) to reinforce steering feel
-    const cx = w / 2 + steerAngle * w * 0.05 + pivotCorrection;
-
-    const drawX = Math.round(cx - carW / 2);
-    const drawY = Math.round(bot - carH);
-
-    // Soft elliptical shadow under the car
+    // Soft elliptical ground shadow
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.beginPath();
     ctx.ellipse(cx, bot + 4, carW * 0.4, 6, 0, 0, Math.PI * 2);
@@ -441,147 +509,169 @@ export class Renderer
     this.carSprites.draw(ctx, rect, drawX, drawY, Math.round(carW), Math.round(carH));
   }
 
-  // ── HUD — OutRun-style digital speedometer + 3-row tachometer ────────────
+  // ── HUD layout helper ─────────────────────────────────────────────────────
 
   /**
-   * Draws the speed readout and animated tachometer bar display.
+   * Computes all pixel positions and font strings for the HUD.
+   * Called only when the canvas dimensions change — not every frame.
+   * All values are derived from `w` and `h` so the HUD scales with the window.
    *
-   * Layout (bottom-left corner):
-   *   - Large red speed number in km/h (Impact font with dark shadow).
-   *   - "km/h" label beneath the number.
-   *   - Three rows of segmented LED-style bars, colour-coded red→orange→green.
+   * @param w - Canvas width in pixels.
+   * @param h - Canvas height in pixels.
+   * @returns A HudLayout object with every pre-computed value.
+   */
+  private computeHudLayout(w: number, h: number): HudLayout
+  {
+    const padX    = Math.round(w * 0.025);
+    const padY    = Math.round(h * 0.028);
+    const segW    = Math.round(w * 0.0095);
+    const segH    = Math.round(h * 0.0135);
+    const segGap  = Math.max(1, Math.round(w * 0.0022));
+    const rowGap  = Math.round(h * 0.007);
+    const barW    = HUD_NUM_SEGS * (segW + segGap) - segGap;
+    const row3Bot = h - padY;
+    const row2Bot = row3Bot - segH - rowGap;
+    const row1Bot = row2Bot - segH - rowGap;
+    const numSize = Math.round(h * 0.086);
+    const lblSize = Math.round(h * 0.030);
+    const lblBot  = row1Bot - rowGap * 2;
+    const numBot  = lblBot  - lblSize - Math.round(h * 0.004);
+    const panelTop = numBot - numSize - 4;
+
+    return {
+      padX,
+      segW, segH, segGap,
+      segStride: segW + segGap,   // pre-added: avoids repeated addition in the tach loop
+      tInv: 1 / (HUD_NUM_SEGS - 1), // pre-divided: avoids repeated division in the tach loop
+      barW,
+      row3Bot, row2Bot, row1Bot,
+      numSize, lblSize, lblBot, numBot, panelTop,
+      fontNum: `bold ${numSize}px Impact, 'Arial Black', sans-serif`,
+      fontLbl: `bold ${lblSize}px Impact, 'Arial Black', sans-serif`,
+    };
+  }
+
+  // ── HUD ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Draws the OutRun-style digital speedometer and 3-row tachometer.
    *
-   * The tach bars oscillate slightly to simulate real gauge noise:
-   *   - Oscillation amplitude decreases as speed approaches maximum.
-   *   - Oscillation frequency increases at lower speeds (engine hunting).
-   *   - Each row oscillates at a slightly different phase for visual interest.
+   * Layout (bottom-left):
+   *   - Large red speed number in km/h.
+   *   - "km/h" label.
+   *   - Three rows of segmented LED bars (red → orange → green).
    *
-   * @param w     - Canvas width in pixels.
-   * @param h     - Canvas height in pixels.
+   * The tach bars oscillate to simulate analogue gauge noise:
+   *   amplitude shrinks near max speed; frequency rises at low speed.
+   *   Each row has a different phase for visual interest.
+   *
+   * Note: ctx.save/restore is NOT called here — the outer render() call
+   * already wraps the entire frame in a single save/restore pair.
+   *
+   * @param w     - Canvas width.
+   * @param h     - Canvas height.
    * @param speed - Current speed in world units per second.
    */
   private renderHUD(w: number, h: number, speed: number): void
   {
     const { ctx } = this;
-    const time    = performance.now() / 1000;
-    const ratio   = speed / PLAYER_MAX_SPEED;
 
-    // Smooth the displayed speed toward the real speed over ~8 frames.
-    // This prevents the digits from flickering when speed changes rapidly.
+    // Recompute layout only when canvas size has changed (resize events)
+    if (w !== this.hudW || h !== this.hudH)
+    {
+      this.hudLayout = this.computeHudLayout(w, h);
+      this.hudW = w;
+      this.hudH = h;
+    }
+    const L = this.hudLayout!;
+
+    const time  = performance.now() / 1000;
+    const ratio = speed / PLAYER_MAX_SPEED;
+
+    // Smooth the displayed speed over ~8 frames to prevent digit flicker
     this.displaySpeed += (speed - this.displaySpeed) * 0.10;
     const kmh = Math.round(this.displaySpeed * (290 / PLAYER_MAX_SPEED));
 
-    ctx.save();
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
 
-    // ── Layout constants ──────────────────────────────────────────────────
-    const padX     = Math.round(w * 0.025);
-    const padY     = Math.round(h * 0.028);
-    const NUM_SEGS = 20;
-    const segW     = Math.round(w * 0.0095);
-    const segH     = Math.round(h * 0.0135);
-    const segGap   = Math.max(1, Math.round(w * 0.0022));
-    const rowGap   = Math.round(h * 0.007);
-    const barW     = NUM_SEGS * (segW + segGap) - segGap;
-
-    // Build upward from the screen bottom
-    const row3Bot  = h - padY;
-    const row2Bot  = row3Bot - segH - rowGap;
-    const row1Bot  = row2Bot - segH - rowGap;
-    const numSize  = Math.round(h * 0.086);
-    const lblSize  = Math.round(h * 0.030);
-    const lblBot   = row1Bot - rowGap * 2;
-    const numBot   = lblBot  - lblSize - Math.round(h * 0.004);
-    const panelTop = numBot  - numSize - 4;
-
-    // ── Background panel ──────────────────────────────────────────────────
+    // Background panel
     ctx.fillStyle = 'rgba(0,0,0,0.52)';
-    ctx.fillRect(padX - 8, panelTop, barW + 16, row3Bot - panelTop + 4);
+    ctx.fillRect(L.padX - 8, L.panelTop, L.barW + 16, L.row3Bot - L.panelTop + 4);
 
-    // ── Speed number ──────────────────────────────────────────────────────
-    // Drawn four times offset in each diagonal for a chunky shadow effect,
-    // then once more in bright red on top.
+    // Speed number — drawn 4× offset for a shadow, then once in bright red
     const numStr = `${kmh}`;
-    ctx.font = `bold ${numSize}px Impact, 'Arial Black', sans-serif`;
-
+    ctx.font = L.fontNum;
     ctx.fillStyle = '#330000';
-    ctx.fillText(numStr, padX + 2, numBot + 2);
-    ctx.fillText(numStr, padX - 2, numBot + 2);
-    ctx.fillText(numStr, padX + 2, numBot - 2);
-    ctx.fillText(numStr, padX - 2, numBot - 2);
-
+    ctx.fillText(numStr, L.padX + 2, L.numBot + 2);
+    ctx.fillText(numStr, L.padX - 2, L.numBot + 2);
+    ctx.fillText(numStr, L.padX + 2, L.numBot - 2);
+    ctx.fillText(numStr, L.padX - 2, L.numBot - 2);
     ctx.fillStyle = '#FF2200';
-    ctx.fillText(numStr, padX, numBot);
+    ctx.fillText(numStr, L.padX, L.numBot);
 
-    // ── "km/h" label ──────────────────────────────────────────────────────
-    ctx.font = `bold ${lblSize}px Impact, 'Arial Black', sans-serif`;
+    // "km/h" label
+    ctx.font = L.fontLbl;
     ctx.fillStyle = '#550000';
-    ctx.fillText('km/h', padX + 1, lblBot + 1);
+    ctx.fillText('km/h', L.padX + 1, L.lblBot + 1);
     ctx.fillStyle = '#FF4422';
-    ctx.fillText('km/h', padX, lblBot);
+    ctx.fillText('km/h', L.padX, L.lblBot);
 
-    // ── Static pixel-grain texture ─────────────────────────────────────────
-    // Deterministic dot pattern (no Math.random) so it doesn't flicker.
+    // Static pixel-grain texture (deterministic — no per-frame flicker)
     ctx.globalAlpha = 0.10;
     ctx.fillStyle   = '#FF2200';
-    for (let gy = panelTop; gy < row3Bot; gy += 3)
+    for (let gy = L.panelTop; gy < L.row3Bot; gy += 3)
     {
-      for (let gx = padX; gx < padX + barW; gx += 3)
+      for (let gx = L.padX; gx < L.padX + L.barW; gx += 3)
       {
         if ((gx * 7 + gy * 13) % 19 < 2) ctx.fillRect(gx, gy, 1, 1);
       }
     }
     ctx.globalAlpha = 1;
 
-    // ── 3-row tachometer bars ─────────────────────────────────────────────
-    // Each row oscillates at a different frequency and phase.
-    // `amp` shrinks at high speed so the display steadies out near redline.
+    // 3-row tachometer bars
     const amp  = 0.04 * (1 - ratio * 0.65);
     const freq = 5 + (1 - ratio) * 12;
 
-    const fills =
-    [
-      Math.max(0, Math.min(1, ratio * 0.92 + Math.sin(time * freq)             * amp)),
-      Math.max(0, Math.min(1, ratio * 0.86 + Math.sin(time * freq * 0.87 + 1)  * amp)),
-      Math.max(0, Math.min(1, ratio * 0.78 + Math.sin(time * freq * 0.73 + 2)  * amp)),
-    ];
-    const rowBots  = [row1Bot, row2Bot, row3Bot];
-    const rowAlpha = [1.0, 0.82, 0.65];
+    // Compute per-row fill fractions; each row uses a different oscillation phase
+    const fill0 = Math.max(0, Math.min(1, ratio * 0.92 + Math.sin(time * freq)            * amp));
+    const fill1 = Math.max(0, Math.min(1, ratio * 0.86 + Math.sin(time * freq * 0.87 + 1) * amp));
+    const fill2 = Math.max(0, Math.min(1, ratio * 0.78 + Math.sin(time * freq * 0.73 + 2) * amp));
+
+    const rowFills = [fill0, fill1, fill2];
+    const rowBots  = [L.row1Bot, L.row2Bot, L.row3Bot];
 
     for (let row = 0; row < 3; row++)
     {
       const rBot   = rowBots[row];
-      const filled = Math.round(fills[row] * NUM_SEGS);
-      ctx.globalAlpha = rowAlpha[row];
+      const filled = Math.round(rowFills[row] * HUD_NUM_SEGS);
+      ctx.globalAlpha = HUD_ROW_ALPHA[row];  // constant array — no allocation
 
-      for (let i = 0; i < NUM_SEGS; i++)
+      for (let i = 0; i < HUD_NUM_SEGS; i++)
       {
-        const x = padX + i * (segW + segGap);
-        const t = i / (NUM_SEGS - 1);
+        // segStride pre-computed (segW + segGap) avoids repeated addition
+        const x = L.padX + i * L.segStride;
+        // tInv pre-computed 1/(NUM_SEGS-1) avoids repeated division
+        const t = i * L.tInv;
 
-        if (i < filled)
-        {
-          // Lit segment: red → orange → green left to right
-          ctx.fillStyle = t < 0.33 ? '#CC0000' : t < 0.66 ? '#FF6600' : '#00BB00';
-        }
-        else
-        {
-          // Unlit segment: dark tint in the zone's own colour
-          ctx.fillStyle = t < 0.33 ? '#280000' : t < 0.66 ? '#281200' : '#002800';
-        }
-        ctx.fillRect(x, rBot - segH, segW, segH);
+        ctx.fillStyle = i < filled
+          ? (t < 0.33 ? '#CC0000' : t < 0.66 ? '#FF6600' : '#00BB00')
+          : (t < 0.33 ? '#280000' : t < 0.66 ? '#281200' : '#002800');
+
+        ctx.fillRect(x, rBot - L.segH, L.segW, L.segH);
       }
     }
 
     ctx.globalAlpha = 1;
-    ctx.restore();
   }
 
   // ── Public entry point ────────────────────────────────────────────────────
 
   /**
    * Draws a complete frame.  Called every animation frame by game.ts.
+   *
+   * A single ctx.save/restore pair wraps the entire frame — renderHUD no
+   * longer needs its own nested pair.
    *
    * @param segments       - Full road segment array.
    * @param segmentCount   - Total segment count (for modulo wrap).
@@ -592,8 +682,7 @@ export class Renderer
    * @param h              - Canvas height in pixels.
    * @param speed          - Current speed in world units per second.
    * @param steerAngle     - Continuous steering value in [-1, +1].
-   * @param horizonOffset  - Pixel offset to shift the horizon line up/down
-   *                         (used for terrain bump jitter when off-road).
+   * @param horizonOffset  - Pixel offset to shift the horizon (off-road jitter).
    */
   render(
     segments:      RoadSegment[],

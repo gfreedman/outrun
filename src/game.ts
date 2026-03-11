@@ -150,6 +150,9 @@ export class Game
   /** Kicks off the requestAnimationFrame loop. */
   start(): void
   {
+    // Guard against calling start() twice — a second RAF chain would run the
+    // game at double speed and waste a full CPU core on duplicate frames.
+    if (this.rafId !== 0) return;
     this.lastTimestamp = performance.now();
     this.rafId = requestAnimationFrame(this.loop);
   }
@@ -158,6 +161,8 @@ export class Game
   stop(): void
   {
     cancelAnimationFrame(this.rafId);
+    // Reset to 0 so start() can safely restart the loop later.
+    this.rafId = 0;
   }
 
   // ── Main loop ─────────────────────────────────────────────────────────────
@@ -269,8 +274,7 @@ export class Game
     //   push = 6 * 1.0 * 0.3 = 1.8 road-widths/sec — must counter-steer actively.
 
     const playerSegment = this.road.findSegment(this.playerZ);
-    const speedPercent  = this.speed / PLAYER_MAX_SPEED;
-    this.playerX -= playerSegment.curve * speedPercent * CENTRIFUGAL * dt;
+    this.playerX -= playerSegment.curve * speedRatio * CENTRIFUGAL * dt;
 
     // ── Drift / oversteer ──────────────────────────────────────────────────
     //
@@ -286,7 +290,7 @@ export class Game
     if (speedRatio > 0.5 && Math.abs(playerSegment.curve) > 0)
     {
       // Force centrifugal is applying this frame (road-widths/sec²)
-      const centForce    = Math.abs(playerSegment.curve * speedPercent * CENTRIFUGAL);
+      const centForce    = Math.abs(playerSegment.curve * speedRatio * CENTRIFUGAL);
       // Grip available to resist lateral force (tapers with speed)
       const availGrip    = PLAYER_STEERING * gripFactor;
       // If centrifugal exceeds the onset fraction of grip, slide builds
