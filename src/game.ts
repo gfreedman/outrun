@@ -251,7 +251,7 @@ export class Game
     //   like you're right on the limit.
 
     const steerRatio = Math.max(0.3, speedRatio);
-    const gripFactor = Math.max(0.5, 1 - speedRatio * speedRatio * 0.5);
+    const gripFactor = Math.max(0.65, 1 - speedRatio * speedRatio * 0.5);
 
     if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * steerRatio * gripFactor * dt;
     if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * gripFactor * dt;
