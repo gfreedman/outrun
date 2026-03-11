@@ -1,8 +1,8 @@
 export const CAMERA_HEIGHT    = 1000;   // world units
 export const ROAD_WIDTH       = 2000;   // world units (half-width)
 export const SEGMENT_LENGTH   = 200;    // world units per segment
-export const DRAW_DISTANCE    = 100;    // segments rendered per frame (must be < SEGMENT_COUNT)
-export const SEGMENT_COUNT    = 200;    // total segments in looping road
+export const DRAW_DISTANCE    = 150;    // segments rendered per frame (must be < SEGMENT_COUNT)
+export const SEGMENT_COUNT    = 500;    // total segments in looping road
 export const FOV_DEG          = 100;    // field of view in degrees
 export const CAMERA_DEPTH     = 1 / Math.tan((FOV_DEG / 2) * Math.PI / 180);
 
@@ -43,6 +43,15 @@ export const PLAYER_STEERING    = 2.0;  // road-widths per second at max speed
 export const OFFROAD_MAX_RATIO     = 0.30;   // 30% of max speed on grass
 export const OFFROAD_DECEL         = 3500;   // u/s² extra friction on grass
 export const OFFROAD_RECOVERY_TIME = 1.5;    // seconds to recover full speed
+
+// ── Curves & Hills ───────────────────────────────────────────────────────────
+export const ROAD_LENGTH = { NONE: 0, SHORT: 25, MEDIUM: 50, LONG: 100 } as const;
+export const ROAD_CURVE  = { NONE: 0, EASY: 2, MEDIUM: 4, HARD: 6 } as const;
+export const ROAD_HILL   = { NONE: 0, LOW: 20, MEDIUM: 40, HIGH: 60 } as const;
+export const CENTRIFUGAL = 0.3;
+export const PARALLAX_SKY   = 0.001;
+export const PARALLAX_HILLS = 0.002;
+export const PARALLAX_TREES = 0.003;
 
 // Color palette — authentic OutRun / Jake Gordon reference values
 export const COLORS = {

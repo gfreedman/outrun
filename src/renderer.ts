@@ -1,8 +1,9 @@
 import { RoadSegment } from './types';
 import {
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,
-  SEGMENT_LENGTH, SEGMENT_COUNT, COLORS,
+  SEGMENT_LENGTH, COLORS,
   PLAYER_MAX_SPEED,
+  PARALLAX_SKY,
 } from './constants';
 import {
   SpriteLoader, SpriteId,
@@ -37,6 +38,7 @@ export class Renderer {
   private carSprites: SpriteLoader | null;
   private roadSprites: SpriteLoader | null;
   private displaySpeed = 0; // interpolated for smooth digit transition
+  private skyOffset    = 0; // parallax horizontal scroll on curves
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -66,48 +68,89 @@ export class Renderer {
 
   private renderRoad(
     segments: RoadSegment[],
+    segmentCount: number,
     playerZ: number,
     playerX: number,
+    speed: number,
     drawDistance: number,
     w: number,
     h: number,
     horizonY: number,
   ): void {
     const { ctx } = this;
-    const halfW   = w / 2;
-    const halfH   = horizonY;
-    const cameraX = playerX * ROAD_WIDTH;
-    const cameraZ = playerZ;
-    const totalLen = SEGMENT_COUNT * SEGMENT_LENGTH;
+    const halfW    = w / 2;
+    const halfH    = horizonY;
+    const cameraX  = playerX * ROAD_WIDTH;
+    const cameraZ  = playerZ;
+    const totalLen = segmentCount * SEGMENT_LENGTH;
 
     // Solid grass fill — ensures no gap between horizon and first segment
     ctx.fillStyle = COLORS.GRASS_LIGHT;
     ctx.fillRect(0, halfH, w, halfH);
 
-    const startIndex = Math.floor(playerZ / SEGMENT_LENGTH) % SEGMENT_COUNT;
+    const startIndex  = Math.floor(playerZ / SEGMENT_LENGTH) % segmentCount;
+    const baseSegment = segments[startIndex];
+    const basePercent = (playerZ % SEGMENT_LENGTH) / SEGMENT_LENGTH;
 
-    for (let i = drawDistance; i >= 1; i--) {
+    // Parallax sky scroll
+    const speedPercent = speed / PLAYER_MAX_SPEED;
+    this.skyOffset += PARALLAX_SKY * baseSegment.curve * speedPercent;
+
+    // ── Phase 1: project front-to-back, determine visibility via maxy ──────
+
+    interface ProjectedSeg {
+      seg: RoadSegment;
+      sx1: number; sy1: number; sw1: number;
+      sx2: number; sy2: number; sw2: number;
+      curveOffset: number;
+    }
+    const projected: ProjectedSeg[] = [];
+    let maxy   = halfH; // start at horizon: segments above horizon are sky, below are visible road
+    let dx     = -(baseSegment.curve * basePercent);
+    let curveX = 0;
+
+    for (let i = 1; i <= drawDistance; i++) {
       const absIdx = startIndex + i;
-      const segIdx = absIdx % SEGMENT_COUNT;
-      const wraps  = Math.floor(absIdx / SEGMENT_COUNT);
+      const segIdx = absIdx % segmentCount;
+      const wraps  = Math.floor(absIdx / segmentCount);
       const seg    = segments[segIdx];
 
       const wz1 = seg.p1.world.z + wraps * totalLen;
       const wz2 = seg.p2.world.z + wraps * totalLen;
       const cz1 = wz1 - cameraZ;
       const cz2 = wz2 - cameraZ;
-      if (cz1 <= 0 || cz2 <= 0) continue;
+      if (cz1 <= 0) { curveX += dx; dx += seg.curve; continue; }
 
       const sc1 = CAMERA_DEPTH / cz1;
-      const sc2 = CAMERA_DEPTH / cz2;
+      const sc2 = cz2 > 0 ? CAMERA_DEPTH / cz2 : 0;
 
-      const sx1 = halfW - cameraX * sc1 * halfW;
-      const sy1 = Math.round(halfH + CAMERA_HEIGHT * sc1 * halfH); // integer y → no sub-pixel bleed
+      // Hill: factor in world.y so slopes push segments up/down on screen
+      const projX1 = (cameraX - curveX) * sc1;
+      const projX2 = (cameraX - curveX - dx) * sc2;
+
+      const sx1 = Math.round(halfW - projX1 * halfW);
+      const sy1 = Math.round(halfH + (CAMERA_HEIGHT - seg.p1.world.y) * sc1 * halfH);
       const sw1 = ROAD_WIDTH * sc1 * halfW;
 
-      const sx2 = halfW - cameraX * sc2 * halfW;
-      const sy2 = Math.round(halfH + CAMERA_HEIGHT * sc2 * halfH); // integer y → no sub-pixel bleed
+      const sx2 = Math.round(halfW - projX2 * halfW);
+      const sy2 = Math.round(halfH + (CAMERA_HEIGHT - seg.p2.world.y) * sc2 * halfH);
       const sw2 = ROAD_WIDTH * sc2 * halfW;
+
+      // Hill occlusion: skip if this segment is hidden behind a closer hill crest
+      if (sy1 >= maxy) {
+        projected.push({ seg, sx1, sy1, sw1, sx2, sy2, sw2, curveOffset: curveX });
+        maxy = Math.min(maxy, sy2);
+      }
+
+      curveX += dx;
+      dx += seg.curve;
+    }
+
+    // ── Phase 2: render back-to-front (painter's algorithm) ─────────────────
+
+    for (let i = projected.length - 1; i >= 0; i--) {
+      const p = projected[i];
+      const { seg, sx1, sy1, sw1, sx2, sy2, sw2 } = p;
 
       if (sy2 >= sy1) continue;
 
@@ -125,7 +168,7 @@ export class Renderer {
         drawTrapezoid(ctx, sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2, color.lane);
         drawTrapezoid(ctx, sx1 + lo1, sy1, lw1, sx2 + lo2, sy2, lw2, color.lane);
 
-        // edge stripes — dashed (same period as centre lanes): thick + thin per side
+        // edge stripes — dashed, thick + thin per side
         const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
         const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
         const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
@@ -136,8 +179,10 @@ export class Renderer {
         drawTrapezoid(ctx, sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2, '#FFFFFF');
       }
 
-      // ── roadside sprites ──────────────────────────────────────────────────
+      // ── roadside sprites ────────────────────────────────────────────────
       if (seg.sprites && this.roadSprites?.isReady() && sy1 >= halfH) {
+        // Derive sc1 from sw1 (sw1 = ROAD_WIDTH * sc1 * halfW → sc1 = sw1 / (ROAD_WIDTH * halfW))
+        const sc1 = sw1 / (ROAD_WIDTH * halfW);
         for (const si of seg.sprites) {
           const rect   = SPRITE_RECTS[si.id as SpriteId];
           const worldH = SPRITE_WORLD_HEIGHT[si.id as SpriteId];
@@ -147,7 +192,8 @@ export class Renderer {
           if (sprH < 2) continue;
 
           const sprW = sprH * (rect.w / rect.h);
-          const sprX = halfW + (si.worldX - cameraX) * sc1 * halfW;
+          // sx1 already incorporates curve offset; si.worldX is relative to road centre
+          const sprX = sx1 + si.worldX * sc1 * halfW;
 
           this.roadSprites.draw(ctx, rect, sprX - sprW / 2, sy1 - sprH, sprW, sprH);
         }
@@ -304,6 +350,7 @@ export class Renderer {
 
   render(
     segments: RoadSegment[],
+    segmentCount: number,
     playerZ: number,
     playerX: number,
     drawDistance: number,
@@ -318,7 +365,7 @@ export class Renderer {
     ctx.save();
     ctx.clearRect(0, 0, w, h);
     this.renderSky(w, horizonY);
-    this.renderRoad(segments, playerZ, playerX, drawDistance, w, h, horizonY);
+    this.renderRoad(segments, segmentCount, playerZ, playerX, speed, drawDistance, w, h, horizonY);
     this.renderCar(w, h, steerAngle);
     this.renderHUD(w, h, speed);
     ctx.restore();

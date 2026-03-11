@@ -9,8 +9,9 @@ import {
   PLAYER_BRAKE_MAX, PLAYER_BRAKE_RAMP,
   PLAYER_STEERING,
   OFFROAD_MAX_RATIO, OFFROAD_DECEL, OFFROAD_RECOVERY_TIME,
-  SEGMENT_COUNT, SEGMENT_LENGTH, DRAW_DISTANCE,
+  SEGMENT_LENGTH, DRAW_DISTANCE,
   ROAD_WIDTH,
+  CENTRIFUGAL,
 } from './constants';
 
 export class Game {
@@ -61,7 +62,7 @@ export class Game {
 
   private update(dt: number): void {
     const { input } = this;
-    const trackLength = SEGMENT_COUNT * SEGMENT_LENGTH;
+    const trackLength = this.road.count * SEGMENT_LENGTH;
     const speedRatio  = this.speed / PLAYER_MAX_SPEED;
 
     // ── throttle / brake — "Alive & Kinetic" three-phase physics ──
@@ -103,6 +104,11 @@ export class Game {
     if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * dt;
     this.playerX = Math.max(-2, Math.min(2, this.playerX));
 
+    // ── centrifugal force: curves push the player sideways ──
+    const playerSegment = this.road.findSegment(this.playerZ);
+    const speedPercent  = this.speed / PLAYER_MAX_SPEED;
+    this.playerX -= playerSegment.curve * speedPercent * CENTRIFUGAL * dt;
+
     // steerAngle: ramp toward ±1 while key held, spring back when released
     const STEER_RATE = 3.0; // full sweep in ~0.33s
     if (input.isDown('ArrowLeft'))       this.steerAngle -= STEER_RATE * dt;
@@ -140,6 +146,7 @@ export class Game {
     const { renderer, road, w, h } = this;
     renderer.render(
       road.segments,
+      road.count,
       this.playerZ,
       this.playerX,
       DRAW_DISTANCE,
