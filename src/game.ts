@@ -141,7 +141,7 @@ export class Game
   constructor(canvas: HTMLCanvasElement)
   {
     const carSprites  = new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png');
-    const roadSprites = new SpriteLoader('sprites/assets/sprite_sheet_transparent.png');
+    const roadSprites = new SpriteLoader('sprites/assets/palm_sheet.png');
     this.road     = new Road();
     this.renderer = new Renderer(canvas, carSprites, roadSprites);
     this.input    = new InputManager();

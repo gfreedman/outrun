@@ -267,6 +267,170 @@ export class Road
 
     // ── 12. Finish straight ───────────────────────────────────────────────
     r(1,  38,  1,    0,   0);             // 40 — lap complete. Do it again.
+
+    this.plantPalms();
+  }
+
+  // ── Palm placement ────────────────────────────────────────────────────────
+
+  /**
+   * Decorates every segment with palm tree sprites using a Sega-style rubric.
+   *
+   * ── Design rules ─────────────────────────────────────────────────────────
+   *
+   *   Hard corners (|curve| ≥ 2)
+   *     Outside of the bend gets bent palms (T2_BENT_LEFT or T2_BENT_RIGHT)
+   *     in groups of 3 or 5.  Trees within a group are spaced 3–7 segments
+   *     apart.  A long cooldown (12–20 segments) separates groups.  30% of
+   *     placements add a tall background palm (T6/T7/T10) further off-road.
+   *     Inside of the bend gets a sparse scatter of small palms (15% chance,
+   *     16–26 segment gaps) so it never feels completely bare.
+   *
+   *   Gentle curve / straight (|curve| < 2)
+   *     Both sides are managed independently.  Each side fires a 38–50%
+   *     trigger once its gap counter reaches zero.  A successful trigger
+   *     places a cluster of 1 tree (72%) or 2–3 trees (28%) spaced 2–5
+   *     segments apart.  25% of clusters use background varieties
+   *     (T6/T7/T10) at greater distance; the rest use the general mix at
+   *     road-edge distance.  Gaps between clusters: 9–17 segments.
+   *
+   * ── World-X ranges (ROAD_WIDTH = 2000, road edge = ±2000) ────────────────
+   *
+   *   Bent corner palms:      outside ±2 500 – 3 100
+   *   Straight/close palms:   ±2 500 – 3 500
+   *   Background tall palms:  ±3 600 – 5 200
+   *   Inside sparse:          ±2 400 – 2 900
+   *
+   * ── PRNG ─────────────────────────────────────────────────────────────────
+   *
+   *   Mulberry32 seeded at 0xDEADBEEF — deterministic, same layout every run.
+   */
+  private plantPalms(): void
+  {
+    // ── Seeded PRNG (Mulberry32) ──────────────────────────────────────────
+    let seed = 0xDEADBEEF;
+    const rand = (): number =>
+    {
+      seed += 0x6D2B79F5;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
+    };
+    const rInt = (lo: number, hi: number): number =>
+      Math.floor(rand() * (hi - lo + 1)) + lo;
+    const pick = <T>(arr: readonly T[]): T =>
+      arr[Math.floor(rand() * arr.length)];
+
+    // ── Palm variety pools ────────────────────────────────────────────────
+    const GENERAL: readonly string[] = [
+      'PALM_T1_STRAIGHT', 'PALM_T4_FRUITING',
+      'PALM_T6_LUXURIANT', 'PALM_T7_SLENDER',
+      'PALM_T8_MEDIUM',   'PALM_T10_LARGE',
+    ];
+    const BG: readonly string[] = [
+      'PALM_T6_LUXURIANT', 'PALM_T7_SLENDER', 'PALM_T10_LARGE',
+    ];
+    const CLOSE: readonly string[] = [
+      'PALM_T3_YOUNG', 'PALM_T8_MEDIUM', 'PALM_T1_STRAIGHT',
+    ];
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX });
+    };
+
+    // ── Per-side state ────────────────────────────────────────────────────
+    //
+    // Index 0 = left side (negative worldX).
+    // Index 1 = right side (positive worldX).
+    //
+    // gap[s]    — segments remaining before next placement is allowed.
+    // grpRem[s] — trees left to place in the current corner group.
+
+    const gap    = [rInt(3, 10), rInt(3, 10)];
+    const grpRem = [0, 0];
+
+    const sign = (s: number): number => s === 1 ? +1 : -1;
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg      = this.segments[i];
+      const curve    = seg.curve;
+      const absCurve = Math.abs(curve);
+
+      // Side index for the OUTSIDE of the current bend.
+      // Positive curve = turning right → outside is the right side (index 1).
+      const outerS = curve >= 0 ? 1 : 0;
+      const innerS = 1 - outerS;
+
+      // Tick counters
+      gap[0] = Math.max(0, gap[0] - 1);
+      gap[1] = Math.max(0, gap[1] - 1);
+
+      // ── HARD CORNER — bent palms in groups of 3 or 5 ─────────────────
+      if (absCurve >= 2)
+      {
+        // Outside: fire when gap hits zero
+        if (gap[outerS] === 0)
+        {
+          // Begin a new group if none is active
+          if (grpRem[outerS] === 0)
+            grpRem[outerS] = rand() < 0.5 ? 3 : 5;
+
+          // Place one bent palm
+          const bentId = outerS === 1 ? 'PALM_T2_BENT_LEFT' : 'PALM_T2_BENT_RIGHT';
+          plant(seg, bentId, sign(outerS) * rInt(2500, 3100));
+          grpRem[outerS]--;
+
+          // Optionally add a background tall palm further out
+          if (rand() < 0.30)
+            plant(seg, pick(BG), sign(outerS) * rInt(4000, 5500));
+
+          // Advance gap: intra-group if more remain, inter-group if done
+          gap[outerS] = grpRem[outerS] > 0 ? rInt(3, 7) : rInt(12, 20);
+        }
+
+        // Inside: sparse small palms
+        if (gap[innerS] === 0 && rand() < 0.15)
+        {
+          plant(seg, pick(CLOSE), sign(innerS) * rInt(2400, 2900));
+          gap[innerS] = rInt(16, 26);
+        }
+      }
+
+      // ── GENTLE CURVE / STRAIGHT — scattered general palms ────────────
+      else
+      {
+        for (let s = 0; s < 2; s++)
+        {
+          if (gap[s] > 0) continue;
+
+          // Outside of a gentle curve fires a little more readily
+          const isCurve  = absCurve >= 0.5;
+          const isOuter  = isCurve && s === outerS;
+          const density  = isOuter ? 0.50 : 0.38;
+
+          if (rand() >= density) { gap[s] = rInt(4, 9); continue; }
+
+          // 28% chance: cluster of 2–3; otherwise a single tree
+          const clSize = rand() < 0.28 ? rInt(2, 3) : 1;
+          for (let c = 0; c < clSize; c++)
+          {
+            const ti = i + c * rInt(2, 5);
+            if (ti >= this.segments.length) break;
+            const tseg = this.segments[ti];
+
+            if (rand() < 0.25)
+              plant(tseg, pick(BG),      sign(s) * rInt(3600, 5200));
+            else
+              plant(tseg, pick(GENERAL), sign(s) * rInt(2500, 3500));
+          }
+
+          gap[s] = rInt(9, 17);
+        }
+      }
+    }
   }
 
   // ── Lookup ────────────────────────────────────────────────────────────────
