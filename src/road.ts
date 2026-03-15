@@ -360,8 +360,13 @@ export class Road
       const absCurve = Math.abs(curve);
 
       // Side index for the OUTSIDE of the current bend.
-      // Positive curve = turning right → outside is the right side (index 1).
-      const outerS = curve >= 0 ? 1 : 0;
+      // Positive curve = turning right.  On a right turn the centre of curvature
+      // is to the RIGHT, so centrifugal force pushes the car OUTWARD = LEFT.
+      // Outside of a right bend → left side (index 0, negative worldX).
+      // Outside of a left  bend → right side (index 1, positive worldX).
+      // Confirmed by the physics: playerX -= curve * CENTRIFUGAL * dt pushes
+      // the player left (negative) for positive curve = outside is left.
+      const outerS = curve >= 0 ? 0 : 1;
       const innerS = 1 - outerS;
 
       // Tick counters
