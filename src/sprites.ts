@@ -4,8 +4,8 @@
  * Sprite metadata and the SpriteLoader helper used by the renderer.
  *
  * Two sprite sheets are used:
- *   sprites/player_car_sprites_1x.png  — 37-frame Ferrari Testarossa animation strip.
- *   sprites/sprite_sheet_transparent.png — roadside objects (palm trees, etc.).
+ *   sprites/assets/cars/player_car_sprites_1x.png  — 37-frame Ferrari Testarossa animation strip.
+ *   sprites/assets/sprite_sheet_transparent.png    — roadside objects (palm trees, etc.).
  *
  * The background colour of the roadside sheet has been zeroed out offline so
  * no runtime colour-keying is needed — straight alpha blending works correctly.

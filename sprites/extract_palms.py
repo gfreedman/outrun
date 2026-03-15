@@ -33,14 +33,15 @@ each as a transparent PNG with a tight crop and PAD pixels of margin.
 
 ── Outputs ────────────────────────────────────────────────────────────────
 
-  palms/palm_t1_straight.png
-  palms/palm_t2_bent.png
-  palms/palm_t3_young.png
-  palms/palm_t4_fruiting.png
-  palms/palm_t6_luxuriant.png
-  palms/palm_t7_slender.png
-  palms/palm_t8_medium.png
-  palms/palm_t10_large.png
+  assets/palms/palm_t1_straight.png
+  assets/palms/palm_t2_bent_left.png
+  assets/palms/palm_t2_bent_right.png
+  assets/palms/palm_t3_young.png
+  assets/palms/palm_t4_fruiting.png
+  assets/palms/palm_t6_luxuriant.png
+  assets/palms/palm_t7_slender.png
+  assets/palms/palm_t8_medium.png
+  assets/palms/palm_t10_large.png
 """
 
 import os
@@ -49,8 +50,8 @@ from PIL import Image
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-# Source image path.
-SRC = "palm_tree_source.png"
+# Source image path (relative to this script's directory).
+SRC = "source_for_sprites/palm_tree_source.png"
 
 # Transparent padding (pixels) added around each tight-cropped tree.
 PAD = 8
@@ -86,7 +87,7 @@ TARGETS = [
     (9,  "palm_t10_large",     "T10 Size Large"),
 ]
 
-os.makedirs("palms", exist_ok=True)
+os.makedirs("assets/palms", exist_ok=True)
 
 # ── Grid detection ─────────────────────────────────────────────────────────────
 
@@ -376,7 +377,7 @@ for grid_idx, stem, label in TARGETS:
     if filled == 0:
         print(f"  WARN {label} — no visible pixels after extraction!")
     else:
-        out_path = f"palms/{stem}.png"
+        out_path = f"assets/palms/{stem}.png"
         tree.save(out_path)
         print(f"  {label}")
         print(f"    cell ({cx1},{cy1})–({cx2},{cy2})  →  extracted {tree.width}×{tree.height}  ({filled} px visible)")
@@ -384,5 +385,5 @@ for grid_idx, stem, label in TARGETS:
 
 print()
 print("="*60)
-print(f"DONE — {len(TARGETS)} trees written to palms/")
+print(f"DONE — {len(TARGETS)} trees written to assets/palms/")
 print("="*60)

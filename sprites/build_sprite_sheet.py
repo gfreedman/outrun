@@ -30,13 +30,13 @@ pipeline captures more than the nominal cell width to recover those pixels.
 
 ── Outputs ────────────────────────────────────────────────────────────────
 
-  player_car_sprites_1x.png   raw resolution
-  player_car_sprites_2x.png   2× nearest-neighbour upscale
-  player_car_sprites_4x.png   4× nearest-neighbour upscale
-  player_car_sprites.json     frame metadata + pivot offsets for sprites.ts
-  sprite_sheet_proof.png      visual QA sheet (all frames, green/red border)
-  debug/right_frame_NN.png    individual extracted right frames (QA)
-  debug/left_frame_NN.png     individual extracted left frames  (QA)
+  assets/cars/player_car_sprites_1x.png   raw resolution
+  assets/cars/player_car_sprites_2x.png   2× nearest-neighbour upscale
+  assets/cars/player_car_sprites_4x.png   4× nearest-neighbour upscale
+  assets/cars/player_car_sprites.json     frame metadata + pivot offsets for sprites.ts
+  source_for_sprites/sprite_sheet_proof.png      visual QA sheet (all frames, green/red border)
+  source_for_sprites/debug/right_frame_NN.png    individual extracted right frames (QA)
+  source_for_sprites/debug/left_frame_NN.png     individual extracted left frames  (QA)
 """
 
 import json, os
@@ -64,15 +64,16 @@ BG_TOL = 80
 # Formula: extra pixels on each side = cell_w * (EXTRACT_MULT - 1.0) / 2
 EXTRACT_MULT = 2.2
 
-# Source image filenames (must be in the same directory as this script).
-SRC_RIGHT = "right.png"
-SRC_LEFT  = "left.png"
+# Source image filenames (relative to this script's directory).
+SRC_RIGHT = "source_for_sprites/right.png"
+SRC_LEFT  = "source_for_sprites/left.png"
 
 # Number of car frames in each row of the source sheets.
 # Both right.png and left.png share the same layout: 7 + 6 + 6 = 19 frames.
 GRID = [7, 6, 6]
 
-os.makedirs("debug", exist_ok=True)
+os.makedirs("source_for_sprites/debug", exist_ok=True)
+os.makedirs("assets/cars", exist_ok=True)
 
 # ── Colour helpers ─────────────────────────────────────────────────────────────
 
@@ -587,9 +588,9 @@ def save_analysis(src_img, cells, path):
         draw.text((int(x1*s)+2, int(y1*s)+2), str(i+1), fill=c)
     vis.save(path)
 
-save_analysis(right_img, right_cells, "source_analysis_right.png")
-save_analysis(left_img,  left_cells,  "source_analysis_left.png")
-print("Saved source_analysis_right.png / source_analysis_left.png")
+save_analysis(right_img, right_cells, "source_for_sprites/source_analysis_right.png")
+save_analysis(left_img,  left_cells,  "source_for_sprites/source_analysis_left.png")
+print("Saved source_for_sprites/source_analysis_right.png / source_analysis_left.png")
 
 # ── Phase 2: Extract frames ────────────────────────────────────────────────────
 
@@ -601,14 +602,14 @@ right_frames = []
 for i, (cx1,cy1,cx2,cy2) in enumerate(right_cells):
     frame = extract_frame(right_arr, cx1, cy1, cx2, cy2, bg_r)
     right_frames.append(frame)
-    frame.save(f"debug/right_frame_{i+1:02d}.png")
+    frame.save(f"source_for_sprites/debug/right_frame_{i+1:02d}.png")
     print(f"  R{i+1:02d}: cell({cx1},{cy1})-({cx2},{cy2}) → extracted {frame.width}×{frame.height}")
 
 left_frames = []
 for i, (cx1,cy1,cx2,cy2) in enumerate(left_cells[:13]):   # only L1–L13 needed
     frame = extract_frame(left_arr, cx1, cy1, cx2, cy2, bg_l)
     left_frames.append(frame)
-    frame.save(f"debug/left_frame_{i+1:02d}.png")
+    frame.save(f"source_for_sprites/debug/left_frame_{i+1:02d}.png")
     print(f"  L{i+1:02d}: cell({cx1},{cy1})-({cx2},{cy2}) → extracted {frame.width}×{frame.height}")
 
 # ── Source-clip substitutions ─────────────────────────────────────────────────
@@ -810,12 +811,12 @@ print("="*60)
 W1, H1   = strip_clean.size
 strip_2x = strip_clean.resize((W1*2, H1*2), Image.NEAREST)
 strip_4x = strip_clean.resize((W1*4, H1*4), Image.NEAREST)
-strip_clean.save("player_car_sprites_1x.png")
-strip_2x.save("player_car_sprites_2x.png")
-strip_4x.save("player_car_sprites_4x.png")
-print(f"  player_car_sprites_1x.png  {W1}×{H1}")
-print(f"  player_car_sprites_2x.png  {W1*2}×{H1*2}")
-print(f"  player_car_sprites_4x.png  {W1*4}×{H1*4}")
+strip_clean.save("assets/cars/player_car_sprites_1x.png")
+strip_2x.save("assets/cars/player_car_sprites_2x.png")
+strip_4x.save("assets/cars/player_car_sprites_4x.png")
+print(f"  assets/cars/player_car_sprites_1x.png  {W1}×{H1}")
+print(f"  assets/cars/player_car_sprites_2x.png  {W1*2}×{H1*2}")
+print(f"  assets/cars/player_car_sprites_4x.png  {W1*4}×{H1*4}")
 
 # ── Phase 7: Metadata ─────────────────────────────────────────────────────────
 
@@ -846,9 +847,9 @@ meta = {
     "pivotOffsets": pivot_offsets,
     "frames":      frames_meta,
 }
-with open("player_car_sprites.json", "w") as f:
+with open("assets/cars/player_car_sprites.json", "w") as f:
     json.dump(meta, f, indent=2)
-print("  Saved player_car_sprites.json")
+print("  Saved assets/cars/player_car_sprites.json")
 
 # ── Phase 8: Proof image ──────────────────────────────────────────────────────
 #
@@ -899,8 +900,8 @@ for idx, cell in enumerate(cells):
     lbl_clr = (220,80,80) if touched else (140,200,140)
     draw.text((px, py+cell_h+2), f"{idx}:{src_abbr}", fill=lbl_clr)
 
-proof.save("sprite_sheet_proof.png")
-print(f"  Saved sprite_sheet_proof.png  ({proof.width}×{proof.height})")
+proof.save("source_for_sprites/sprite_sheet_proof.png")
+print(f"  Saved source_for_sprites/sprite_sheet_proof.png  ({proof.width}×{proof.height})")
 
 if clipped:
     print(f"\n  ⚠  RED BORDER frames (car touches cell edge): {clipped}")
