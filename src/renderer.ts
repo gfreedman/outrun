@@ -557,11 +557,43 @@ export class Renderer
         drawTrapezoid(ctx, sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2, '#FFFFFF');
       }
 
-      // Roadside sprites — scaled by the perspective factor stored in sc1.
-      // Using p.sc1 directly avoids the division sw1 / (ROAD_WIDTH * halfW)
-      // that would otherwise re-derive the same value.
-      if (seg.sprites && this.roadSprites?.isReady() && sy1 >= halfH)
+    }
+
+    // ── Pass 3: roadside sprites ───────────────────────────────────────────
+    //
+    // Sprites are drawn in a SEPARATE pass after all road geometry is finished.
+    //
+    // Why not inline in Pass 2?
+    //   The grass fill `ctx.fillRect(0, sy2, w, sy1-sy2)` is full-canvas-width.
+    //   When hill occlusion creates gaps in projPool, the next visible closer
+    //   segment's grass band starts ABOVE a farther sprite's base (sy1), painting
+    //   directly over it.  Which segments are occluded changes every frame as the
+    //   player moves, so the overpainting alternates → sprites "flicker like mad".
+    //
+    //   By running sprites only after every grass/road fill is committed, all
+    //   sprites are painted on top of the finished geometry.  They are still
+    //   iterated back-to-front (far → near) so closer sprites correctly occlude
+    //   farther ones.  The road trapezoid does not occlude sprites in practice:
+    //   at the distances where sprites are visible (~15–100 segs), the road is
+    //   too narrow to reach trees positioned outside the road edge.
+    //
+    //   A canvas clip to [halfH … h] prevents any tall sprite from bleeding into
+    //   the sky area above the horizon.
+
+    if (this.roadSprites?.isReady())
+    {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, halfH, w, h - halfH);
+      ctx.clip();
+
+      for (let i = this.projCount - 1; i >= 0; i--)
       {
+        const p              = this.projPool[i];
+        const { seg, sc1, sx1, sy1 } = p;
+
+        if (!seg.sprites || sy1 < halfH) continue;
+
         for (const si of seg.sprites)
         {
           const rect   = SPRITE_RECTS[si.id as SpriteId];
@@ -573,9 +605,19 @@ export class Renderer
 
           const sprW = sprH * (rect.w / rect.h);
           const sprX = sx1 + si.worldX * sc1 * halfW;
-          this.roadSprites.draw(ctx, rect, sprX - sprW / 2, sy1 - sprH, sprW, sprH);
+
+          // Round to integer pixels — prevents sub-pixel alpha shimmer.
+          this.roadSprites.draw(
+            ctx, rect,
+            Math.round(sprX - sprW / 2),
+            Math.round(sy1 - sprH),
+            Math.round(sprW),
+            Math.round(sprH),
+          );
         }
       }
+
+      ctx.restore();
     }
   }
 
