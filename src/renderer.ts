@@ -577,16 +577,13 @@ export class Renderer
     //   at the distances where sprites are visible (~15–100 segs), the road is
     //   too narrow to reach trees positioned outside the road edge.
     //
-    //   A canvas clip to [halfH … h] prevents any tall sprite from bleeding into
-    //   the sky area above the horizon.
+    //   Palm trees are tall — their crowns naturally extend above the horizon
+    //   into the sky area.  No clip is applied: the browser clips drawImage to
+    //   canvas bounds automatically, and a tiny amount of crown peeking above
+    //   the horizon on distant trees is far less jarring than sliced stumps.
 
     if (this.roadSprites?.isReady())
     {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, halfH, w, h - halfH);
-      ctx.clip();
-
       for (let i = this.projCount - 1; i >= 0; i--)
       {
         const p              = this.projPool[i];
@@ -616,8 +613,6 @@ export class Renderer
           );
         }
       }
-
-      ctx.restore();
     }
   }
 
