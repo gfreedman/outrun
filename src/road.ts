@@ -107,6 +107,15 @@ export class Road
    */
   private lastY = 0;
 
+  /**
+   * Shared cross-type board spacing: tracks the last segment index where ANY
+   * sign board was placed on each side [left, right].  All board planters check
+   * this before placing so no two boards (regardless of type) are closer than
+   * MIN_BOARD_GAP segments apart on the same side.
+   */
+  private boardLastPlaced: [number, number] = [-999, -999];
+  private static readonly MIN_BOARD_GAP = 45;
+
   /** Builds the track layout immediately on construction. */
   constructor()
   {
@@ -267,6 +276,9 @@ export class Road
 
     // ── 12. Finish straight ───────────────────────────────────────────────
     r(1,  38,  1,    0,   0);             // 40 — lap complete. Do it again.
+
+    this.boardLastPlaced[0] = -999;
+    this.boardLastPlaced[1] = -999;
 
     this.plantPalms();
     this.plantBillboards();
@@ -523,11 +535,13 @@ export class Road
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
+        if (i - this.boardLastPlaced[s] < Road.MIN_BOARD_GAP) { gap[s] = rInt(10, 20); continue; }
         const density = absCurve < 1 ? 0.45 : 0.35;
         if (rand() >= density) { gap[s] = rInt(10, 20); continue; }
         const sign   = s === 1 ? +1 : -1;
         const worldX = sign * rInt(2000, 2600);
         plant(seg, pick(poolFor(i)), worldX);
+        this.boardLastPlaced[s] = i;
         gap[s] = rInt(30, 55);
       }
     }
@@ -583,10 +597,12 @@ export class Road
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
+        if (i - this.boardLastPlaced[s] < Road.MIN_BOARD_GAP) { gap[s] = rInt(25, 50); continue; }
         if (rand() >= 0.30) { gap[s] = rInt(25, 50); continue; }
         const sign   = s === 1 ? +1 : -1;
         const worldX = sign * rInt(2000, 2500);
         plant(seg, pick(POOL), worldX);
+        this.boardLastPlaced[s] = i;
         gap[s] = rInt(50, 100);   // long gap — these are rare
       }
     }
@@ -640,10 +656,12 @@ export class Road
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
+        if (i - this.boardLastPlaced[s] < Road.MIN_BOARD_GAP) { gap[s] = rInt(30, 60); continue; }
         if (rand() >= 0.25) { gap[s] = rInt(30, 60); continue; }
         const sign   = s === 1 ? +1 : -1;
         const worldX = sign * rInt(2000, 2500);
         plant(seg, pick(POOL), worldX);
+        this.boardLastPlaced[s] = i;
         gap[s] = rInt(70, 140);   // very long gap — genuinely rare
       }
     }
@@ -695,10 +713,12 @@ export class Road
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
+        if (i - this.boardLastPlaced[s] < Road.MIN_BOARD_GAP) { gap[s] = rInt(50, 100); continue; }
         if (rand() >= 0.20) { gap[s] = rInt(50, 100); continue; }
         const sign   = s === 1 ? +1 : -1;
         const worldX = sign * rInt(2200, 2800);
         plant(seg, pick(POOL), worldX);
+        this.boardLastPlaced[s] = i;
         gap[s] = rInt(100, 200);   // extremely rare — big boards dominate visually
       }
     }
