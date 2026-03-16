@@ -54,6 +54,7 @@ import { Road }         from './road';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { SpriteLoader } from './sprites';
+import { checkCollisions, getBlockingRadius, getCollisionClass } from './collision';
 import
 {
   PLAYER_MAX_SPEED,
@@ -65,6 +66,18 @@ import
   SEGMENT_LENGTH, DRAW_DISTANCE,
   CENTRIFUGAL,
   DRIFT_ONSET, DRIFT_RATE, DRIFT_DECAY, DRIFT_CATCH,
+  HIT_GLANCE_SPEED_MULT, HIT_GLANCE_BUMP, HIT_GLANCE_COOLDOWN,
+  HIT_SMACK_SPEED_MULT, HIT_SMACK_SPEED_CAP, HIT_SMACK_BUMP,
+  HIT_SMACK_COOLDOWN, HIT_SMACK_RECOVERY_BOOST, HIT_SMACK_RECOVERY_TIME,
+  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_DECEL, HIT_CRUNCH_GRIND_TIME,
+  HIT_CRUNCH_BUMP, HIT_CRUNCH_COOLDOWN,
+  HIT_CRUNCH_RECOVERY_BOOST, HIT_CRUNCH_RECOVERY_TIME,
+  HIT_SPEED_FLOOR,
+  SHAKE_GLANCE_INTENSITY, SHAKE_GLANCE_DURATION,
+  SHAKE_SMACK_INTENSITY, SHAKE_SMACK_DURATION,
+  SHAKE_CRUNCH_INTENSITY, SHAKE_CRUNCH_DURATION,
+  NEAR_MISS_WOBBLE,
+  COLLISION_MIN_OFFSET, ROAD_WIDTH,
 } from './constants';
 
 export class Game
@@ -120,6 +133,26 @@ export class Game
    * Set to a small random value each frame while off-road; 0 on asphalt.
    */
   private jitterY = 0;
+
+  // ── Collision state ────────────────────────────────────────────────────────
+
+  /** Seconds until the next collision can register. */
+  private hitCooldown = 0;
+
+  /** Seconds of sustained house-grind deceleration remaining. */
+  private grindTimer = 0;
+
+  /** Post-hit speed-recovery boost remaining, in seconds. */
+  private hitRecoveryTimer = 0;
+
+  /** Current accel multiplier for post-hit recovery (1.0 = no boost). */
+  private hitRecoveryBoost = 1.0;
+
+  /** Camera shake countdown in seconds. */
+  private shakeTimer = 0;
+
+  /** Max screen offset in px for current shake event. */
+  private shakeIntensity = 0;
 
   /** Timestamp of the previous frame in milliseconds, used to compute dt. */
   private lastTimestamp = 0;
@@ -229,7 +262,7 @@ export class Game
         accel = PLAYER_ACCEL_MID * (1 - speedRatio) / 0.20;
       }
 
-      this.speed    += accel * dt;
+      this.speed    += accel * this.hitRecoveryBoost * dt;
       this.brakeHeld = 0;
     }
     else if (input.isDown('ArrowDown'))
@@ -326,8 +359,9 @@ export class Game
     const decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
     this.slideVelocity *= Math.max(0, 1 - decayRate * dt);
 
-    // Hard cap: whisper of slide only — 0.15 road-widths/sec maximum
-    this.slideVelocity = Math.max(-0.15, Math.min(0.15, this.slideVelocity));
+    // Hard cap — raised to 0.45 during a collision flick so the bounce is visible.
+    const slideCap = this.hitCooldown > 0 ? 0.45 : 0.15;
+    this.slideVelocity = Math.max(-slideCap, Math.min(slideCap, this.slideVelocity));
 
     // ── steerAngle: visual-only, drives car sprite frame selection ─────────
     //
@@ -378,9 +412,166 @@ export class Game
 
     this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
 
+    // ── Roadside collision ─────────────────────────────────────────────────
+    this.applyCollision(dt);
+
     // ── Advance position ───────────────────────────────────────────────────
     // Modulo wrap keeps playerZ inside [0, trackLength) so the road loops.
     this.playerZ = ((this.playerZ + this.speed * dt) % trackLength + trackLength) % trackLength;
+  }
+
+  // ── Collision ─────────────────────────────────────────────────────────────
+
+  /**
+   * Prevents the player from moving laterally through solid objects (smack/crunch).
+   * Called every frame regardless of cooldown so objects are always solid walls.
+   */
+  private blockSolidObjects(segIdx: number): void
+  {
+    if (Math.abs(this.playerX) < COLLISION_MIN_OFFSET) return;
+
+    const WINDOW = [-1, 0, 1, 2];
+    for (const offset of WINDOW)
+    {
+      const idx = ((segIdx + offset) % this.road.count + this.road.count) % this.road.count;
+      for (const sprite of this.road.segments[idx].sprites ?? [])
+      {
+        const radius = getBlockingRadius(sprite.id);
+        if (radius === 0) continue;
+
+        const spriteXN = sprite.worldX / ROAD_WIDTH;
+        const radN     = radius / ROAD_WIDTH;
+
+        if (sprite.worldX > 0 && this.playerX >= spriteXN - radN)
+          this.playerX = spriteXN - radN;
+        else if (sprite.worldX < 0 && this.playerX <= spriteXN + radN)
+          this.playerX = spriteXN + radN;
+      }
+    }
+  }
+
+  /**
+   * Runs collision detection for the current frame and applies physics effects.
+   * Called after playerX and speed are settled for the frame.
+   */
+  private applyCollision(dt: number): void
+  {
+    // ── Tick timers ──────────────────────────────────────────────────────
+    this.hitCooldown      = Math.max(0, this.hitCooldown      - dt);
+    this.grindTimer       = Math.max(0, this.grindTimer       - dt);
+    this.hitRecoveryTimer = Math.max(0, this.hitRecoveryTimer - dt);
+    this.shakeTimer       = Math.max(0, this.shakeTimer       - dt);
+
+    // Apply grind deceleration (house wall scrape sustained drag)
+    if (this.grindTimer > 0) this.speed -= HIT_CRUNCH_GRIND_DECEL * dt;
+
+    // Sustained camera shake overrides the off-road jitter set above
+    if (this.shakeTimer > 0)
+      this.jitterY = (Math.random() - 0.5) * this.shakeIntensity * 2;
+
+    // Decay post-hit recovery boost when timer expires
+    if (this.hitRecoveryTimer <= 0) this.hitRecoveryBoost = 1.0;
+
+    const segIdx = Math.floor(this.playerZ / SEGMENT_LENGTH) % this.road.count;
+
+    // ── ALWAYS block solid objects (prevents phasing through palms/houses) ─
+    this.blockSolidObjects(segIdx);
+
+    // ── Skip new hit effects during cooldown ─────────────────────────────
+    if (this.hitCooldown > 0) return;
+
+    // ── Spatial check ────────────────────────────────────────────────────
+    const { hit, nearMiss } = checkCollisions(
+      this.playerX,
+      this.road.segments,
+      this.road.count,
+      segIdx,
+    );
+
+    if (!hit && nearMiss)
+      this.playerX += nearMiss.wobbleDir * NEAR_MISS_WOBBLE;
+
+    if (!hit) return;
+
+    // ── Compute angle-based flick ─────────────────────────────────────────
+    //
+    // The flick is the lateral velocity imparted at impact — how hard the car
+    // bounces off the obstacle.  It depends on:
+    //   - How fast the player was steering INTO the object (lateral approach)
+    //   - How fast they were going overall (forward speed component)
+    //
+    // bumpDir = +1 if object is RIGHT of player, -1 if LEFT.
+    // The flick must push AWAY from the object (opposite to bumpDir).
+
+    const preHitSpeedRatio = this.speed / PLAYER_MAX_SPEED;
+    const steerRatio       = Math.max(0.3, preHitSpeedRatio);
+    const gripFactor       = Math.max(0.68, 1 - preHitSpeedRatio * preHitSpeedRatio * 0.5);
+    const bumpSign         = -hit.bumpDir;
+
+    // Lateral velocity component moving toward the object this frame
+    const steerApproach = hit.bumpDir * this.steerAngle * PLAYER_STEERING * steerRatio * gripFactor;
+    const slideApproach = hit.bumpDir * this.slideVelocity;
+    const approach      = Math.max(0, steerApproach + slideApproach);
+
+    // ── Apply collision effects by class ─────────────────────────────────
+    switch (hit.cls)
+    {
+      case 'glance':
+      {
+        // Small poke — speed penalty + tiny lateral bump, no dramatic flick
+        this.speed   *= HIT_GLANCE_SPEED_MULT;
+        this.playerX += bumpSign * HIT_GLANCE_BUMP;
+        this.shakeTimer     = SHAKE_GLANCE_DURATION;
+        this.shakeIntensity = SHAKE_GLANCE_INTENSITY;
+        this.hitCooldown    = HIT_GLANCE_COOLDOWN;
+        break;
+      }
+
+      case 'smack':
+      {
+        // Hard whack — speed loss + angle-computed flick off the object.
+        // Restitution 0.55: palm/post is fairly springy.
+        // Base 0.10: even a dead-straight hit at full speed kicks the car.
+        this.speed *= HIT_SMACK_SPEED_MULT;
+        this.speed  = Math.min(this.speed, PLAYER_MAX_SPEED * HIT_SMACK_SPEED_CAP);
+
+        const flick         = Math.max(0.08, approach * 0.55 + preHitSpeedRatio * 0.10);
+        this.slideVelocity  = bumpSign * Math.min(flick, 0.45);
+
+        this.shakeTimer       = SHAKE_SMACK_DURATION;
+        this.shakeIntensity   = SHAKE_SMACK_INTENSITY;
+        this.hitCooldown      = HIT_SMACK_COOLDOWN;
+        this.hitRecoveryTimer = HIT_SMACK_RECOVERY_TIME;
+        this.hitRecoveryBoost = HIT_SMACK_RECOVERY_BOOST;
+        break;
+      }
+
+      case 'crunch':
+      {
+        // Building wall — instant crawl + sustained grind + strong flick.
+        // Restitution 0.30: concrete absorbs a lot of energy.
+        // Base 0.15: heavy base kick even head-on so the car always bounces.
+        this.speed = Math.min(this.speed, PLAYER_MAX_SPEED * HIT_CRUNCH_SPEED_CAP);
+        this.grindTimer = HIT_CRUNCH_GRIND_TIME;
+
+        const flick        = Math.max(0.14, approach * 0.30 + preHitSpeedRatio * 0.15);
+        this.slideVelocity = bumpSign * Math.min(flick, 0.45);
+
+        this.shakeTimer     = SHAKE_CRUNCH_DURATION;
+        this.shakeIntensity = SHAKE_CRUNCH_INTENSITY;
+        this.hitCooldown    = HIT_CRUNCH_COOLDOWN;
+        this.hitRecoveryTimer = HIT_CRUNCH_RECOVERY_TIME;
+        this.hitRecoveryBoost = HIT_CRUNCH_RECOVERY_BOOST;
+        break;
+      }
+    }
+
+    // ── Speed floor — car never fully stops from a hit (Law 2) ───────────
+    if (this.speed > 0)
+      this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * HIT_SPEED_FLOOR);
+
+    // ── Hard wall clamp ───────────────────────────────────────────────────
+    this.playerX = Math.max(-2, Math.min(2, this.playerX));
   }
 
   // ── Draw ──────────────────────────────────────────────────────────────────

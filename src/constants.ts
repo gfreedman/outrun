@@ -39,7 +39,7 @@ export const CAMERA_DEPTH   = 1 / Math.tan((FOV_DEG / 2) * Math.PI / 180);
  * Top speed in world units per second.
  * Calibrated so the road scrolls at roughly 450 km/h (≈45 segments/sec).
  */
-export const PLAYER_MAX_SPEED   = 9000;
+export const PLAYER_MAX_SPEED   = 10800;
 
 // ── Acceleration — three-phase "Alive & Kinetic" curve ───────────────────────
 
@@ -48,13 +48,13 @@ export const PLAYER_MAX_SPEED   = 9000;
  * Tyres are still finding grip so power delivery is limited.
  * A smoothstep ramp blends from ACCEL_LOW up to ACCEL_MID over this band.
  */
-export const PLAYER_ACCEL_LOW   = 1400;
+export const PLAYER_ACCEL_LOW   = 1680;
 
 /**
  * Peak acceleration during the main thrust band (15–80% of max).
  * Also used as the starting point of the terminal taper (80–100%).
  */
-export const PLAYER_ACCEL_MID   = 2800;
+export const PLAYER_ACCEL_MID   = 3360;
 
 // ── Coasting (lift-off deceleration) ─────────────────────────────────────────
 
@@ -63,7 +63,7 @@ export const PLAYER_ACCEL_MID   = 2800;
  * Scales with current speed: 50% at rest → 100% at max speed.
  * Gives a natural aerodynamic-drag feel without feeling sticky at low speeds.
  */
-export const PLAYER_COAST_RATE  = 2200;
+export const PLAYER_COAST_RATE  = 2640;
 
 // ── Braking ───────────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ export const PLAYER_COAST_RATE  = 2200;
  * Maximum braking force, in world units/s².
  * Applied at full pedal pressure after the ramp-up period.
  */
-export const PLAYER_BRAKE_MAX   = 7000;
+export const PLAYER_BRAKE_MAX   = 8400;
 
 /**
  * How long (seconds) the brakes take to develop full force.
@@ -100,7 +100,7 @@ export const OFFROAD_MAX_RATIO      = 0.30;
  * Extra deceleration force applied while the car is on grass, in world units/s².
  * Must be greater than PLAYER_ACCEL_MID so the car cannot accelerate off-road.
  */
-export const OFFROAD_DECEL          = 5500;
+export const OFFROAD_DECEL          = 6600;
 
 /**
  * Time in seconds for full speed recovery after returning to the asphalt.
@@ -172,6 +172,73 @@ export const DRIFT_CATCH = 10.0;
  * Ready for future sky texture layers; currently drives the skyOffset accumulator.
  */
 export const PARALLAX_SKY   = 0.001;
+
+// ── Hit detection — lateral hitbox half-widths (world units) ─────────────────
+export const HITBOX_CACTUS    = 450;
+export const HITBOX_PALM      = 550;
+export const HITBOX_BILLBOARD = 700;
+export const HITBOX_HOUSE     = 950;
+
+/**
+ * Player must be at least this far off-road (|playerX| >= this) before any
+ * roadside collision can fire.  Prevents on-road drivers from clipping objects
+ * that are placed just off the road edge (worldX 2000–2400).
+ */
+export const COLLISION_MIN_OFFSET = 1.0;
+
+/**
+ * Physical blocking radius for smack-class objects (palm trunk / billboard post).
+ * Smaller than HITBOX_PALM so the detection zone is more forgiving than the wall.
+ */
+export const BLOCK_SMACK = 250;
+
+/**
+ * Physical blocking radius for houses.
+ * MUST be smaller than HITBOX_HOUSE so the player is always inside the detection
+ * zone at the blocking boundary — otherwise delta == HITBOX_HOUSE exactly and
+ * the `delta < radius` check fails, making houses feel transparent.
+ */
+export const BLOCK_HOUSE = 750;
+
+// ── Near-miss zone ────────────────────────────────────────────────────────────
+/** Ratio of hitbox radius that triggers a cosmetic wobble (no speed penalty). */
+export const NEAR_MISS_RATIO  = 1.5;
+/** Lateral nudge applied during near-miss (road-widths). */
+export const NEAR_MISS_WOBBLE = 0.015;
+
+// ── Glance (cactus) ───────────────────────────────────────────────────────────
+export const HIT_GLANCE_SPEED_MULT    = 0.87;
+export const HIT_GLANCE_BUMP          = 0.04;
+export const HIT_GLANCE_COOLDOWN      = 0.30;
+
+// ── Smack (palm / billboard) ──────────────────────────────────────────────────
+export const HIT_SMACK_SPEED_MULT     = 0.52;
+export const HIT_SMACK_SPEED_CAP      = 0.55;   // fraction of PLAYER_MAX_SPEED
+export const HIT_SMACK_BUMP           = 0.14;
+export const HIT_SMACK_COOLDOWN       = 0.85;
+export const HIT_SMACK_RECOVERY_BOOST = 1.5;    // accel multiplier post-hit
+export const HIT_SMACK_RECOVERY_TIME  = 1.2;    // seconds of boosted recovery
+
+// ── Crunch (house) ────────────────────────────────────────────────────────────
+export const HIT_CRUNCH_SPEED_CAP      = 0.08;  // fraction of PLAYER_MAX_SPEED
+export const HIT_CRUNCH_GRIND_DECEL    = 7800;  // wu/s² sustained drag
+export const HIT_CRUNCH_GRIND_TIME     = 2.0;   // seconds of grind
+export const HIT_CRUNCH_BUMP           = 0.22;
+export const HIT_CRUNCH_COOLDOWN       = 1.50;
+export const HIT_CRUNCH_RECOVERY_BOOST = 2.0;
+export const HIT_CRUNCH_RECOVERY_TIME  = 2.0;
+
+// ── Camera shake ──────────────────────────────────────────────────────────────
+export const SHAKE_GLANCE_INTENSITY   = 8;      // max screen offset in px
+export const SHAKE_GLANCE_DURATION    = 0.15;
+export const SHAKE_SMACK_INTENSITY    = 12;
+export const SHAKE_SMACK_DURATION     = 0.50;
+export const SHAKE_CRUNCH_INTENSITY   = 18;
+export const SHAKE_CRUNCH_DURATION    = 2.00;
+
+// ── Speed floor during any collision ─────────────────────────────────────────
+/** The car never drops below this fraction of max speed from a hit. Law 2. */
+export const HIT_SPEED_FLOOR          = 0.04;   // always keeps 4% — feels alive
 
 // ── Color palette — authentic OutRun / Jake Gordon reference values ───────────
 

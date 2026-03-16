@@ -100,6 +100,17 @@ export interface RoadSegment
   sprites?: SpriteInstance[];
 }
 
+// ── Collision ─────────────────────────────────────────────────────────────────
+
+/**
+ * Severity class for a roadside object collision.
+ * ghost  = no effect (shrubs, signs).
+ * glance = minor poke (cactus).
+ * smack  = hard hit (palm, billboard).
+ * crunch = building grind (house).
+ */
+export type CollisionClass = 'ghost' | 'glance' | 'smack' | 'crunch';
+
 // ── Game state ────────────────────────────────────────────────────────────────
 
 /**

@@ -840,7 +840,7 @@ export class Renderer
     // Display actual speed directly — physics integration is already smooth
     // enough that no smoothing filter is needed, and a filter causes the
     // readout to lag at 0 after returning from off-road.
-    const kmh      = Math.min(999, Math.max(0, Math.round(speed * (290 / PLAYER_MAX_SPEED))));
+    const kmh      = Math.min(999, Math.max(0, Math.round(speed * (293 / PLAYER_MAX_SPEED))));
     const hundreds = Math.floor(kmh / 100);
     const tens     = Math.floor((kmh % 100) / 10);
     const ones     = kmh % 10;
