@@ -118,6 +118,13 @@ export type SpriteId =
   | 'BILLBOARD_FINE_TOBACCO'
   | 'BILLBOARD_SMOOTH_TASTE'
   | 'BILLBOARD_WRESTLING'
+  | 'COOKIE_HAPPY_SMOKING'
+  | 'COOKIE_PREMIUM_CIGS'
+  | 'COOKIE_SMOKIN_NOW'
+  | 'COOKIE_CIG_RESERVES'
+  | 'BARNEY_METAL_TILLETIRE'
+  | 'BARNEY_OUTRUN_PALETTE'
+  | 'BIG_WRESTLING'
   | 'CACTUS_C1'
   | 'CACTUS_C2'
   | 'CACTUS_C3'
@@ -210,6 +217,54 @@ export const BILLBOARD_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
   BILLBOARD_FINE_TOBACCO:    2000,
   BILLBOARD_SMOOTH_TASTE:    2000,
   BILLBOARD_WRESTLING:       2200,
+};
+
+// ── Cookie boards (portrait signs — distinct class from og billboard) ─────────
+
+/** Source rectangles within sprites/assets/cookie_sheet.png (1069×382 px). */
+export const COOKIE_RECTS: Partial<Record<SpriteId, SpriteRect>> =
+{
+  COOKIE_HAPPY_SMOKING:  { x:    4, y:   4, w: 240, h: 374 },
+  COOKIE_PREMIUM_CIGS:   { x:  252, y:   4, w: 277, h: 374 },
+  COOKIE_SMOKIN_NOW:     { x:  537, y:   4, w: 270, h: 374 },
+  COOKIE_CIG_RESERVES:   { x:  815, y:   4, w: 250, h: 374 },
+};
+
+/** World-space height of each cookie board in world units. */
+export const COOKIE_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
+{
+  COOKIE_HAPPY_SMOKING:  2400,
+  COOKIE_PREMIUM_CIGS:   2400,
+  COOKIE_SMOKIN_NOW:     2400,
+  COOKIE_CIG_RESERVES:   2400,
+};
+
+// ── Barney boards (distinct class from og and cookie boards) ──────────────────
+
+/** Source rectangles within sprites/assets/barney_sheet.png (539×314 px). */
+export const BARNEY_RECTS: Partial<Record<SpriteId, SpriteRect>> =
+{
+  BARNEY_METAL_TILLETIRE:  { x:    4, y:  41, w: 261, h: 232 },
+  BARNEY_OUTRUN_PALETTE:   { x:  273, y:   4, w: 262, h: 306 },
+};
+
+/** World-space height of each barney board in world units. */
+export const BARNEY_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
+{
+  BARNEY_METAL_TILLETIRE:  2000,
+  BARNEY_OUTRUN_PALETTE:   2200,
+};
+
+/** Sheet rects for big_boards billboards. */
+export const BIG_RECTS: Partial<Record<SpriteId, SpriteRect>> =
+{
+  BIG_WRESTLING:           { x:    4, y:   4, w: 1089, h: 626 },
+};
+
+/** World-space height of each big board in world units. */
+export const BIG_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
+{
+  BIG_WRESTLING:           5600,
 };
 
 // ── Loader ────────────────────────────────────────────────────────────────────

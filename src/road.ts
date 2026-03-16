@@ -270,6 +270,9 @@ export class Road
 
     this.plantPalms();
     this.plantBillboards();
+    this.plantCookieBoards();
+    this.plantBarneyBoards();
+    this.plantBigBoards();
     this.plantCactuses();
   }
 
@@ -526,6 +529,177 @@ export class Road
         const worldX = sign * rInt(2000, 2600);
         plant(seg, pick(poolFor(i)), worldX);
         gap[s] = rInt(30, 55);
+      }
+    }
+  }
+
+  // ── Cookie board placement ────────────────────────────────────────────────
+
+  /**
+   * Places portrait cookie boards alongside the road.
+   * Entirely separate from plantBillboards() — own PRNG seed, own pool,
+   * own gap rules, own worldX range.  Sparser than regular billboards so
+   * they feel like a surprise when they appear.
+   */
+  private plantCookieBoards(): void
+  {
+    let seed = (Date.now() ^ 0xC00C1E5) >>> 0;   // random each load, distinct from billboard seed
+    const rand = (): number =>
+    {
+      seed += 0x6D2B79F5;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
+    };
+    const rInt = (lo: number, hi: number): number =>
+      Math.floor(rand() * (hi - lo + 1)) + lo;
+    const pick = <T>(arr: readonly T[]): T =>
+      arr[Math.floor(rand() * arr.length)];
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX });
+    };
+
+    const POOL: readonly string[] = [
+      'COOKIE_HAPPY_SMOKING', 'COOKIE_PREMIUM_CIGS',
+      'COOKIE_SMOKIN_NOW',    'COOKIE_CIG_RESERVES',
+    ];
+
+    // Sparse — only one side at a time, long gaps between appearances.
+    const gap = [rInt(40, 80), rInt(50, 90)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg      = this.segments[i];
+      const absCurve = Math.abs(seg.curve);
+
+      if (absCurve >= 4) { gap[0] = Math.max(gap[0], 12); gap[1] = Math.max(gap[1], 12); continue; }
+
+      gap[0] = Math.max(0, gap[0] - 1);
+      gap[1] = Math.max(0, gap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (gap[s] > 0) continue;
+        if (rand() >= 0.30) { gap[s] = rInt(25, 50); continue; }
+        const sign   = s === 1 ? +1 : -1;
+        const worldX = sign * rInt(2000, 2500);
+        plant(seg, pick(POOL), worldX);
+        gap[s] = rInt(50, 100);   // long gap — these are rare
+      }
+    }
+  }
+
+  // ── Barney board placement ────────────────────────────────────────────────
+
+  /**
+   * Places barney boards alongside the road.
+   * Entirely separate from all other board types — own PRNG seed, own pool,
+   * own gap rules.  Very rare: one side at a time, long gaps.
+   */
+  private plantBarneyBoards(): void
+  {
+    let seed = (Date.now() ^ 0xBA121E5) >>> 0;   // random each load, distinct seed
+    const rand = (): number =>
+    {
+      seed += 0x6D2B79F5;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
+    };
+    const rInt = (lo: number, hi: number): number =>
+      Math.floor(rand() * (hi - lo + 1)) + lo;
+    const pick = <T>(arr: readonly T[]): T =>
+      arr[Math.floor(rand() * arr.length)];
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX });
+    };
+
+    const POOL: readonly string[] = [
+      'BARNEY_METAL_TILLETIRE',
+      'BARNEY_OUTRUN_PALETTE',
+    ];
+
+    const gap = [rInt(60, 120), rInt(70, 130)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg      = this.segments[i];
+      const absCurve = Math.abs(seg.curve);
+
+      if (absCurve >= 4) { gap[0] = Math.max(gap[0], 15); gap[1] = Math.max(gap[1], 15); continue; }
+
+      gap[0] = Math.max(0, gap[0] - 1);
+      gap[1] = Math.max(0, gap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (gap[s] > 0) continue;
+        if (rand() >= 0.25) { gap[s] = rInt(30, 60); continue; }
+        const sign   = s === 1 ? +1 : -1;
+        const worldX = sign * rInt(2000, 2500);
+        plant(seg, pick(POOL), worldX);
+        gap[s] = rInt(70, 140);   // very long gap — genuinely rare
+      }
+    }
+  }
+
+  // ── Big board placement ───────────────────────────────────────────────────
+
+  /**
+   * Places big_boards alongside the road. Extremely rare — ultra-wide landscape
+   * billboards that demand attention. Completely independent from all other board types.
+   */
+  private plantBigBoards(): void
+  {
+    let seed = (Date.now() ^ 0xB163B04D) >>> 0;   // random each load, distinct seed
+    const rand = (): number =>
+    {
+      seed += 0x6D2B79F5;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
+    };
+    const rInt = (lo: number, hi: number): number =>
+      Math.floor(rand() * (hi - lo + 1)) + lo;
+    const pick = <T>(arr: readonly T[]): T =>
+      arr[Math.floor(rand() * arr.length)];
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX });
+    };
+
+    const POOL: readonly string[] = [
+      'BIG_WRESTLING',
+    ];
+
+    const gap = [rInt(100, 200), rInt(110, 210)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg      = this.segments[i];
+      const absCurve = Math.abs(seg.curve);
+
+      if (absCurve >= 4) { gap[0] = Math.max(gap[0], 20); gap[1] = Math.max(gap[1], 20); continue; }
+
+      gap[0] = Math.max(0, gap[0] - 1);
+      gap[1] = Math.max(0, gap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (gap[s] > 0) continue;
+        if (rand() >= 0.20) { gap[s] = rInt(50, 100); continue; }
+        const sign   = s === 1 ? +1 : -1;
+        const worldX = sign * rInt(2200, 2800);
+        plant(seg, pick(POOL), worldX);
+        gap[s] = rInt(100, 200);   // extremely rare — big boards dominate visually
       }
     }
   }

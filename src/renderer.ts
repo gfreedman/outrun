@@ -56,6 +56,9 @@ import
   CAR_PIVOT_OFFSETS,
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
   BILLBOARD_RECTS, BILLBOARD_WORLD_HEIGHT,
+  COOKIE_RECTS, COOKIE_WORLD_HEIGHT,
+  BARNEY_RECTS, BARNEY_WORLD_HEIGHT,
+  BIG_RECTS, BIG_WORLD_HEIGHT,
   CACTUS_RECTS, CACTUS_WORLD_HEIGHT,
 } from './sprites';
 
@@ -272,6 +275,9 @@ export class Renderer
   private roadSprites:      SpriteLoader | null;
   private billboardSprites: SpriteLoader | null;
   private cactusSprites:    SpriteLoader | null;
+  private cookieSprites:    SpriteLoader | null;
+  private barneySprites:    SpriteLoader | null;
+  private bigSprites:       SpriteLoader | null;
 
   // ── Per-frame reusable projection pool ──────────────────────────────────
   //
@@ -335,6 +341,9 @@ export class Renderer
     roadSprites:      SpriteLoader | null = null,
     billboardSprites: SpriteLoader | null = null,
     cactusSprites:    SpriteLoader | null = null,
+    cookieSprites:    SpriteLoader | null = null,
+    barneySprites:    SpriteLoader | null = null,
+    bigSprites:       SpriteLoader | null = null,
   )
   {
     const ctx = canvas.getContext('2d');
@@ -344,6 +353,9 @@ export class Renderer
     this.roadSprites      = roadSprites;
     this.billboardSprites = billboardSprites;
     this.cactusSprites    = cactusSprites;
+    this.cookieSprites    = cookieSprites;
+    this.barneySprites    = barneySprites;
+    this.bigSprites       = bigSprites;
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
@@ -604,16 +616,28 @@ export class Renderer
         const id = si.id as SpriteId;
 
         const isBillboard = id.startsWith('BILLBOARD_');
+        const isCookie    = id.startsWith('COOKIE_');
+        const isBarney    = id.startsWith('BARNEY_');
+        const isBig       = id.startsWith('BIG_');
         const isCactus    = id.startsWith('CACTUS_');
         const sheet = isBillboard ? this.billboardSprites
+                    : isCookie    ? this.cookieSprites
+                    : isBarney    ? this.barneySprites
+                    : isBig       ? this.bigSprites
                     : isCactus    ? this.cactusSprites
                     :               this.roadSprites;
         if (!sheet?.isReady()) continue;
 
         const rect   = isBillboard ? BILLBOARD_RECTS[id]
+                     : isCookie    ? COOKIE_RECTS[id]
+                     : isBarney    ? BARNEY_RECTS[id]
+                     : isBig       ? BIG_RECTS[id]
                      : isCactus    ? CACTUS_RECTS[id]
                      :               SPRITE_RECTS[id];
         const worldH = isBillboard ? BILLBOARD_WORLD_HEIGHT[id]
+                     : isCookie    ? COOKIE_WORLD_HEIGHT[id]
+                     : isBarney    ? BARNEY_WORLD_HEIGHT[id]
+                     : isBig       ? BIG_WORLD_HEIGHT[id]
                      : isCactus    ? CACTUS_WORLD_HEIGHT[id]
                      :               SPRITE_WORLD_HEIGHT[id];
         if (!rect || !worldH) continue;
@@ -624,16 +648,15 @@ export class Renderer
         const sprW = sprH * (rect.w / rect.h);
         const sprX = sx1 + si.worldX * sc1 * halfW;
 
-        // Billboards anchor from their road-facing inner edge so the near face
-        // stays on screen even when the far half extends off-canvas.
-        const drawX = isBillboard
+        // Sign boards anchor from their road-facing inner edge.
+        const drawX = (isBillboard || isCookie || isBarney || isBig)
           ? (si.worldX > 0 ? Math.round(sprX) : Math.round(sprX - sprW))
           : Math.round(sprX - sprW / 2);
 
-        // Palms/cactuses: shift down by bottom transparent padding so base = sy1.
-        // Billboards: groundOffset=0 — sign bottom sits at road level, no masking.
+        // Palms/cactuses: shift down by transparent bottom padding so base = sy1.
+        // Sign boards: groundOffset=0 — base at road level, no masking.
         const padPx        = isCactus ? 10 : 8;
-        const groundOffset = isBillboard ? 0 : Math.round(padPx / rect.h * sprH);
+        const groundOffset = (isBillboard || isCookie || isBarney || isBig) ? 0 : Math.round(padPx / rect.h * sprH);
 
         sheet.draw(
           ctx, rect,
