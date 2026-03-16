@@ -146,7 +146,10 @@ export type SpriteId =
   | 'CACTUS_C19'
   | 'CACTUS_C20'
   | 'CACTUS_C21'
-  | 'CACTUS_C22';
+  | 'CACTUS_C22'
+  | 'SHRUB_S1'
+  | 'SHRUB_S2'
+  | 'SHRUB_S6';
 
 /**
  * Source rectangles for each palm within sprites/assets/palm_sheet.png.
@@ -391,4 +394,22 @@ export const CACTUS_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
   CACTUS_C20:   700,
   CACTUS_C21:   700,
   CACTUS_C22:   700,
+};
+
+// ── Shrubs (S1 Short Scrub, S2 Sagebrush Cluster, S6 Low Creosote) ───────────
+
+/** Source rectangles within sprites/assets/shrub_sheet.png (444×79 px). */
+export const SHRUB_RECTS: Partial<Record<SpriteId, SpriteRect>> =
+{
+  SHRUB_S1:    { x:    4, y:  20, w: 116, h:  38 },
+  SHRUB_S2:    { x:  128, y:   4, w: 144, h:  71 },
+  SHRUB_S6:    { x:  280, y:  23, w: 160, h:  32 },
+};
+
+/** World-space height of each shrub in world units. */
+export const SHRUB_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
+{
+  SHRUB_S1:    350,
+  SHRUB_S2:    500,
+  SHRUB_S6:    300,
 };

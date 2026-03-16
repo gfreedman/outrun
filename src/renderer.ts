@@ -60,6 +60,7 @@ import
   BARNEY_RECTS, BARNEY_WORLD_HEIGHT,
   BIG_RECTS, BIG_WORLD_HEIGHT,
   CACTUS_RECTS, CACTUS_WORLD_HEIGHT,
+  SHRUB_RECTS, SHRUB_WORLD_HEIGHT,
 } from './sprites';
 
 // ── Module-level constants ─────────────────────────────────────────────────────
@@ -278,6 +279,7 @@ export class Renderer
   private cookieSprites:    SpriteLoader | null;
   private barneySprites:    SpriteLoader | null;
   private bigSprites:       SpriteLoader | null;
+  private shrubSprites:     SpriteLoader | null;
 
   // ── Per-frame reusable projection pool ──────────────────────────────────
   //
@@ -344,6 +346,7 @@ export class Renderer
     cookieSprites:    SpriteLoader | null = null,
     barneySprites:    SpriteLoader | null = null,
     bigSprites:       SpriteLoader | null = null,
+    shrubSprites:     SpriteLoader | null = null,
   )
   {
     const ctx = canvas.getContext('2d');
@@ -356,6 +359,7 @@ export class Renderer
     this.cookieSprites    = cookieSprites;
     this.barneySprites    = barneySprites;
     this.bigSprites       = bigSprites;
+    this.shrubSprites     = shrubSprites;
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
@@ -620,11 +624,13 @@ export class Renderer
         const isBarney    = id.startsWith('BARNEY_');
         const isBig       = id.startsWith('BIG_');
         const isCactus    = id.startsWith('CACTUS_');
+        const isShrub     = id.startsWith('SHRUB_');
         const sheet = isBillboard ? this.billboardSprites
                     : isCookie    ? this.cookieSprites
                     : isBarney    ? this.barneySprites
                     : isBig       ? this.bigSprites
                     : isCactus    ? this.cactusSprites
+                    : isShrub     ? this.shrubSprites
                     :               this.roadSprites;
         if (!sheet?.isReady()) continue;
 
@@ -633,12 +639,14 @@ export class Renderer
                      : isBarney    ? BARNEY_RECTS[id]
                      : isBig       ? BIG_RECTS[id]
                      : isCactus    ? CACTUS_RECTS[id]
+                     : isShrub     ? SHRUB_RECTS[id]
                      :               SPRITE_RECTS[id];
         const worldH = isBillboard ? BILLBOARD_WORLD_HEIGHT[id]
                      : isCookie    ? COOKIE_WORLD_HEIGHT[id]
                      : isBarney    ? BARNEY_WORLD_HEIGHT[id]
                      : isBig       ? BIG_WORLD_HEIGHT[id]
                      : isCactus    ? CACTUS_WORLD_HEIGHT[id]
+                     : isShrub     ? SHRUB_WORLD_HEIGHT[id]
                      :               SPRITE_WORLD_HEIGHT[id];
         if (!rect || !worldH) continue;
 
@@ -653,7 +661,7 @@ export class Renderer
           ? (si.worldX > 0 ? Math.round(sprX) : Math.round(sprX - sprW))
           : Math.round(sprX - sprW / 2);
 
-        // Palms/cactuses: shift down by transparent bottom padding so base = sy1.
+        // Palms/cactuses/shrubs: shift down by transparent bottom padding so base = sy1.
         // Sign boards: groundOffset=0 — base at road level, no masking.
         const padPx        = isCactus ? 10 : 8;
         const groundOffset = (isBillboard || isCookie || isBarney || isBig) ? 0 : Math.round(padPx / rect.h * sprH);

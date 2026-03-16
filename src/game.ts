@@ -147,8 +147,9 @@ export class Game
     const cookieSprites    = new SpriteLoader('sprites/assets/cookie_sheet.png');
     const barneySprites    = new SpriteLoader('sprites/assets/barney_sheet.png');
     const bigSprites       = new SpriteLoader('sprites/assets/big_sheet.png');
+    const shrubSprites     = new SpriteLoader('sprites/assets/shrub_sheet.png');
     this.road     = new Road();
-    this.renderer = new Renderer(canvas, carSprites, roadSprites, billboardSprites, cactusSprites, cookieSprites, barneySprites, bigSprites);
+    this.renderer = new Renderer(canvas, carSprites, roadSprites, billboardSprites, cactusSprites, cookieSprites, barneySprites, bigSprites, shrubSprites);
     this.input    = new InputManager();
   }
 

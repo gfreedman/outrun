@@ -280,6 +280,7 @@ export class Road
     this.boardLastPlaced[0] = -999;
     this.boardLastPlaced[1] = -999;
 
+    this.plantShrubs();
     this.plantPalms();
     this.plantBillboards();
     this.plantCookieBoards();
@@ -803,6 +804,77 @@ export class Road
           }
           gap[4 + s] = rInt(2, 5);
         }
+      }
+    }
+  }
+
+  // ── Shrub placement ───────────────────────────────────────────────────────
+
+  /**
+   * Scatters shrubs thickly across both sides of the road.
+   * Shrubs are small ground-cover plants placed well away from the road edge
+   * (worldX 2800–5500) at high density.  They overlap freely — no cross-type
+   * gap enforcement is applied and intra-type gaps are short.
+   * Uses its own PRNG seed so placement is independent of all other passes.
+   */
+  private plantShrubs(): void
+  {
+    let seed = (Date.now() ^ 0x5B2B5) >>> 0;
+    const rand = (): number =>
+    {
+      seed += 0x6D2B79F5;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
+    };
+    const rInt = (lo: number, hi: number): number =>
+      Math.floor(rand() * (hi - lo + 1)) + lo;
+    const pick = <T>(arr: readonly T[]): T =>
+      arr[Math.floor(rand() * arr.length)];
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX });
+    };
+
+    const POOL: readonly string[] = [
+      'SHRUB_S1', 'SHRUB_S1',   // short scrub — most common
+      'SHRUB_S6', 'SHRUB_S6',   // low creosote — wide, very common
+      'SHRUB_S2',                // sagebrush — less frequent, taller
+    ];
+
+    // Independent gap counters per side — short gaps, can overlap with other types.
+    const gap = [rInt(1, 4), rInt(1, 4)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg      = this.segments[i];
+      const absCurve = Math.abs(seg.curve);
+
+      // Thin out slightly on tight curves so shrubs don't clutter inside bends
+      if (absCurve >= 5) { gap[0] = Math.max(gap[0], 3); gap[1] = Math.max(gap[1], 3); continue; }
+
+      gap[0] = Math.max(0, gap[0] - 1);
+      gap[1] = Math.max(0, gap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (gap[s] > 0) continue;
+        // High density — fire ~75% of the time a gap clears
+        if (rand() >= 0.75) { gap[s] = rInt(1, 3); continue; }
+
+        const sign = s === 1 ? +1 : -1;
+
+        // Occasionally drop a cluster of 2 shrubs close together for natural clumping
+        const count = rand() < 0.35 ? 2 : 1;
+        for (let c = 0; c < count; c++)
+        {
+          const worldX = sign * rInt(2800, 5500);
+          plant(seg, pick(POOL), worldX);
+        }
+
+        gap[s] = rInt(1, 5);
       }
     }
   }
