@@ -322,6 +322,7 @@ export class Road
     this.plantBarneyBoards();
     this.plantBigBoards();
     this.plantCactuses();
+    this.plantHouses();
   }
 
   // ── Palm placement ────────────────────────────────────────────────────────
@@ -963,6 +964,81 @@ export class Road
         const count = rInt(4, 7);
         for (let c = 0; c < count; c++)
           plant(seg, pick(POOL), sign * rInt(10000, 20000), 0.4);
+      }
+    }
+  }
+
+  // ── House placement ───────────────────────────────────────────────────────
+
+  /**
+   * Scatters houses and buildings along both sides of the road.
+   *
+   * All 25 sprite varieties are drawn from a single mixed pool so types
+   * are distributed randomly across the whole track rather than bunched
+   * by section.  The seed is re-rolled each page load (Date.now()) so
+   * the layout is different every run.
+   *
+   * Facing rule — all sprites have their facade pointing RIGHT in the sheet:
+   *   Left side (worldX < 0)  → as-is, facade already faces road centre.
+   *   Right side (worldX > 0) → flipX=true, mirrors sprite to face left.
+   *
+   * Text-bearing sprites (SHOP, BAKERY, SURF, CAFE, ARCADE) must NEVER be
+   * flipped — they only appear on the LEFT side where reading is correct.
+   *
+   * Distance: 3000–5500 wu primary, 5500–9000 wu for background depth.
+   * Gap: 10–30 segments — buildings feel like a continuous roadside presence.
+   */
+  private plantHouses(): void
+  {
+    const { rand, rInt, pick } = makePRNG(Date.now());
+
+    const plant = (seg: RoadSegment, id: string, worldX: number, flipX = false): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX, flipX });
+    };
+
+    // Text on facade — left side only, never flip.
+    const TEXT: readonly string[] = [
+      'HOUSE_SHOP', 'HOUSE_BAKERY', 'HOUSE_SURF', 'HOUSE_CAFE', 'HOUSE_ARCADE',
+    ];
+
+    // No legible text — safe to flip and place on either side.
+    const SAFE: readonly string[] = [
+      'HOUSE_PURPLE', 'HOUSE_TEAL', 'HOUSE_YELLOW', 'HOUSE_GREEN', 'HOUSE_PINK',
+    ];
+
+    // LEFT pool = TEXT + SAFE; RIGHT pool = SAFE only.
+    const LEFT:  readonly string[] = [...TEXT, ...SAFE];
+    const RIGHT: readonly string[] = SAFE;
+
+    const gap = [rInt(15, 35), rInt(20, 45)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg      = this.segments[i];
+      const absCurve = Math.abs(seg.curve);
+
+      if (absCurve >= 3) { gap[0] = Math.max(gap[0], 10); gap[1] = Math.max(gap[1], 10); continue; }
+
+      gap[0] = Math.max(0, gap[0] - 1);
+      gap[1] = Math.max(0, gap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (gap[s] > 0) continue;
+        if (rand() >= 0.70) { gap[s] = rInt(12, 25); continue; }
+
+        const isLeft = s === 0;
+        const sign   = isLeft ? -1 : +1;
+        const pool   = isLeft ? LEFT : RIGHT;
+
+        plant(seg, pick(pool), sign * rInt(3000, 5500), !isLeft);
+
+        // 40% chance: second building behind for depth
+        if (rand() < 0.40)
+          plant(seg, pick(SAFE), sign * rInt(5500, 9000), !isLeft);
+
+        gap[s] = rInt(20, 45);
       }
     }
   }

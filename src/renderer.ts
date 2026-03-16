@@ -62,6 +62,7 @@ import
   CACTUS_RECTS, CACTUS_WORLD_HEIGHT,
   SHRUB_RECTS, SHRUB_WORLD_HEIGHT,
   SIGN_RECTS, SIGN_WORLD_HEIGHT,
+  HOUSE_RECTS, HOUSE_WORLD_HEIGHT,
 } from './sprites';
 
 // ── Module-level constants ─────────────────────────────────────────────────────
@@ -282,6 +283,7 @@ export class Renderer
   private bigSprites:       SpriteLoader | null;
   private shrubSprites:     SpriteLoader | null;
   private signSprites:      SpriteLoader | null;
+  private houseSprites:     SpriteLoader | null;
 
   // ── Per-frame reusable projection pool ──────────────────────────────────
   //
@@ -347,6 +349,7 @@ export class Renderer
     bigSprites:       SpriteLoader | null = null,
     shrubSprites:     SpriteLoader | null = null,
     signSprites:      SpriteLoader | null = null,
+    houseSprites:     SpriteLoader | null = null,
   )
   {
     const ctx = canvas.getContext('2d');
@@ -361,6 +364,7 @@ export class Renderer
     this.bigSprites       = bigSprites;
     this.shrubSprites     = shrubSprites;
     this.signSprites      = signSprites;
+    this.houseSprites     = houseSprites;
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
@@ -627,6 +631,7 @@ export class Renderer
         const isCactus    = id.startsWith('CACTUS_');
         const isShrub     = id.startsWith('SHRUB_');
         const isSign      = id.startsWith('SIGN_');
+        const isHouse     = id.startsWith('HOUSE_');
         const sheet = isBillboard ? this.billboardSprites
                     : isCookie    ? this.cookieSprites
                     : isBarney    ? this.barneySprites
@@ -634,6 +639,7 @@ export class Renderer
                     : isCactus    ? this.cactusSprites
                     : isShrub     ? this.shrubSprites
                     : isSign      ? this.signSprites
+                    : isHouse     ? this.houseSprites
                     :               this.roadSprites;
         if (!sheet?.isReady()) continue;
 
@@ -644,6 +650,7 @@ export class Renderer
                      : isCactus    ? CACTUS_RECTS[id]
                      : isShrub     ? SHRUB_RECTS[id]
                      : isSign      ? SIGN_RECTS[id]
+                     : isHouse     ? HOUSE_RECTS[id]
                      :               SPRITE_RECTS[id];
         const worldH = isBillboard ? BILLBOARD_WORLD_HEIGHT[id]
                      : isCookie    ? COOKIE_WORLD_HEIGHT[id]
@@ -652,6 +659,7 @@ export class Renderer
                      : isCactus    ? CACTUS_WORLD_HEIGHT[id]
                      : isShrub     ? SHRUB_WORLD_HEIGHT[id]
                      : isSign      ? SIGN_WORLD_HEIGHT[id]
+                     : isHouse     ? HOUSE_WORLD_HEIGHT[id]
                      :               SPRITE_WORLD_HEIGHT[id];
         if (!rect || !worldH) continue;
 
@@ -668,16 +676,30 @@ export class Renderer
 
         // Palms/cactuses/shrubs: shift down by transparent bottom padding so base = sy1.
         // Sign boards: groundOffset=0 — base at road level, no masking.
-        const padPx        = isCactus ? 10 : 8;
+        // Houses: proportional to rect.h (20%) — isometric floor/step below facade
+        //   is much deeper than the generic 8px palm correction.
+        const padPx        = isHouse ? Math.round(rect.h * 0.20) : isCactus ? 10 : 8;
         const groundOffset = (isBillboard || isCookie || isBarney || isBig) ? 0 : Math.round(padPx / rect.h * sprH);
 
-        sheet.draw(
-          ctx, rect,
-          drawX,
-          Math.round(sy1 - sprH) + groundOffset,
-          Math.round(sprW),
-          Math.round(sprH),
-        );
+        const drawY = Math.round(sy1 - sprH) + groundOffset;
+        const drawW = Math.round(sprW);
+        const drawH = Math.round(sprH);
+
+        if (si.flipX)
+        {
+          // Mirror around the sprite's vertical centre axis.
+          // ctx.scale(-1,1) flips the X axis, so we shift the draw origin
+          // to -(drawX + drawW) so the image lands at the same screen position
+          // but horizontally reversed.
+          ctx.save();
+          ctx.scale(-1, 1);
+          sheet.draw(ctx, rect, -(drawX + drawW), drawY, drawW, drawH);
+          ctx.restore();
+        }
+        else
+        {
+          sheet.draw(ctx, rect, drawX, drawY, drawW, drawH);
+        }
       }
     }
   }

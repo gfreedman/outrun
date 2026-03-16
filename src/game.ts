@@ -149,8 +149,9 @@ export class Game
     const bigSprites       = new SpriteLoader('sprites/assets/big_sheet.png');
     const shrubSprites     = new SpriteLoader('sprites/assets/shrub_sheet.png');
     const signSprites      = new SpriteLoader('sprites/assets/sign_sheet.png');
+    const houseSprites     = new SpriteLoader('sprites/assets/house_sheet.png');
     this.road     = new Road();
-    this.renderer = new Renderer(canvas, carSprites, roadSprites, billboardSprites, cactusSprites, cookieSprites, barneySprites, bigSprites, shrubSprites, signSprites);
+    this.renderer = new Renderer(canvas, carSprites, roadSprites, billboardSprites, cactusSprites, cookieSprites, barneySprites, bigSprites, shrubSprites, signSprites, houseSprites);
     this.input    = new InputManager();
   }
 

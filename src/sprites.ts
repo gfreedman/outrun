@@ -151,7 +151,32 @@ export type SpriteId =
   | 'SHRUB_S2'
   | 'SHRUB_S6'
   | 'SIGN_TURN_RIGHT'
-  | 'SIGN_TURN_LEFT';
+  | 'SIGN_TURN_LEFT'
+  | 'HOUSE_ADOBE_1'
+  | 'HOUSE_ADOBE_2'
+  | 'HOUSE_ADOBE_3'
+  | 'HOUSE_ADOBE_4'
+  | 'HOUSE_ADOBE_5'
+  | 'HOUSE_ADOBE_6'
+  | 'HOUSE_ADOBE_7'
+  | 'HOUSE_ADOBE_8'
+  | 'HOUSE_ADOBE_9'
+  | 'HOUSE_ADOBE_10'
+  | 'HOUSE_DOME'
+  | 'HOUSE_TENT_L'
+  | 'HOUSE_HUT'
+  | 'HOUSE_TENT_S'
+  | 'HOUSE_BUNKER'
+  | 'HOUSE_SHOP'
+  | 'HOUSE_BAKERY'
+  | 'HOUSE_SURF'
+  | 'HOUSE_CAFE'
+  | 'HOUSE_ARCADE'
+  | 'HOUSE_PURPLE'
+  | 'HOUSE_TEAL'
+  | 'HOUSE_YELLOW'
+  | 'HOUSE_GREEN'
+  | 'HOUSE_PINK';
 
 /**
  * Source rectangles for each palm within sprites/assets/palm_sheet.png.
@@ -430,4 +455,66 @@ export const SIGN_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
 {
   SIGN_TURN_RIGHT:   900,
   SIGN_TURN_LEFT:    900,
+};
+
+// ── Houses and buildings ───────────────────────────────────────────────────────
+
+/** Source rectangles within sprites/assets/house_sheet.png (6607×343 px). */
+export const HOUSE_RECTS: Partial<Record<SpriteId, SpriteRect>> =
+{
+  HOUSE_ADOBE_1:   { x:     4, y:  81, w: 195, h: 180 },
+  HOUSE_ADOBE_2:   { x:   207, y:  88, w: 178, h: 167 },
+  HOUSE_ADOBE_3:   { x:   393, y:  90, w: 189, h: 163 },
+  HOUSE_ADOBE_4:   { x:   590, y:  93, w: 215, h: 156 },
+  HOUSE_ADOBE_5:   { x:   813, y:  82, w: 207, h: 178 },
+  HOUSE_ADOBE_6:   { x:  1028, y:  74, w: 194, h: 195 },
+  HOUSE_ADOBE_7:   { x:  1230, y:  86, w: 184, h: 170 },
+  HOUSE_ADOBE_8:   { x:  1422, y:  81, w: 189, h: 180 },
+  HOUSE_ADOBE_9:   { x:  1619, y:  86, w: 189, h: 170 },
+  HOUSE_ADOBE_10:  { x:  1816, y:  80, w: 197, h: 182 },
+  HOUSE_DOME:      { x:  2021, y:  76, w: 414, h: 190 },
+  HOUSE_TENT_L:    { x:  2443, y:  86, w: 205, h: 170 },
+  HOUSE_HUT:       { x:  2656, y:  99, w: 208, h: 145 },
+  HOUSE_TENT_S:    { x:  2872, y:  92, w: 191, h: 159 },
+  HOUSE_BUNKER:    { x:  3071, y:  90, w: 193, h: 163 },
+  HOUSE_SHOP:      { x:  3272, y:   9, w: 344, h: 325 },
+  HOUSE_BAKERY:    { x:  3624, y:   9, w: 315, h: 325 },
+  HOUSE_SURF:      { x:  3947, y:   9, w: 361, h: 325 },
+  HOUSE_CAFE:      { x:  4316, y:   9, w: 277, h: 325 },
+  HOUSE_ARCADE:    { x:  4601, y:   9, w: 345, h: 325 },
+  HOUSE_PURPLE:    { x:  4954, y:   4, w: 344, h: 335 },
+  HOUSE_TEAL:      { x:  5306, y:  21, w: 315, h: 300 },
+  HOUSE_YELLOW:    { x:  5629, y:   4, w: 361, h: 335 },
+  HOUSE_GREEN:     { x:  5998, y:  22, w: 277, h: 299 },
+  HOUSE_PINK:      { x:  6283, y:   4, w: 320, h: 335 },
+};
+
+/** World-space height of each house/building in world units. */
+export const HOUSE_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
+{
+  HOUSE_ADOBE_1:   1800,
+  HOUSE_ADOBE_2:   1800,
+  HOUSE_ADOBE_3:   2000,
+  HOUSE_ADOBE_4:   1600,
+  HOUSE_ADOBE_5:   1700,
+  HOUSE_ADOBE_6:   2000,
+  HOUSE_ADOBE_7:   1800,
+  HOUSE_ADOBE_8:   1700,
+  HOUSE_ADOBE_9:   1600,
+  HOUSE_ADOBE_10:  1800,
+  HOUSE_DOME:      1600,
+  HOUSE_TENT_L:    1400,
+  HOUSE_HUT:       1300,
+  HOUSE_TENT_S:    1400,
+  HOUSE_BUNKER:    1500,
+  HOUSE_SHOP:      2200,
+  HOUSE_BAKERY:    2500,
+  HOUSE_SURF:      2200,
+  HOUSE_CAFE:      2600,
+  HOUSE_ARCADE:    2200,
+  HOUSE_PURPLE:    2000,
+  HOUSE_TEAL:      2000,
+  HOUSE_YELLOW:    2100,
+  HOUSE_GREEN:     2000,
+  HOUSE_PINK:      2000,
 };
