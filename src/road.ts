@@ -269,6 +269,8 @@ export class Road
     r(1,  38,  1,    0,   0);             // 40 — lap complete. Do it again.
 
     this.plantPalms();
+    this.plantBillboards();
+    this.plantCactuses();
   }
 
   // ── Palm placement ────────────────────────────────────────────────────────
@@ -337,7 +339,32 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX });
+      // Scale each palm randomly 1×–3× to mimic the size variety in the OG game.
+      const scale = 1 + rand() * 2;   // uniform [1, 3]
+      (seg.sprites ??= []).push({ id, worldX, scale });
+    };
+
+    // ── Weighted distance sampler ─────────────────────────────────────────────
+    //
+    // wX(...tiers) — each tier is [weight, minDist, maxDist].
+    // Picks a tier by weight, then samples uniformly within it.
+    // Returns an unsigned distance; multiply by sign(s) at the call site.
+    //
+    // Three-tier approach mimics real palm forest structure:
+    //   Near  — tight to the road edge (dramatic, arcade feel)
+    //   Mid   — comfortable mid-distance (most common)
+    //   Far   — deep background silhouettes (depth, atmosphere)
+    type Tier = [number, number, number]; // [weight, minDist, maxDist]
+    const wX = (...tiers: Tier[]): number =>
+    {
+      const total = tiers.reduce((s, [w]) => s + w, 0);
+      let r = rand() * total;
+      for (const [w, lo, hi] of tiers)
+      {
+        r -= w;
+        if (r <= 0) return rInt(lo, hi);
+      }
+      return rInt(tiers[tiers.length - 1][1], tiers[tiers.length - 1][2]);
     };
 
     // ── Per-side state ────────────────────────────────────────────────────
@@ -383,14 +410,14 @@ export class Road
           if (grpRem[outerS] === 0)
             grpRem[outerS] = rand() < 0.5 ? 3 : 5;
 
-          // Place one bent palm
+          // Place one bent palm — mostly close, occasionally mid or far back
           const bentId = outerS === 1 ? 'PALM_T2_BENT_LEFT' : 'PALM_T2_BENT_RIGHT';
-          plant(seg, bentId, sign(outerS) * rInt(2500, 3100));
+          plant(seg, bentId, sign(outerS) * wX([4, 2200, 2700], [4, 2700, 3300], [2, 3300, 4200]));
           grpRem[outerS]--;
 
-          // Optionally add a background tall palm further out
+          // Optionally add a background tall palm — wide range for depth
           if (rand() < 0.30)
-            plant(seg, pick(BG), sign(outerS) * rInt(4000, 5500));
+            plant(seg, pick(BG), sign(outerS) * wX([3, 3800, 4800], [7, 4800, 7000]));
 
           // Advance gap: intra-group if more remain, inter-group if done
           gap[outerS] = grpRem[outerS] > 0 ? rInt(3, 7) : rInt(12, 20);
@@ -399,7 +426,8 @@ export class Road
         // Inside: sparse small palms
         if (gap[innerS] === 0 && rand() < 0.15)
         {
-          plant(seg, pick(CLOSE), sign(innerS) * rInt(2400, 2900));
+          // Inside of corner: hug the road edge with occasional mid-distance
+          plant(seg, pick(CLOSE), sign(innerS) * wX([6, 2200, 2700], [4, 2700, 3600]));
           gap[innerS] = rInt(16, 26);
         }
       }
@@ -427,12 +455,159 @@ export class Road
             const tseg = this.segments[ti];
 
             if (rand() < 0.25)
-              plant(tseg, pick(BG),      sign(s) * rInt(3600, 5200));
+              // Background palms: deep silhouettes spanning a wide range
+              plant(tseg, pick(BG),      sign(s) * wX([3, 3400, 4500], [7, 4500, 7000]));
             else
-              plant(tseg, pick(GENERAL), sign(s) * rInt(2500, 3500));
+              // General palms: full spread from road edge to mid-background
+              plant(tseg, pick(GENERAL), sign(s) * wX([3, 2200, 2700], [5, 2700, 4000], [2, 4000, 5500]));
           }
 
           gap[s] = rInt(9, 17);
+        }
+      }
+    }
+  }
+
+  // ── Billboard placement ───────────────────────────────────────────────────
+
+  /**
+   * Scatters billboard sprites alongside the road.
+   * Follows the same pattern as plantPalms() — seeded PRNG, per-side gap counters.
+   * One billboard at a time, suppressed on hard corners (|curve| ≥ 4).
+   * Themed pools loosely by track section (beagle → tavern → tobacco).
+   * Seeded independently (0xCAFEBABE) so palm changes don't reshuffle signs.
+   */
+  private plantBillboards(): void
+  {
+    let seed = Date.now() >>> 0;   // random each page load
+    const rand = (): number =>
+    {
+      seed += 0x6D2B79F5;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
+    };
+    const rInt = (lo: number, hi: number): number =>
+      Math.floor(rand() * (hi - lo + 1)) + lo;
+    const pick = <T>(arr: readonly T[]): T =>
+      arr[Math.floor(rand() * arr.length)];
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX });
+    };
+
+    const BEAGLE:  readonly string[] = ['BILLBOARD_BEAGLE_PETS', 'BILLBOARD_ADOPT_BEAGLE', 'BILLBOARD_BEAGLE_POWER', 'BILLBOARD_LOYAL_FRIENDLY'];
+    const TAVERN:  readonly string[] = ['BILLBOARD_FROG_TAVERN', 'BILLBOARD_ALE_CROAK', 'BILLBOARD_CELLAR_JUMPERS', 'BILLBOARD_CROAK_TAILS'];
+    const TOBACCO: readonly string[] = ['BILLBOARD_RED_BOX', 'BILLBOARD_FINE_TOBACCO', 'BILLBOARD_SMOOTH_TASTE', 'BILLBOARD_WRESTLING'];
+
+    const poolFor = (i: number): readonly string[] =>
+      i < 200 ? BEAGLE : i < 400 ? TAVERN : TOBACCO;
+
+    const gap = [rInt(15, 30), rInt(20, 40)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg      = this.segments[i];
+      const absCurve = Math.abs(seg.curve);
+
+      if (absCurve >= 4) { gap[0] = Math.max(gap[0], 8); gap[1] = Math.max(gap[1], 8); continue; }
+
+      gap[0] = Math.max(0, gap[0] - 1);
+      gap[1] = Math.max(0, gap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (gap[s] > 0) continue;
+        const density = absCurve < 1 ? 0.45 : 0.35;
+        if (rand() >= density) { gap[s] = rInt(10, 20); continue; }
+        const sign   = s === 1 ? +1 : -1;
+        const worldX = sign * rInt(2000, 2600);
+        plant(seg, pick(poolFor(i)), worldX);
+        gap[s] = rInt(30, 55);
+      }
+    }
+  }
+
+  // ── Cactus placement ─────────────────────────────────────────────────────
+
+  /**
+   * Sprinkles cactus sprites alongside the road, interspersed with palms and
+   * billboards.  Uses a dedicated PRNG seed (0xBADC0FFE) so cactus layout is
+   * independent of palm and billboard passes.
+   *
+   * Placement rules:
+   *   - Random gap of 8–25 segments between cactuses on each side.
+   *   - Suppressed on tight curves (|curve| ≥ 4).
+   *   - WorldX: 1800–3500 wu from road centre (shoulder + verge).
+   *   - Random scale 0.6–1.8× so they feel naturally varied in size.
+   */
+  private plantCactuses(): void
+  {
+    // Mulberry32 PRNG — independent seed from palms/billboards.
+    let s32 = 0xBADC0FFE;
+    const rand = () => { s32 |= 0; s32 = s32 + 0x6D2B79F5 | 0; let t = Math.imul(s32 ^ s32 >>> 15, 1 | s32); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    const rInt = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
+
+    const CACTI: string[] = [
+      'CACTUS_C1',  'CACTUS_C2',  'CACTUS_C3',  'CACTUS_C4',
+      'CACTUS_C5',  'CACTUS_C6',  'CACTUS_C7',  'CACTUS_C8',
+      'CACTUS_C9',  'CACTUS_C10', 'CACTUS_C11', 'CACTUS_C12',
+      'CACTUS_C13', 'CACTUS_C14', 'CACTUS_C15', 'CACTUS_C16',
+      'CACTUS_C17', 'CACTUS_C18', 'CACTUS_C19', 'CACTUS_C20',
+      'CACTUS_C21', 'CACTUS_C22',
+    ];
+    const pick = (pool: string[]) => pool[Math.floor(rand() * pool.length)];
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      const scale = 0.8 + rand() * 0.8;   // [0.8, 1.6]
+      (seg.sprites ??= []).push({ id, worldX, scale });
+    };
+
+    const count = this.segments.length;
+    // Three independent cooldown tracks per side: near, mid, far
+    const gap   = [0, 0, 0, 0, 0, 0];   // [near-L, near-R, mid-L, mid-R, far-L, far-R]
+
+    for (let i = 0; i < count; i++)
+    {
+      const seg      = this.segments[i];
+      const absCurve = Math.abs(seg.curve);
+
+      for (let g = 0; g < 6; g++) gap[g] = Math.max(0, gap[g] - 1);
+
+      if (absCurve >= 4) continue;
+
+      for (let s = 0; s < 2; s++)
+      {
+        const sign = s === 1 ? +1 : -1;
+
+        // Near band: tight to road shoulder (1800–3000)
+        if (gap[s] === 0)
+        {
+          if (rand() < 0.65) {
+            plant(seg, pick(CACTI), sign * rInt(1800, 3000));
+          }
+          gap[s] = rInt(3, 8);
+        }
+
+        // Mid band: into the sand (3500–6000)
+        if (gap[2 + s] === 0)
+        {
+          if (rand() < 0.75) {
+            plant(seg, pick(CACTI), sign * rInt(3500, 6000));
+          }
+          gap[2 + s] = rInt(2, 6);
+        }
+
+        // Far band: deep desert edge (7000–12000)
+        if (gap[4 + s] === 0)
+        {
+          if (rand() < 0.80) {
+            plant(seg, pick(CACTI), sign * rInt(7000, 12000));
+          }
+          gap[4 + s] = rInt(2, 5);
         }
       }
     }

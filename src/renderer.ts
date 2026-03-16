@@ -55,6 +55,8 @@ import
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
   CAR_PIVOT_OFFSETS,
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
+  BILLBOARD_RECTS, BILLBOARD_WORLD_HEIGHT,
+  CACTUS_RECTS, CACTUS_WORLD_HEIGHT,
 } from './sprites';
 
 // ── Module-level constants ─────────────────────────────────────────────────────
@@ -265,9 +267,11 @@ function drawSegDigit(
 
 export class Renderer
 {
-  private ctx:         CanvasRenderingContext2D;
-  private carSprites:  SpriteLoader | null;
-  private roadSprites: SpriteLoader | null;
+  private ctx:              CanvasRenderingContext2D;
+  private carSprites:       SpriteLoader | null;
+  private roadSprites:      SpriteLoader | null;
+  private billboardSprites: SpriteLoader | null;
+  private cactusSprites:    SpriteLoader | null;
 
   // ── Per-frame reusable projection pool ──────────────────────────────────
   //
@@ -319,21 +323,27 @@ export class Renderer
    * Creates a Renderer attached to the given canvas and pre-allocates all
    * per-frame reusable buffers so the render loop makes zero heap allocations.
    *
-   * @param canvas      - The HTML canvas element to draw into.
-   * @param carSprites  - Loader for the car sprite sheet.
-   * @param roadSprites - Loader for the roadside sprite sheet.
+   * @param canvas           - The HTML canvas element to draw into.
+   * @param carSprites       - Loader for the car sprite sheet.
+   * @param roadSprites      - Loader for the palm/roadside sprite sheet.
+   * @param billboardSprites - Loader for the billboard sprite sheet.
+   * @param cactusSprites    - Loader for the cactus sprite sheet.
    */
   constructor(
     canvas: HTMLCanvasElement,
-    carSprites:  SpriteLoader | null = null,
-    roadSprites: SpriteLoader | null = null,
+    carSprites:       SpriteLoader | null = null,
+    roadSprites:      SpriteLoader | null = null,
+    billboardSprites: SpriteLoader | null = null,
+    cactusSprites:    SpriteLoader | null = null,
   )
   {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get 2D context');
-    this.ctx         = ctx;
-    this.carSprites  = carSprites;
-    this.roadSprites = roadSprites;
+    this.ctx              = ctx;
+    this.carSprites       = carSprites;
+    this.roadSprites      = roadSprites;
+    this.billboardSprites = billboardSprites;
+    this.cactusSprites    = cactusSprites;
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
@@ -582,36 +592,56 @@ export class Renderer
     //   canvas bounds automatically, and a tiny amount of crown peeking above
     //   the horizon on distant trees is far less jarring than sliced stumps.
 
-    if (this.roadSprites?.isReady())
+    for (let i = this.projCount - 1; i >= 0; i--)
     {
-      for (let i = this.projCount - 1; i >= 0; i--)
+      const p              = this.projPool[i];
+      const { seg, sc1, sx1, sy1 } = p;
+
+      if (!seg.sprites || sy1 < halfH) continue;
+
+      for (const si of seg.sprites)
       {
-        const p              = this.projPool[i];
-        const { seg, sc1, sx1, sy1 } = p;
+        const id = si.id as SpriteId;
 
-        if (!seg.sprites || sy1 < halfH) continue;
+        const isBillboard = id.startsWith('BILLBOARD_');
+        const isCactus    = id.startsWith('CACTUS_');
+        const sheet = isBillboard ? this.billboardSprites
+                    : isCactus    ? this.cactusSprites
+                    :               this.roadSprites;
+        if (!sheet?.isReady()) continue;
 
-        for (const si of seg.sprites)
-        {
-          const rect   = SPRITE_RECTS[si.id as SpriteId];
-          const worldH = SPRITE_WORLD_HEIGHT[si.id as SpriteId];
-          if (!rect || !worldH) continue;
+        const rect   = isBillboard ? BILLBOARD_RECTS[id]
+                     : isCactus    ? CACTUS_RECTS[id]
+                     :               SPRITE_RECTS[id];
+        const worldH = isBillboard ? BILLBOARD_WORLD_HEIGHT[id]
+                     : isCactus    ? CACTUS_WORLD_HEIGHT[id]
+                     :               SPRITE_WORLD_HEIGHT[id];
+        if (!rect || !worldH) continue;
 
-          const sprH = worldH * sc1 * halfH;
-          if (sprH < 2) continue;
+        const sprH = worldH * (si.scale ?? 1) * sc1 * halfH;
+        if (sprH < 2) continue;
 
-          const sprW = sprH * (rect.w / rect.h);
-          const sprX = sx1 + si.worldX * sc1 * halfW;
+        const sprW = sprH * (rect.w / rect.h);
+        const sprX = sx1 + si.worldX * sc1 * halfW;
 
-          // Round to integer pixels — prevents sub-pixel alpha shimmer.
-          this.roadSprites.draw(
-            ctx, rect,
-            Math.round(sprX - sprW / 2),
-            Math.round(sy1 - sprH),
-            Math.round(sprW),
-            Math.round(sprH),
-          );
-        }
+        // Billboards anchor from their road-facing inner edge so the near face
+        // stays on screen even when the far half extends off-canvas.
+        const drawX = isBillboard
+          ? (si.worldX > 0 ? Math.round(sprX) : Math.round(sprX - sprW))
+          : Math.round(sprX - sprW / 2);
+
+        // Palms/cactuses: shift down by bottom transparent padding so base = sy1.
+        // Billboards: groundOffset=0 — sign bottom sits at road level, no masking.
+        const padPx        = isCactus ? 10 : 8;
+        const groundOffset = isBillboard ? 0 : Math.round(padPx / rect.h * sprH);
+
+        sheet.draw(
+          ctx, rect,
+          drawX,
+          Math.round(sy1 - sprH) + groundOffset,
+          Math.round(sprW),
+          Math.round(sprH),
+        );
       }
     }
   }

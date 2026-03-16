@@ -140,10 +140,12 @@ export class Game
    */
   constructor(canvas: HTMLCanvasElement)
   {
-    const carSprites  = new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png');
-    const roadSprites = new SpriteLoader('sprites/assets/palm_sheet.png');
+    const carSprites       = new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png');
+    const roadSprites      = new SpriteLoader('sprites/assets/palm_sheet.png');
+    const billboardSprites = new SpriteLoader('sprites/assets/billboard_sheet.png');
+    const cactusSprites    = new SpriteLoader('sprites/assets/cactus_sheet.png');
     this.road     = new Road();
-    this.renderer = new Renderer(canvas, carSprites, roadSprites);
+    this.renderer = new Renderer(canvas, carSprites, roadSprites, billboardSprites, cactusSprites);
     this.input    = new InputManager();
   }
 
