@@ -93,6 +93,40 @@ function makeColor(i: number): SegmentColor
   };
 }
 
+// ── PRNG factory ──────────────────────────────────────────────────────────────
+
+/**
+ * Creates a seeded Mulberry32 PRNG with rand / rInt / pick helpers.
+ *
+ * Pass any 32-bit integer seed.  XOR with Date.now() at the call site for
+ * per-load randomisation while keeping distinct seeds for each planter:
+ *   makePRNG(Date.now() ^ 0xC00C1E5)
+ *
+ * Deterministic planters (palms, cactuses) pass a fixed constant directly:
+ *   makePRNG(0xDEADBEEF)
+ */
+function makePRNG(seed: number): {
+  rand: () => number;
+  rInt: (lo: number, hi: number) => number;
+  pick: <T>(arr: readonly T[]) => T;
+}
+{
+  let s = seed >>> 0;
+  const rand = (): number =>
+  {
+    s += 0x6D2B79F5;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
+  };
+  const rInt = (lo: number, hi: number): number =>
+    Math.floor(rand() * (hi - lo + 1)) + lo;
+  const pick = <T>(arr: readonly T[]): T =>
+    arr[Math.floor(rand() * arr.length)];
+  return { rand, rInt, pick };
+}
+
 // ── Road class ────────────────────────────────────────────────────────────────
 
 export class Road
@@ -108,10 +142,10 @@ export class Road
   private lastY = 0;
 
   /**
-   * Shared cross-type board spacing: tracks the last segment index where ANY
-   * sign board was placed on each side [left, right].  All board planters check
-   * this before placing so no two boards (regardless of type) are closer than
-   * MIN_BOARD_GAP segments apart on the same side.
+   * Cross-type board spacing: tracks the last segment index where a board was
+   * placed on each side [left, right].  Used by plantBillboards() and
+   * plantBigBoards() only — cookie and barney boards use independent gap
+   * tracking so they are never starved out by the more frequent og boards.
    */
   private boardLastPlaced: [number, number] = [-999, -999];
   private static readonly MIN_BOARD_GAP = 45;
@@ -326,20 +360,8 @@ export class Road
    */
   private plantPalms(): void
   {
-    // ── Seeded PRNG (Mulberry32) ──────────────────────────────────────────
-    let seed = 0xDEADBEEF;
-    const rand = (): number =>
-    {
-      seed += 0x6D2B79F5;
-      let t = seed;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
-    };
-    const rInt = (lo: number, hi: number): number =>
-      Math.floor(rand() * (hi - lo + 1)) + lo;
-    const pick = <T>(arr: readonly T[]): T =>
-      arr[Math.floor(rand() * arr.length)];
+    // ── Seeded PRNG (Mulberry32) — deterministic, same layout every run ──
+    const { rand, rInt, pick } = makePRNG(0xDEADBEEF);
 
     // ── Palm variety pools ────────────────────────────────────────────────
     const GENERAL: readonly string[] = [
@@ -506,12 +528,11 @@ export class Road
       {
         if (deepGap[s] > 0) continue;
 
-        const sign  = s === 1 ? +1 : -1;
         // Drop 1–3 palms spread across the deep range with varied scale
         const count = rInt(1, 3);
         for (let c = 0; c < count; c++)
         {
-          const worldX = sign * rInt(6000, 16000);
+          const worldX = sign(s) * rInt(6000, 16000);
           const scale  = 0.4 + rand() * 2.2;   // 0.4× tiny to 2.6× towering
           (seg.sprites ??= []).push({ id: pick(ALL), worldX, scale });
         }
@@ -532,19 +553,7 @@ export class Road
    */
   private plantBillboards(): void
   {
-    let seed = Date.now() >>> 0;   // random each page load
-    const rand = (): number =>
-    {
-      seed += 0x6D2B79F5;
-      let t = seed;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
-    };
-    const rInt = (lo: number, hi: number): number =>
-      Math.floor(rand() * (hi - lo + 1)) + lo;
-    const pick = <T>(arr: readonly T[]): T =>
-      arr[Math.floor(rand() * arr.length)];
+    const { rand, rInt, pick } = makePRNG(Date.now());
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
@@ -595,19 +604,7 @@ export class Road
    */
   private plantCookieBoards(): void
   {
-    let seed = (Date.now() ^ 0xC00C1E5) >>> 0;   // random each load, distinct from billboard seed
-    const rand = (): number =>
-    {
-      seed += 0x6D2B79F5;
-      let t = seed;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
-    };
-    const rInt = (lo: number, hi: number): number =>
-      Math.floor(rand() * (hi - lo + 1)) + lo;
-    const pick = <T>(arr: readonly T[]): T =>
-      arr[Math.floor(rand() * arr.length)];
+    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0xC00C1E5);
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
@@ -653,19 +650,7 @@ export class Road
    */
   private plantBarneyBoards(): void
   {
-    let seed = (Date.now() ^ 0xBA121E5) >>> 0;   // random each load, distinct seed
-    const rand = (): number =>
-    {
-      seed += 0x6D2B79F5;
-      let t = seed;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
-    };
-    const rInt = (lo: number, hi: number): number =>
-      Math.floor(rand() * (hi - lo + 1)) + lo;
-    const pick = <T>(arr: readonly T[]): T =>
-      arr[Math.floor(rand() * arr.length)];
+    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0xBA121E5);
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
@@ -709,19 +694,7 @@ export class Road
    */
   private plantBigBoards(): void
   {
-    let seed = (Date.now() ^ 0xB163B04D) >>> 0;   // random each load, distinct seed
-    const rand = (): number =>
-    {
-      seed += 0x6D2B79F5;
-      let t = seed;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
-    };
-    const rInt = (lo: number, hi: number): number =>
-      Math.floor(rand() * (hi - lo + 1)) + lo;
-    const pick = <T>(arr: readonly T[]): T =>
-      arr[Math.floor(rand() * arr.length)];
+    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0xB163B04D);
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
@@ -773,10 +746,8 @@ export class Road
    */
   private plantCactuses(): void
   {
-    // Mulberry32 PRNG — independent seed from palms/billboards.
-    let s32 = 0xBADC0FFE;
-    const rand = () => { s32 |= 0; s32 = s32 + 0x6D2B79F5 | 0; let t = Math.imul(s32 ^ s32 >>> 15, 1 | s32); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-    const rInt = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1));
+    // Mulberry32 PRNG — deterministic, independent seed from palms/billboards.
+    const { rand, rInt, pick } = makePRNG(0xBADC0FFE);
 
     const CACTI: string[] = [
       'CACTUS_C1',  'CACTUS_C2',  'CACTUS_C3',  'CACTUS_C4',
@@ -786,7 +757,6 @@ export class Road
       'CACTUS_C17', 'CACTUS_C18', 'CACTUS_C19', 'CACTUS_C20',
       'CACTUS_C21', 'CACTUS_C22',
     ];
-    const pick = (pool: string[]) => pool[Math.floor(rand() * pool.length)];
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
@@ -925,19 +895,7 @@ export class Road
    */
   private plantShrubs(): void
   {
-    let seed = (Date.now() ^ 0x5B2B5) >>> 0;
-    const rand = (): number =>
-    {
-      seed += 0x6D2B79F5;
-      let t = seed;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
-    };
-    const rInt = (lo: number, hi: number): number =>
-      Math.floor(rand() * (hi - lo + 1)) + lo;
-    const pick = <T>(arr: readonly T[]): T =>
-      arr[Math.floor(rand() * arr.length)];
+    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0x5B2B5);
 
     const plant = (seg: RoadSegment, id: string, worldX: number, scale = 1): void =>
     {

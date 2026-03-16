@@ -320,9 +320,6 @@ export class Renderer
   /** Canvas height when hudLayout was last computed. */
   private hudH = 0;
 
-  /** Smoothed speed value for the HUD display — prevents digit jitter. */
-  private displaySpeed = 0;
-
   /**
    * Accumulated horizontal sky-layer offset for curve parallax.
    * Clamped modulo a large period to prevent unbounded growth over long sessions.
@@ -821,7 +818,6 @@ export class Renderer
     // Display actual speed directly — physics integration is already smooth
     // enough that no smoothing filter is needed, and a filter causes the
     // readout to lag at 0 after returning from off-road.
-    this.displaySpeed = speed;
     const kmh      = Math.min(999, Math.max(0, Math.round(speed * (290 / PLAYER_MAX_SPEED))));
     const hundreds = Math.floor(kmh / 100);
     const tens     = Math.floor((kmh % 100) / 10);
