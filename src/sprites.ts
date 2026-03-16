@@ -149,7 +149,9 @@ export type SpriteId =
   | 'CACTUS_C22'
   | 'SHRUB_S1'
   | 'SHRUB_S2'
-  | 'SHRUB_S6';
+  | 'SHRUB_S6'
+  | 'SIGN_TURN_RIGHT'
+  | 'SIGN_TURN_LEFT';
 
 /**
  * Source rectangles for each palm within sprites/assets/palm_sheet.png.
@@ -412,4 +414,20 @@ export const SHRUB_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
   SHRUB_S1:    350,
   SHRUB_S2:    500,
   SHRUB_S6:    300,
+};
+
+// ── Road turn signs ───────────────────────────────────────────────────────────
+
+/** Source rectangles within sprites/assets/sign_sheet.png (158×139 px). */
+export const SIGN_RECTS: Partial<Record<SpriteId, SpriteRect>> =
+{
+  SIGN_TURN_RIGHT:   { x:    4, y:   4, w:  73, h: 131 },
+  SIGN_TURN_LEFT:    { x:   85, y:   4, w:  69, h: 131 },
+};
+
+/** World-space height of each road sign in world units. */
+export const SIGN_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
+{
+  SIGN_TURN_RIGHT:   900,
+  SIGN_TURN_LEFT:    900,
 };

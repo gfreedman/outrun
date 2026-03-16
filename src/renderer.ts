@@ -61,6 +61,7 @@ import
   BIG_RECTS, BIG_WORLD_HEIGHT,
   CACTUS_RECTS, CACTUS_WORLD_HEIGHT,
   SHRUB_RECTS, SHRUB_WORLD_HEIGHT,
+  SIGN_RECTS, SIGN_WORLD_HEIGHT,
 } from './sprites';
 
 // ── Module-level constants ─────────────────────────────────────────────────────
@@ -280,6 +281,7 @@ export class Renderer
   private barneySprites:    SpriteLoader | null;
   private bigSprites:       SpriteLoader | null;
   private shrubSprites:     SpriteLoader | null;
+  private signSprites:      SpriteLoader | null;
 
   // ── Per-frame reusable projection pool ──────────────────────────────────
   //
@@ -347,6 +349,7 @@ export class Renderer
     barneySprites:    SpriteLoader | null = null,
     bigSprites:       SpriteLoader | null = null,
     shrubSprites:     SpriteLoader | null = null,
+    signSprites:      SpriteLoader | null = null,
   )
   {
     const ctx = canvas.getContext('2d');
@@ -360,6 +363,7 @@ export class Renderer
     this.barneySprites    = barneySprites;
     this.bigSprites       = bigSprites;
     this.shrubSprites     = shrubSprites;
+    this.signSprites      = signSprites;
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
@@ -625,12 +629,14 @@ export class Renderer
         const isBig       = id.startsWith('BIG_');
         const isCactus    = id.startsWith('CACTUS_');
         const isShrub     = id.startsWith('SHRUB_');
+        const isSign      = id.startsWith('SIGN_');
         const sheet = isBillboard ? this.billboardSprites
                     : isCookie    ? this.cookieSprites
                     : isBarney    ? this.barneySprites
                     : isBig       ? this.bigSprites
                     : isCactus    ? this.cactusSprites
                     : isShrub     ? this.shrubSprites
+                    : isSign      ? this.signSprites
                     :               this.roadSprites;
         if (!sheet?.isReady()) continue;
 
@@ -640,6 +646,7 @@ export class Renderer
                      : isBig       ? BIG_RECTS[id]
                      : isCactus    ? CACTUS_RECTS[id]
                      : isShrub     ? SHRUB_RECTS[id]
+                     : isSign      ? SIGN_RECTS[id]
                      :               SPRITE_RECTS[id];
         const worldH = isBillboard ? BILLBOARD_WORLD_HEIGHT[id]
                      : isCookie    ? COOKIE_WORLD_HEIGHT[id]
@@ -647,6 +654,7 @@ export class Renderer
                      : isBig       ? BIG_WORLD_HEIGHT[id]
                      : isCactus    ? CACTUS_WORLD_HEIGHT[id]
                      : isShrub     ? SHRUB_WORLD_HEIGHT[id]
+                     : isSign      ? SIGN_WORLD_HEIGHT[id]
                      :               SPRITE_WORLD_HEIGHT[id];
         if (!rect || !worldH) continue;
 
@@ -699,9 +707,9 @@ export class Renderer
 
     const frameIndex      = Math.round(steerAngle * CAR_SPRITE_CENTER * 0.6) + CAR_SPRITE_CENTER;
     const rect            = carFrameRect(frameIndex);
-    const carH            = Math.min(h * 0.20, 190);
+    const carH            = Math.min(h * 0.30, 285);
     const carW            = carH * (CAR_SPRITE_FRAME_W / CAR_SPRITE_FRAME_H);
-    const bot             = h - h * 0.04;
+    const bot             = h - h * 0.01;
     const pivotOffset     = CAR_PIVOT_OFFSETS[frameIndex] ?? 0;
     const pivotCorrection = (pivotOffset / CAR_SPRITE_FRAME_W) * carW;
     const cx              = w / 2 + steerAngle * w * 0.05 + pivotCorrection;

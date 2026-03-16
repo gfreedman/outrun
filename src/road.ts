@@ -280,6 +280,7 @@ export class Road
     this.boardLastPlaced[0] = -999;
     this.boardLastPlaced[1] = -999;
 
+    this.plantSigns();
     this.plantShrubs();
     this.plantPalms();
     this.plantBillboards();
@@ -482,6 +483,42 @@ export class Road
         }
       }
     }
+
+    // ── Deep-background palm scatter (6 000 – 16 000) ────────────────────────
+    // Sprinkles palms of all varieties at varying scales far from the road.
+    // Uses the same seeded PRNG so the layout is deterministic.
+    const ALL: readonly string[] = [
+      'PALM_T1_STRAIGHT', 'PALM_T3_YOUNG',
+      'PALM_T4_FRUITING',  'PALM_T6_LUXURIANT',
+      'PALM_T7_SLENDER',   'PALM_T8_MEDIUM', 'PALM_T10_LARGE',
+    ];
+    const deepGap = [rInt(2, 6), rInt(2, 6)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg = this.segments[i];
+      if (Math.abs(seg.curve) >= 5) continue;
+
+      deepGap[0] = Math.max(0, deepGap[0] - 1);
+      deepGap[1] = Math.max(0, deepGap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (deepGap[s] > 0) continue;
+
+        const sign  = s === 1 ? +1 : -1;
+        // Drop 1–3 palms spread across the deep range with varied scale
+        const count = rInt(1, 3);
+        for (let c = 0; c < count; c++)
+        {
+          const worldX = sign * rInt(6000, 16000);
+          const scale  = 0.4 + rand() * 2.2;   // 0.4× tiny to 2.6× towering
+          (seg.sprites ??= []).push({ id: pick(ALL), worldX, scale });
+        }
+
+        deepGap[s] = rInt(2, 5);
+      }
+    }
   }
 
   // ── Billboard placement ───────────────────────────────────────────────────
@@ -598,12 +635,10 @@ export class Road
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
-        if (i - this.boardLastPlaced[s] < Road.MIN_BOARD_GAP) { gap[s] = rInt(25, 50); continue; }
         if (rand() >= 0.30) { gap[s] = rInt(25, 50); continue; }
         const sign   = s === 1 ? +1 : -1;
         const worldX = sign * rInt(2000, 2500);
         plant(seg, pick(POOL), worldX);
-        this.boardLastPlaced[s] = i;
         gap[s] = rInt(50, 100);   // long gap — these are rare
       }
     }
@@ -657,12 +692,10 @@ export class Road
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
-        if (i - this.boardLastPlaced[s] < Road.MIN_BOARD_GAP) { gap[s] = rInt(30, 60); continue; }
         if (rand() >= 0.25) { gap[s] = rInt(30, 60); continue; }
         const sign   = s === 1 ? +1 : -1;
         const worldX = sign * rInt(2000, 2500);
         plant(seg, pick(POOL), worldX);
-        this.boardLastPlaced[s] = i;
         gap[s] = rInt(70, 140);   // very long gap — genuinely rare
       }
     }
@@ -781,30 +814,103 @@ export class Road
         // Near band: tight to road shoulder (1800–3000)
         if (gap[s] === 0)
         {
-          if (rand() < 0.65) {
-            plant(seg, pick(CACTI), sign * rInt(1800, 3000));
+          if (rand() < 0.80) {
+            const count = rand() < 0.30 ? 2 : 1;
+            for (let c = 0; c < count; c++)
+              plant(seg, pick(CACTI), sign * rInt(1800, 3000));
           }
-          gap[s] = rInt(3, 8);
+          gap[s] = rInt(2, 5);
         }
 
-        // Mid band: into the sand (3500–6000)
+        // Mid band: into the sand (3500–7000)
         if (gap[2 + s] === 0)
         {
-          if (rand() < 0.75) {
-            plant(seg, pick(CACTI), sign * rInt(3500, 6000));
+          if (rand() < 0.85) {
+            const count = rand() < 0.40 ? rInt(2, 3) : 1;
+            for (let c = 0; c < count; c++)
+              plant(seg, pick(CACTI), sign * rInt(3500, 7000));
           }
-          gap[2 + s] = rInt(2, 6);
+          gap[2 + s] = rInt(1, 4);
         }
 
-        // Far band: deep desert edge (7000–12000)
+        // Far band: deep desert edge (7000–16000)
         if (gap[4 + s] === 0)
         {
-          if (rand() < 0.80) {
-            plant(seg, pick(CACTI), sign * rInt(7000, 12000));
+          if (rand() < 0.90) {
+            const count = rInt(1, 3);
+            for (let c = 0; c < count; c++)
+              plant(seg, pick(CACTI), sign * rInt(7000, 16000));
           }
-          gap[4 + s] = rInt(2, 5);
+          gap[4 + s] = rInt(1, 4);
         }
       }
+    }
+  }
+
+  // ── Turn-sign placement ───────────────────────────────────────────────────
+
+  /**
+   * Places groups of three turn-warning signs before each significant curve.
+   *
+   * Algorithm:
+   *  1. Scan segments looking for the START of a new curve — defined as
+   *     |curve| crossing above CURVE_THRESHOLD after a run of straight/gentle road.
+   *  2. At each detected curve-start at index i, plant three signs evenly
+   *     spaced at i − 3×SPACING, i − 2×SPACING, i − SPACING.
+   *  3. The sign type and side match the curve direction:
+   *       curve > 0 (right) → SIGN_TURN_RIGHT on the right side (+worldX)
+   *       curve < 0 (left)  → SIGN_TURN_LEFT  on the left  side (−worldX)
+   *  4. A minimum cooldown prevents double-groups for back-to-back curves.
+   */
+  private plantSigns(): void
+  {
+    /** Minimum curve magnitude to trigger warning signs. */
+    const CURVE_THRESHOLD = 1.5;
+    /** Segments between each sign in the group-of-three. */
+    const SPACING         = 8;
+    /** Minimum segments between groups (avoids re-triggering on a long curve). */
+    const GROUP_COOLDOWN  = 40;
+    /** WorldX distance from road centre for sign placement (clearly on sand/grass verge). */
+    const SIGN_X          = 2500;
+
+    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    {
+      (seg.sprites ??= []).push({ id, worldX });
+    };
+
+    let prevAbsCurve  = 0;
+    let lastGroupAt   = -GROUP_COOLDOWN;  // segment index of last placed group
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const curve    = this.segments[i].curve;
+      const absCurve = Math.abs(curve);
+
+      // Detect curve start: magnitude rises past threshold and cooldown has elapsed
+      const curveStarting = absCurve >= CURVE_THRESHOLD
+                         && prevAbsCurve < CURVE_THRESHOLD
+                         && i - lastGroupAt >= GROUP_COOLDOWN;
+
+      if (curveStarting)
+      {
+        const isRight = curve > 0;
+        const signId  = isRight ? 'SIGN_TURN_RIGHT' : 'SIGN_TURN_LEFT';
+        // Signs sit on the OUTSIDE of the upcoming curve (where the car would drift).
+        // Right bend → outside is the left shoulder; left bend → outside is the right.
+        const worldX  = isRight ? -SIGN_X : SIGN_X;
+
+        // Place three signs at i-3×SPACING, i-2×SPACING, i-SPACING
+        for (let n = 3; n >= 1; n--)
+        {
+          const si = i - n * SPACING;
+          if (si >= 0)
+            plant(this.segments[si], signId, worldX);
+        }
+
+        lastGroupAt = i;
+      }
+
+      prevAbsCurve = absCurve;
     }
   }
 
@@ -833,9 +939,9 @@ export class Road
     const pick = <T>(arr: readonly T[]): T =>
       arr[Math.floor(rand() * arr.length)];
 
-    const plant = (seg: RoadSegment, id: string, worldX: number): void =>
+    const plant = (seg: RoadSegment, id: string, worldX: number, scale = 1): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX });
+      (seg.sprites ??= []).push({ id, worldX, scale });
     };
 
     const POOL: readonly string[] = [
@@ -844,16 +950,15 @@ export class Road
       'SHRUB_S2',                // sagebrush — less frequent, taller
     ];
 
-    // Independent gap counters per side — short gaps, can overlap with other types.
-    const gap = [rInt(1, 4), rInt(1, 4)];
+    // ── Pass 1: mid-range shrubs (2500–5000) — dense scatter ─────────────────
+    const gap = [rInt(1, 3), rInt(1, 3)];
 
     for (let i = 0; i < this.segments.length; i++)
     {
       const seg      = this.segments[i];
       const absCurve = Math.abs(seg.curve);
 
-      // Thin out slightly on tight curves so shrubs don't clutter inside bends
-      if (absCurve >= 5) { gap[0] = Math.max(gap[0], 3); gap[1] = Math.max(gap[1], 3); continue; }
+      if (absCurve >= 5) { gap[0] = Math.max(gap[0], 2); gap[1] = Math.max(gap[1], 2); continue; }
 
       gap[0] = Math.max(0, gap[0] - 1);
       gap[1] = Math.max(0, gap[1] - 1);
@@ -861,20 +966,45 @@ export class Road
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
-        // High density — fire ~75% of the time a gap clears
-        if (rand() >= 0.75) { gap[s] = rInt(1, 3); continue; }
+        if (rand() >= 0.88) { gap[s] = rInt(1, 2); continue; }
 
-        const sign = s === 1 ? +1 : -1;
-
-        // Occasionally drop a cluster of 2 shrubs close together for natural clumping
-        const count = rand() < 0.35 ? 2 : 1;
+        const sign  = s === 1 ? +1 : -1;
+        const count = rand() < 0.45 ? rInt(2, 3) : 1;
         for (let c = 0; c < count; c++)
-        {
-          const worldX = sign * rInt(2800, 5500);
-          plant(seg, pick(POOL), worldX);
-        }
+          plant(seg, pick(POOL), sign * rInt(2500, 5000));
 
-        gap[s] = rInt(1, 5);
+        gap[s] = rInt(1, 4);
+      }
+    }
+
+    // ── Pass 2: far shrubs (5000–10000) — thick continuous band ──────────────
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg = this.segments[i];
+      if (Math.abs(seg.curve) >= 5) continue;
+
+      for (let s = 0; s < 2; s++)
+      {
+        const sign  = s === 1 ? +1 : -1;
+        const count = rInt(3, 5);
+        for (let c = 0; c < count; c++)
+          plant(seg, pick(POOL), sign * rInt(5000, 10000), 0.7);
+      }
+    }
+
+    // ── Pass 3: extreme-edge shrubs (10000–20000) — fills the horizon wall ───
+    // Scaled down to ~40% so they read as small distant ground-cover, not giants.
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg = this.segments[i];
+      if (Math.abs(seg.curve) >= 5) continue;
+
+      for (let s = 0; s < 2; s++)
+      {
+        const sign  = s === 1 ? +1 : -1;
+        const count = rInt(4, 7);
+        for (let c = 0; c < count; c++)
+          plant(seg, pick(POOL), sign * rInt(10000, 20000), 0.4);
       }
     }
   }
