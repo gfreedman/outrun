@@ -72,8 +72,9 @@ export interface SpriteInstance
 {
   id:     string;   // SpriteId value — 'PALM_SMALL' or 'PALM_LARGE'
   worldX: number;
-  scale?: number;   // height multiplier (1 = default world height, 3 = triple)
-  flipX?: boolean;  // mirror sprite horizontally (right-side buildings face the road)
+  scale?:   number;   // height multiplier (1 = default world height, 3 = triple)
+  flipX?:   boolean;  // mirror sprite horizontally (right-side buildings face the road)
+  stretchX?: number;  // horizontal width multiplier (intentional aspect-ratio break)
 }
 
 // ── Road segment ──────────────────────────────────────────────────────────────

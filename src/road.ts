@@ -766,15 +766,15 @@ export class Road
     };
 
     const count = this.segments.length;
-    // Three independent cooldown tracks per side: near, mid, far
-    const gap   = [0, 0, 0, 0, 0, 0];   // [near-L, near-R, mid-L, mid-R, far-L, far-R]
+    // Four independent cooldown tracks per side: near, mid, far, ultra-far
+    const gap   = [0, 0, 0, 0, 0, 0, 0, 0];   // [near-L, near-R, mid-L, mid-R, far-L, far-R, ufar-L, ufar-R]
 
     for (let i = 0; i < count; i++)
     {
       const seg      = this.segments[i];
       const absCurve = Math.abs(seg.curve);
 
-      for (let g = 0; g < 6; g++) gap[g] = Math.max(0, gap[g] - 1);
+      for (let g = 0; g < 8; g++) gap[g] = Math.max(0, gap[g] - 1);
 
       if (absCurve >= 4) continue;
 
@@ -813,6 +813,20 @@ export class Road
               plant(seg, pick(CACTI), sign * rInt(7000, 16000));
           }
           gap[4 + s] = rInt(1, 4);
+        }
+
+        // Ultra-far band: screen edges (12000–22000) — small silhouettes
+        // sprH ≈ 700 * scale * 400 / worldX. worldX=12000, scale=0.35 → ~8px ✓
+        if (gap[6 + s] === 0)
+        {
+          const count = rInt(2, 4);
+          for (let c = 0; c < count; c++)
+          {
+            const worldX = sign * rInt(12000, 22000);
+            const scale  = 0.30 + rand() * 0.20;   // [0.30, 0.50]
+            (seg.sprites ??= []).push({ id: pick(CACTI), worldX, scale });
+          }
+          gap[6 + s] = rInt(0, 2);
         }
       }
     }
@@ -966,6 +980,24 @@ export class Road
           plant(seg, pick(POOL), sign * rInt(10000, 20000), 0.4);
       }
     }
+
+    // ── Pass 4: screen-edge shrubs (12000–22000) — covers the bare far desert ─
+    // sprH ≈ worldH(~600) * scale * halfH / worldX.
+    // worldX=12000, scale=0.35 → ~7px;  worldX=18000, scale=0.45 → ~6px.
+    // Dense (every segment, 5–8 per side) to fill the edge band continuously.
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg = this.segments[i];
+      if (Math.abs(seg.curve) >= 5) continue;
+
+      for (let s = 0; s < 2; s++)
+      {
+        const sign  = s === 1 ? +1 : -1;
+        const count = rInt(5, 8);
+        for (let c = 0; c < count; c++)
+          plant(seg, pick(POOL), sign * rInt(12000, 22000), 0.35 + rand() * 0.15);
+      }
+    }
   }
 
   // ── House placement ───────────────────────────────────────────────────────
@@ -1039,6 +1071,41 @@ export class Road
           plant(seg, pick(SAFE), sign * rInt(5500, 9000), !isLeft);
 
         gap[s] = rInt(20, 45);
+      }
+    }
+
+    // ── Ultra-far pass: adobe + desert structures at screen edges ─────────────
+    // sprH ≈ worldH * scale * halfH / worldX (at screen edge, sc1 ≈ 1/worldX).
+    // worldH ≈ 1800, halfH ≈ 400: worldX=10000 scale=0.25 → ~18px ✓
+    //                              worldX=20000 scale=0.35 → ~13px ✓
+    // Gap 4–12 segs so they feel like scattered distant settlements.
+    const DISTANT: readonly string[] = [
+      'HOUSE_ADOBE_1', 'HOUSE_ADOBE_2', 'HOUSE_ADOBE_3', 'HOUSE_ADOBE_4',
+      'HOUSE_ADOBE_5', 'HOUSE_ADOBE_6', 'HOUSE_ADOBE_7', 'HOUSE_ADOBE_8',
+      'HOUSE_ADOBE_9', 'HOUSE_ADOBE_10',
+      'HOUSE_DOME',    'HOUSE_TENT_L',  'HOUSE_HUT',     'HOUSE_TENT_S',  'HOUSE_BUNKER',
+    ];
+
+    const farGap = [rInt(4, 10), rInt(5, 12)];
+
+    for (let i = 0; i < this.segments.length; i++)
+    {
+      const seg = this.segments[i];
+      if (Math.abs(seg.curve) >= 4) continue;
+
+      farGap[0] = Math.max(0, farGap[0] - 1);
+      farGap[1] = Math.max(0, farGap[1] - 1);
+
+      for (let s = 0; s < 2; s++)
+      {
+        if (farGap[s] > 0) continue;
+        if (rand() >= 0.80) { farGap[s] = rInt(3, 8); continue; }
+
+        const sign  = s === 1 ? +1 : -1;
+        const scale = 0.60 + rand() * 0.60;   // [0.60, 1.20] — visible distant buildings
+        (seg.sprites ??= []).push({ id: pick(DISTANT), worldX: sign * rInt(10000, 20000), scale, stretchX: 1.25 });
+
+        farGap[s] = rInt(4, 12);
       }
     }
   }

@@ -666,7 +666,7 @@ export class Renderer
         const sprH = worldH * (si.scale ?? 1) * sc1 * halfH;
         if (sprH < 2) continue;
 
-        const sprW = sprH * (rect.w / rect.h);
+        const sprW = sprH * (rect.w / rect.h) * (si.stretchX ?? 1);
         const sprX = sx1 + si.worldX * sc1 * halfW;
 
         // Sign boards anchor from their road-facing inner edge.
