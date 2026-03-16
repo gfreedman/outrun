@@ -209,6 +209,18 @@ export class Game
     this.rafId = 0;
   }
 
+  /**
+   * Fully tears down the game: cancels the RAF loop and removes all window
+   * event listeners held by InputManager.  Call this before discarding the
+   * Game instance to prevent the keyboard listeners from keeping the entire
+   * game object graph alive after a hot-reload or SPA navigation.
+   */
+  destroy(): void
+  {
+    this.stop();
+    this.input.destroy();
+  }
+
   // ── Main loop ─────────────────────────────────────────────────────────────
 
   /**
@@ -435,7 +447,7 @@ export class Game
       const idx = ((segIdx + offset) % this.road.count + this.road.count) % this.road.count;
       for (const sprite of this.road.segments[idx].sprites ?? [])
       {
-        const radius = getBlockingRadius(sprite.id);
+        const radius = getBlockingRadius(sprite.family);
         if (radius === 0) continue;
 
         const spriteXN = sprite.worldX / ROAD_WIDTH;

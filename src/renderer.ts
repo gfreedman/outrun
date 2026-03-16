@@ -41,7 +41,7 @@
  *     recomputed when the canvas dimensions change (resize events only).
  */
 
-import { RoadSegment } from './types';
+import { RoadSegment, SpriteFamily } from './types';
 import
 {
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,
@@ -387,26 +387,28 @@ export class Renderer
   /**
    * Draws a vertical colour gradient filling the sky area above the horizon.
    *
-   * The gradient is cached: it is only rebuilt when horizonY changes, which
-   * happens only on window resize or during off-road jitter.  At steady state
-   * the same CanvasGradient object is reused every frame.
+   * The gradient is cached against the STABLE horizon (h/2, no jitter) so
+   * it is not rebuilt every frame during off-road bouncing.  The fill rect
+   * still uses the jittered horizonY — the ±4px discrepancy at the horizon
+   * edge is imperceptible (that region is the near-white sky haze colour).
    *
-   * @param w        - Canvas width in pixels.
-   * @param horizonY - Screen Y of the horizon line (sky fills 0…horizonY).
+   * @param w              - Canvas width in pixels.
+   * @param horizonY       - Jittered screen Y used for the fill rect extent.
+   * @param stableHorizonY - Unperturbed h/2 used as the gradient cache key.
    */
-  private renderSky(w: number, horizonY: number): void
+  private renderSky(w: number, horizonY: number, stableHorizonY: number): void
   {
     const { ctx } = this;
 
-    // Only recreate the gradient if the horizon position has changed.
-    if (horizonY !== this.skyGradientH)
+    // Rebuild only when the stable horizon changes (window resize), not on jitter.
+    if (stableHorizonY !== this.skyGradientH)
     {
-      const grad = ctx.createLinearGradient(0, 0, 0, horizonY);
+      const grad = ctx.createLinearGradient(0, 0, 0, stableHorizonY);
       grad.addColorStop(0,    COLORS.SKY_TOP);
       grad.addColorStop(0.55, COLORS.SKY_MID);
       grad.addColorStop(1,    COLORS.SKY_HORIZON);
       this.skyGradient  = grad;
-      this.skyGradientH = horizonY;
+      this.skyGradientH = stableHorizonY;
     }
 
     ctx.fillStyle = this.skyGradient!;
@@ -574,6 +576,14 @@ export class Renderer
       // Asphalt road surface
       drawTrapezoid(ctx, sx1, sy1, sw1, sx2, sy2, sw2, color.road);
 
+      // Rumble strips — narrow kerb bands centred at the road edge.
+      // Each strip is ~9% of road half-width (straddles the asphalt/grass boundary).
+      // color.rumble alternates red/white every 8 segments — the classic OutRun kerbing.
+      const rw1 = sw1 * 0.09;
+      const rw2 = sw2 * 0.09;
+      drawTrapezoid(ctx, sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2, color.rumble);
+      drawTrapezoid(ctx, sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2, color.rumble);
+
       // Lane markings — only drawn on alternating "dash" segments
       if (color.lane)
       {
@@ -626,64 +636,52 @@ export class Renderer
 
       for (const si of seg.sprites)
       {
+        // ── C8: screen-space X-cull before any sheet/rect lookup ─────────
+        // Compute world→screen X first; skip sprites that are entirely off-screen.
+        // 500px margin accommodates the widest sprites (large houses, big boards).
+        const sprX = sx1 + si.worldX * sc1 * halfW;
+        if (sprX < -500 || sprX > w + 500) continue;
+
+        // ── C7: dispatch by pre-classified family — one comparison per level ─
+        const { family } = si;
         const id = si.id as SpriteId;
 
-        const isBillboard = id.startsWith('BILLBOARD_');
-        const isCookie    = id.startsWith('COOKIE_');
-        const isBarney    = id.startsWith('BARNEY_');
-        const isBig       = id.startsWith('BIG_');
-        const isCactus    = id.startsWith('CACTUS_');
-        const isShrub     = id.startsWith('SHRUB_');
-        const isSign      = id.startsWith('SIGN_');
-        const isHouse     = id.startsWith('HOUSE_');
-        const sheet = isBillboard ? this.billboardSprites
-                    : isCookie    ? this.cookieSprites
-                    : isBarney    ? this.barneySprites
-                    : isBig       ? this.bigSprites
-                    : isCactus    ? this.cactusSprites
-                    : isShrub     ? this.shrubSprites
-                    : isSign      ? this.signSprites
-                    : isHouse     ? this.houseSprites
-                    :               this.roadSprites;
-        if (!sheet?.isReady()) continue;
+        let sheet: SpriteLoader | null;
+        let rect:  { x: number; y: number; w: number; h: number } | undefined;
+        let worldH: number | undefined;
 
-        const rect   = isBillboard ? BILLBOARD_RECTS[id]
-                     : isCookie    ? COOKIE_RECTS[id]
-                     : isBarney    ? BARNEY_RECTS[id]
-                     : isBig       ? BIG_RECTS[id]
-                     : isCactus    ? CACTUS_RECTS[id]
-                     : isShrub     ? SHRUB_RECTS[id]
-                     : isSign      ? SIGN_RECTS[id]
-                     : isHouse     ? HOUSE_RECTS[id]
-                     :               SPRITE_RECTS[id];
-        const worldH = isBillboard ? BILLBOARD_WORLD_HEIGHT[id]
-                     : isCookie    ? COOKIE_WORLD_HEIGHT[id]
-                     : isBarney    ? BARNEY_WORLD_HEIGHT[id]
-                     : isBig       ? BIG_WORLD_HEIGHT[id]
-                     : isCactus    ? CACTUS_WORLD_HEIGHT[id]
-                     : isShrub     ? SHRUB_WORLD_HEIGHT[id]
-                     : isSign      ? SIGN_WORLD_HEIGHT[id]
-                     : isHouse     ? HOUSE_WORLD_HEIGHT[id]
-                     :               SPRITE_WORLD_HEIGHT[id];
+        switch (family)
+        {
+          case 'billboard': sheet = this.billboardSprites; rect = BILLBOARD_RECTS[id]; worldH = BILLBOARD_WORLD_HEIGHT[id]; break;
+          case 'cookie':    sheet = this.cookieSprites;    rect = COOKIE_RECTS[id];    worldH = COOKIE_WORLD_HEIGHT[id];    break;
+          case 'barney':    sheet = this.barneySprites;    rect = BARNEY_RECTS[id];    worldH = BARNEY_WORLD_HEIGHT[id];    break;
+          case 'big':       sheet = this.bigSprites;       rect = BIG_RECTS[id];       worldH = BIG_WORLD_HEIGHT[id];       break;
+          case 'cactus':    sheet = this.cactusSprites;    rect = CACTUS_RECTS[id];    worldH = CACTUS_WORLD_HEIGHT[id];    break;
+          case 'shrub':     sheet = this.shrubSprites;     rect = SHRUB_RECTS[id];     worldH = SHRUB_WORLD_HEIGHT[id];     break;
+          case 'sign':      sheet = this.signSprites;      rect = SIGN_RECTS[id];      worldH = SIGN_WORLD_HEIGHT[id];      break;
+          case 'house':     sheet = this.houseSprites;     rect = HOUSE_RECTS[id];     worldH = HOUSE_WORLD_HEIGHT[id];     break;
+          default:          sheet = this.roadSprites;      rect = SPRITE_RECTS[id];    worldH = SPRITE_WORLD_HEIGHT[id];    break;
+        }
+
+        if (!sheet?.isReady()) continue;
         if (!rect || !worldH) continue;
 
         const sprH = worldH * (si.scale ?? 1) * sc1 * halfH;
-        if (sprH < 2) continue;
+        if (sprH < 4) continue;   // C8: raised from 2 — tiny sprites are invisible
 
         const sprW = sprH * (rect.w / rect.h) * (si.stretchX ?? 1);
-        const sprX = sx1 + si.worldX * sc1 * halfW;
 
-        // Sign boards anchor from their road-facing inner edge.
-        const drawX = (isBillboard || isCookie || isBarney || isBig)
+        // Board sprites anchor from their road-facing inner edge.
+        const isBoard  = family === 'billboard' || family === 'cookie' || family === 'barney' || family === 'big';
+        const drawX = isBoard
           ? (si.worldX > 0 ? Math.round(sprX) : Math.round(sprX - sprW))
           : Math.round(sprX - sprW / 2);
 
         // Palms/cactuses/shrubs: shift down by transparent bottom padding so base = sy1.
-        // Sign boards: groundOffset=0 — base at road level, no masking.
-        // Houses: proportional to rect.h (20%) — isometric floor/step below facade
-        //   is much deeper than the generic 8px palm correction.
-        const padPx        = isHouse ? Math.round(rect.h * 0.20) : isCactus ? 10 : 8;
-        const groundOffset = (isBillboard || isCookie || isBarney || isBig) ? 0 : Math.round(padPx / rect.h * sprH);
+        // Board sprites: groundOffset=0 — base at road level, no masking.
+        // Houses: proportional to rect.h (20%) — isometric floor/step.
+        const padPx        = family === 'house' ? Math.round(rect.h * 0.20) : family === 'cactus' ? 10 : 8;
+        const groundOffset = isBoard ? 0 : Math.round(padPx / rect.h * sprH);
 
         const drawY = Math.round(sy1 - sprH) + groundOffset;
         const drawW = Math.round(sprW);
@@ -970,10 +968,11 @@ export class Renderer
   ): void
   {
     const { ctx }  = this;
-    const horizonY = Math.round(h / 2 + horizonOffset);
+    const horizonY       = Math.round(h / 2 + horizonOffset);
+    const stableHorizonY = Math.round(h / 2);   // immune to off-road jitter
     ctx.save();
     ctx.clearRect(0, 0, w, h);
-    this.renderSky(w, horizonY);
+    this.renderSky(w, horizonY, stableHorizonY);
     this.renderRoad(segments, segmentCount, playerZ, playerX, speed, drawDistance, w, h, horizonY);
     this.renderCar(w, h, steerAngle);
     this.renderHUD(w, h, speed);

@@ -63,18 +63,36 @@ export interface SegmentColor
 // ── Roadside sprites ──────────────────────────────────────────────────────────
 
 /**
+ * Sprite family — classifies a sprite's type at placement time so the renderer
+ * can dispatch to the correct sheet and rect table with a single comparison
+ * instead of repeated id.startsWith() scans in the hot render path (C7).
+ */
+export type SpriteFamily =
+  | 'palm'
+  | 'billboard'
+  | 'cookie'
+  | 'barney'
+  | 'big'
+  | 'cactus'
+  | 'shrub'
+  | 'sign'
+  | 'house';
+
+/**
  * One roadside object (e.g. a palm tree) attached to a road segment.
- * id     = which sprite to look up in SPRITE_RECTS (must be a SpriteId).
+ * id     = which sprite to look up in the appropriate RECTS table.
+ * family = pre-classified type used by the renderer for O(1) dispatch.
  * worldX = left/right offset from road centre in world units.
  *          Negative = left side, positive = right side.
  */
 export interface SpriteInstance
 {
-  id:     string;   // SpriteId value — 'PALM_SMALL' or 'PALM_LARGE'
-  worldX: number;
-  scale?:   number;   // height multiplier (1 = default world height, 3 = triple)
-  flipX?:   boolean;  // mirror sprite horizontally (right-side buildings face the road)
-  stretchX?: number;  // horizontal width multiplier (intentional aspect-ratio break)
+  id:        string;
+  family:    SpriteFamily;
+  worldX:    number;
+  scale?:    number;    // height multiplier (1 = default world height, 3 = triple)
+  flipX?:    boolean;   // mirror sprite horizontally (right-side buildings face the road)
+  stretchX?: number;    // horizontal width multiplier (intentional aspect-ratio break)
 }
 
 // ── Road segment ──────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@
  * grind timers, shake timers) lives in game.ts alongside the physics simulation.
  */
 
-import { CollisionClass, RoadSegment } from './types';
+import { CollisionClass, RoadSegment, SpriteFamily } from './types';
 import {
   ROAD_WIDTH,
   HITBOX_CACTUS, HITBOX_PALM, HITBOX_HOUSE,
@@ -21,26 +21,40 @@ import {
 
 export type { CollisionClass };
 
-// ── Classification ────────────────────────────────────────────────────────────
+// ── Classification tables — O(1) lookup by family ────────────────────────────
+//
+// Now that sprites carry a pre-classified family field (set at placement time
+// in road.ts), all collision checks use direct property lookup instead of
+// repeated id.startsWith() chains in the hot path.
 
-/**
- * Maps a SpriteId string to its collision class.
- * Uses prefix matching — works for all current sprite families and any future
- * ones that follow the same naming convention.
- */
-export function getCollisionClass(id: string): CollisionClass
+/** Maps sprite family to its collision class. */
+const FAMILY_COLLISION_CLASS: Record<SpriteFamily, CollisionClass> =
 {
-  if (id.startsWith('SHRUB_'))     return 'ghost';
-  if (id.startsWith('SIGN_'))      return 'ghost';
-  if (id.startsWith('CACTUS_'))    return 'glance';
-  if (id.startsWith('PALM_'))      return 'smack';
-  if (id.startsWith('BILLBOARD_')) return 'smack';
-  if (id.startsWith('COOKIE_'))    return 'smack';
-  if (id.startsWith('BARNEY_'))    return 'smack';
-  if (id.startsWith('BIG_'))       return 'smack';
-  if (id.startsWith('HOUSE_'))     return 'crunch';
-  return 'ghost';
-}
+  palm:      'smack',
+  billboard: 'smack',
+  cookie:    'smack',
+  barney:    'smack',
+  big:       'smack',
+  cactus:    'glance',
+  shrub:     'ghost',
+  sign:      'ghost',
+  house:     'crunch',
+};
+
+/** Maps sprite family to its physical blocking radius (world units). */
+const FAMILY_BLOCKING_RADIUS: Record<SpriteFamily, number> =
+{
+  palm:      BLOCK_SMACK,
+  billboard: BLOCK_SMACK,
+  cookie:    BLOCK_SMACK,
+  barney:    BLOCK_SMACK,
+  big:       BLOCK_SMACK,
+  cactus:    0,
+  shrub:     0,
+  sign:      0,
+  // BLOCK_HOUSE < HITBOX_HOUSE — keeps player inside detection zone at the wall.
+  house:     BLOCK_HOUSE,
+};
 
 /**
  * Returns the lateral detection radius (world units) for a collision class.
@@ -58,18 +72,12 @@ export function getHitboxRadius(cls: CollisionClass): number
 }
 
 /**
- * Returns the physical blocking radius (world units) — the hard wall the player
- * cannot penetrate.  Tighter than the detection radius so the detection zone
- * is more forgiving than the solid wall.
+ * Returns the physical blocking radius (world units) for a sprite family.
+ * Used by game.ts to prevent the player from phasing through solid objects.
  */
-export function getBlockingRadius(id: string): number
+export function getBlockingRadius(family: SpriteFamily): number
 {
-  // BLOCK_HOUSE < HITBOX_HOUSE — keeps player inside detection zone at the wall
-  // so crunch effects always fire on contact.
-  if (id.startsWith('HOUSE_'))  return BLOCK_HOUSE;
-  // palms, billboards, cookie, barney, BIG — tight trunk/post radius (250 << 550 detection)
-  const cls = getCollisionClass(id);
-  return cls === 'smack' ? BLOCK_SMACK : 0;
+  return FAMILY_BLOCKING_RADIUS[family];
 }
 
 // ── Module-level constants (hoisted to avoid per-frame allocation) ────────────
@@ -136,7 +144,7 @@ export function checkSegmentCollision(
 
   for (const sprite of segment.sprites ?? [])
   {
-    const cls = getCollisionClass(sprite.id);
+    const cls = FAMILY_COLLISION_CLASS[sprite.family];
     if (cls === 'ghost') continue;
 
     const radius   = getHitboxRadius(cls);

@@ -14,7 +14,7 @@
  *   curves and hills.
  */
 
-import { RoadSegment, ProjectedPoint, SegmentColor } from './types';
+import { RoadSegment, ProjectedPoint, SegmentColor, SpriteFamily } from './types';
 import { SEGMENT_LENGTH, COLORS, ROAD_CURVE, ROAD_HILL } from './constants';
 
 // ── Easing functions ──────────────────────────────────────────────────────────
@@ -384,7 +384,7 @@ export class Road
     {
       // Scale each palm randomly 1×–3× to mimic the size variety in the OG game.
       const scale = 1 + rand() * 2;   // uniform [1, 3]
-      (seg.sprites ??= []).push({ id, worldX, scale });
+      (seg.sprites ??= []).push({ id, family: 'palm' as SpriteFamily, worldX, scale });
     };
 
     // ── Weighted distance sampler ─────────────────────────────────────────────
@@ -538,7 +538,7 @@ export class Road
         {
           const worldX = sign(s) * rInt(6000, 16000);
           const scale  = 0.4 + rand() * 2.2;   // 0.4× tiny to 2.6× towering
-          (seg.sprites ??= []).push({ id: pick(ALL), worldX, scale });
+          (seg.sprites ??= []).push({ id: pick(ALL), family: 'palm' as SpriteFamily, worldX, scale });
         }
 
         deepGap[s] = rInt(2, 5);
@@ -557,11 +557,11 @@ export class Road
    */
   private plantBillboards(): void
   {
-    const { rand, rInt, pick } = makePRNG(Date.now());
+    const { rand, rInt, pick } = makePRNG(0xCAFEBABE);
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX });
+      (seg.sprites ??= []).push({ id, family: 'billboard' as SpriteFamily, worldX });
     };
 
     const BEAGLE:  readonly string[] = ['BILLBOARD_BEAGLE_PETS', 'BILLBOARD_ADOPT_BEAGLE', 'BILLBOARD_BEAGLE_POWER', 'BILLBOARD_LOYAL_FRIENDLY'];
@@ -608,11 +608,11 @@ export class Road
    */
   private plantCookieBoards(): void
   {
-    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0xC00C1E5);
+    const { rand, rInt, pick } = makePRNG(0xC00C1E5);
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX });
+      (seg.sprites ??= []).push({ id, family: 'cookie' as SpriteFamily, worldX });
     };
 
     const POOL: readonly string[] = [
@@ -654,11 +654,11 @@ export class Road
    */
   private plantBarneyBoards(): void
   {
-    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0xBA121E5);
+    const { rand, rInt, pick } = makePRNG(0xBA121E5);
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX });
+      (seg.sprites ??= []).push({ id, family: 'barney' as SpriteFamily, worldX });
     };
 
     const POOL: readonly string[] = [
@@ -698,11 +698,11 @@ export class Road
    */
   private plantBigBoards(): void
   {
-    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0xB163B04D);
+    const { rand, rInt, pick } = makePRNG(0xB163B04D);
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX });
+      (seg.sprites ??= []).push({ id, family: 'big' as SpriteFamily, worldX });
     };
 
     const POOL: readonly string[] = [
@@ -765,7 +765,7 @@ export class Road
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
       const scale = 0.8 + rand() * 0.8;   // [0.8, 1.6]
-      (seg.sprites ??= []).push({ id, worldX, scale });
+      (seg.sprites ??= []).push({ id, family: 'cactus' as SpriteFamily, worldX, scale });
     };
 
     const count = this._segments.length;
@@ -827,7 +827,7 @@ export class Road
           {
             const worldX = sign * rInt(12000, 22000);
             const scale  = 0.30 + rand() * 0.20;   // [0.30, 0.50]
-            (seg.sprites ??= []).push({ id: pick(CACTI), worldX, scale });
+            (seg.sprites ??= []).push({ id: pick(CACTI), family: 'cactus' as SpriteFamily, worldX, scale });
           }
           gap[6 + s] = rInt(0, 2);
         }
@@ -863,7 +863,7 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX });
+      (seg.sprites ??= []).push({ id, family: 'sign' as SpriteFamily, worldX });
     };
 
     let prevAbsCurve  = 0;
@@ -913,11 +913,11 @@ export class Road
    */
   private plantShrubs(): void
   {
-    const { rand, rInt, pick } = makePRNG(Date.now() ^ 0x5B2B5);
+    const { rand, rInt, pick } = makePRNG(0x5B2B5);
 
     const plant = (seg: RoadSegment, id: string, worldX: number, scale = 1): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX, scale });
+      (seg.sprites ??= []).push({ id, family: 'shrub' as SpriteFamily, worldX, scale });
     };
 
     const POOL: readonly string[] = [
@@ -1025,11 +1025,11 @@ export class Road
    */
   private plantHouses(): void
   {
-    const { rand, rInt, pick } = makePRNG(Date.now());
+    const { rand, rInt, pick } = makePRNG(0xD1CE5EED);
 
     const plant = (seg: RoadSegment, id: string, worldX: number, flipX = false): void =>
     {
-      (seg.sprites ??= []).push({ id, worldX, flipX });
+      (seg.sprites ??= []).push({ id, family: 'house' as SpriteFamily, worldX, flipX });
     };
 
     // Text on facade — left side only, never flip.
@@ -1106,7 +1106,7 @@ export class Road
 
         const sign  = s === 1 ? +1 : -1;
         const scale = 0.60 + rand() * 0.60;   // [0.60, 1.20] — visible distant buildings
-        (seg.sprites ??= []).push({ id: pick(DISTANT), worldX: sign * rInt(10000, 20000), scale, stretchX: 1.25 });
+        (seg.sprites ??= []).push({ id: pick(DISTANT), family: 'house' as SpriteFamily, worldX: sign * rInt(10000, 20000), scale, stretchX: 1.25 });
 
         farGap[s] = rInt(4, 12);
       }
