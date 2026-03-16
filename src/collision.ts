@@ -72,6 +72,23 @@ export function getBlockingRadius(id: string): number
   return cls === 'smack' ? BLOCK_SMACK : 0;
 }
 
+// ── Module-level constants (hoisted to avoid per-frame allocation) ────────────
+
+/** Segment offsets scanned around the player each frame. */
+const SEGMENT_WINDOW = [-1, 0, 1, 2] as const;
+
+/**
+ * Severity rank for each collision class.
+ * Used instead of CLASS_ORDER.indexOf() to avoid O(n) linear scans per comparison.
+ */
+const CLASS_RANK: Record<CollisionClass, number> =
+{
+  ghost:  0,
+  glance: 1,
+  smack:  2,
+  crunch: 3,
+};
+
 // ── Hit result ────────────────────────────────────────────────────────────────
 
 export interface HitResult
@@ -93,8 +110,6 @@ export interface NearMissResult
 }
 
 // ── Detection ─────────────────────────────────────────────────────────────────
-
-const CLASS_ORDER: CollisionClass[] = ['ghost', 'glance', 'smack', 'crunch'];
 
 /**
  * Scans a single road segment's sprites for a collision or near-miss.
@@ -133,7 +148,7 @@ export function checkSegmentCollision(
     if (delta < radius)
     {
       const bumpDir = sprite.worldX > playerWorldX ? +1 : -1;
-      if (worstHit === null || CLASS_ORDER.indexOf(cls) > CLASS_ORDER.indexOf(worstHit.cls))
+      if (worstHit === null || CLASS_RANK[cls] > CLASS_RANK[worstHit.cls])
         worstHit = { cls, bumpDir };
     }
     else if (delta < radius * NEAR_MISS_RATIO && worstHit === null)
@@ -163,19 +178,17 @@ export function checkCollisions(
   playerSegIdx: number,
 ): { hit: HitResult | null; nearMiss: NearMissResult | null }
 {
-  const WINDOW = [-1, 0, 1, 2];
-
   let worstHit:      HitResult | null      = null;
   let firstNearMiss: NearMissResult | null = null;
 
-  for (const offset of WINDOW)
+  for (const offset of SEGMENT_WINDOW)
   {
     const idx = ((playerSegIdx + offset) % segmentCount + segmentCount) % segmentCount;
     const { hit, nearMiss } = checkSegmentCollision(playerX, segments[idx]);
 
     if (hit)
     {
-      if (worstHit === null || CLASS_ORDER.indexOf(hit.cls) > CLASS_ORDER.indexOf(worstHit.cls))
+      if (worstHit === null || CLASS_RANK[hit.cls] > CLASS_RANK[worstHit.cls])
         worstHit = hit;
     }
     else if (nearMiss && firstNearMiss === null)

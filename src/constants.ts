@@ -37,9 +37,15 @@ export const CAMERA_DEPTH   = 1 / Math.tan((FOV_DEG / 2) * Math.PI / 180);
 
 /**
  * Top speed in world units per second.
- * Calibrated so the road scrolls at roughly 450 km/h (≈45 segments/sec).
+ * Calibrated so the road scrolls at roughly 293 km/h (≈54 segments/sec).
  */
 export const PLAYER_MAX_SPEED   = 10800;
+
+/**
+ * Speed shown on the HUD at PLAYER_MAX_SPEED, in km/h.
+ * Matches the Ferrari Testarossa's period top speed figure.
+ */
+export const DISPLAY_MAX_KMH    = 293;
 
 // ── Acceleration — three-phase "Alive & Kinetic" curve ───────────────────────
 
@@ -48,13 +54,13 @@ export const PLAYER_MAX_SPEED   = 10800;
  * Tyres are still finding grip so power delivery is limited.
  * A smoothstep ramp blends from ACCEL_LOW up to ACCEL_MID over this band.
  */
-export const PLAYER_ACCEL_LOW   = 1680;
+export const PLAYER_ACCEL_LOW   = 2160;
 
 /**
  * Peak acceleration during the main thrust band (15–80% of max).
  * Also used as the starting point of the terminal taper (80–100%).
  */
-export const PLAYER_ACCEL_MID   = 3360;
+export const PLAYER_ACCEL_MID   = 4320;
 
 // ── Coasting (lift-off deceleration) ─────────────────────────────────────────
 
@@ -87,6 +93,13 @@ export const PLAYER_BRAKE_RAMP  = 0.10;
  * 2.0 = the car can cross the entire road in roughly one second at top speed.
  */
 export const PLAYER_STEERING    = 2.42;
+
+/**
+ * Rate at which the visual steer angle ramps to ±1 and springs back to 0.
+ * 3.0 = reaches full lock in ~0.33 seconds.
+ * Drives car sprite frame selection only — not lateral physics.
+ */
+export const PLAYER_STEER_RATE  = 3.0;
 
 // ── Off-road friction ─────────────────────────────────────────────────────────
 
@@ -137,7 +150,7 @@ export const ROAD_HILL   = { NONE: 0, LOW: 20, MEDIUM: 40, HIGH: 60 } as const;
  * Steering authority at full speed is ~1.0 road-widths/sec after grip reduction,
  * creating the tight on-the-limit feel of 290 km/h cornering.
  */
-export const CENTRIFUGAL    = 0.5;
+export const CENTRIFUGAL    = 0.35;
 
 // ── Drift / oversteer ─────────────────────────────────────────────────────────
 
@@ -152,7 +165,7 @@ export const DRIFT_ONSET = 0.93;
  * How fast lateral slide velocity accumulates when over the drift threshold.
  * Higher = rear snaps out more aggressively.
  */
-export const DRIFT_RATE  = 0.25;
+export const DRIFT_RATE  = 3.0;
 
 /**
  * How fast the slide decays on its own (tyres self-aligning torque).

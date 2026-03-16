@@ -132,7 +132,10 @@ function makePRNG(seed: number): {
 export class Road
 {
   /** All segments in order from start to end of the track. */
-  segments: RoadSegment[] = [];
+  private _segments: RoadSegment[] = [];
+
+  /** Read-only view of the segment array — prevents external mutation. */
+  get segments(): readonly RoadSegment[] { return this._segments; }
 
   /**
    * The Y (height) coordinate of the last segment added.
@@ -159,7 +162,7 @@ export class Road
   /** Total number of segments in the track. Used for wrap-around maths. */
   get count(): number
   {
-    return this.segments.length;
+    return this._segments.length;
   }
 
   // ── Core builder ─────────────────────────────────────────────────────────
@@ -177,7 +180,7 @@ export class Road
    */
   private addSegment(curve: number, y: number): void
   {
-    const i      = this.segments.length;
+    const i      = this._segments.length;
     const seg: RoadSegment =
     {
       index: i,
@@ -187,7 +190,7 @@ export class Road
       color: makeColor(i),
     };
     this.lastY = y;
-    this.segments.push(seg);
+    this._segments.push(seg);
   }
 
   /**
@@ -248,11 +251,11 @@ export class Road
    *   • Long straights feed DIRECTLY into hard corners — no time to react.
    *   • Back-to-back hard sections with no breathing room in between.
    *
-   * ~620 segments ≈ 14 seconds at max speed before the lap loops.
+   * ~1185 segments ≈ 22 seconds at max speed before the lap loops.
    */
   private resetRoad(): void
   {
-    this.segments = [];
+    this._segments = [];
     this.lastY    = 0;
 
     const r = (enter: number, hold: number, leave: number, curve: number, hill: number) =>
@@ -266,50 +269,50 @@ export class Road
     const HH = ROAD_HILL.HIGH;    // 60 — blind crest territory
 
     // ── 1. Launch straight ────────────────────────────────────────────────
-    r(1,  18,  1,    0,   0);             // 20 — build speed, feel the car
+    r(1,  38,  1,    0,   0);             // 40 — build speed, feel the car
 
     // ── 2. Flugplatz — long climbing right sweeper ────────────────────────
     // Feels manageable at first. At full speed it fights you the whole way.
-    r(12, 55, 12,   CE,  HL);             // 79 — long easy right, climbing
-    r(8,  10,  8,    0, -HL);             // 26 — crest and brief flat
+    r(12, 110, 12,   CE,  HL);            // 134 — long easy right, climbing
+    r(8,  10,  8,    0, -HL);             // 26  — crest and brief flat
 
     // ── 3. Hatzenbach — hard uphill left, blind entry ─────────────────────
     // The flat before it lures you in full throttle. Don't.
     r(1,  10,  1,    0,   0);             // 12 — false sense of safety
-    r(10, 35, 10,  -CH,  HM);             // 55 — climbing hard left, no exit visible
+    r(10, 55, 10,  -CH,  HM);             // 75 — climbing hard left, no exit visible
 
     // ── 4. Blind downhill right — you're over the crest into a right ──────
-    r(10, 25, 10,   CH, -HM);             // 45 — hard right, road drops away fast
+    r(10, 45, 10,   CH, -HM);             // 65 — hard right, road drops away fast
 
     // ── 5. Long downhill straight ─────────────────────────────────────────
-    r(1,  32,  1,    0, -HL);             // 34 — speed builds on the descent
+    r(1,  58,  1,    0, -HL);             // 60 — speed builds on the descent
 
     // ── 6. Adenauer Forst — long sustained medium-left sweeper ───────────
     // It keeps going. And going. This is where the drift happens.
-    r(15, 55, 15,  -CM,   0);             // 85 — patience and commitment required
+    r(15, 120, 15,  -CM,   0);            // 150 — patience and commitment required
 
     // ── 7. Bergwerk — hard right then immediate hard left ─────────────────
     // Zero gap. If the car is still sliding from the right, the left takes you off.
     r(1,   5,  1,    0,   0);             // 7  — barely a breath
-    r(10, 28, 10,   CH,   0);             // 48 — hard right
-    r(10, 28, 10,  -CH,   0);             // 48 — hard left, immediate
+    r(10, 60, 10,   CH,   0);             // 80 — hard right
+    r(10, 60, 10,  -CH,   0);             // 80 — hard left, immediate
 
     // ── 8. Döttinger Höhe — the long flat-out straight ────────────────────
     // Longest straight on the lap. Build maximum speed. You'll pay for it.
-    r(1,  55,  1,    0,   0);             // 57 — go flat. All of it.
+    r(1,  110,  1,   0,   0);             // 112 — go flat. All of it.
 
     // ── 9. Tiergarten — hard right over a blind hill crest ────────────────
     // Maximum speed. Hard right. Climbing. You cannot see the exit. Ever.
-    r(10, 38, 10,   CH,  HH);             // 58 — the hardest moment on the lap
+    r(10, 76, 10,   CH,  HH);             // 96 — the hardest moment on the lap
 
     // ── 10. Schwalbenschwanz — left, road drops beneath you ──────────────
-    r(10, 32, 10,  -CH, -HM);             // 52 — hard left, downhill, drift trap
+    r(10, 64, 10,  -CH, -HM);             // 84 — hard left, downhill, drift trap
 
     // ── 11. Recovery medium right ─────────────────────────────────────────
-    r(10, 22, 10,   CM,   0);             // 42 — breathe. Almost home.
+    r(10, 44, 10,   CM,   0);             // 64 — breathe. Almost home.
 
     // ── 12. Finish straight ───────────────────────────────────────────────
-    r(1,  38,  1,    0,   0);             // 40 — lap complete. Do it again.
+    r(1,  78,  1,    0,   0);             // 80 — lap complete. Do it again.
 
     this.boardLastPlaced[0] = -999;
     this.boardLastPlaced[1] = -999;
@@ -420,9 +423,9 @@ export class Road
 
     const sign = (s: number): number => s === 1 ? +1 : -1;
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const curve    = seg.curve;
       const absCurve = Math.abs(curve);
 
@@ -491,8 +494,8 @@ export class Road
           for (let c = 0; c < clSize; c++)
           {
             const ti = i + c * rInt(2, 5);
-            if (ti >= this.segments.length) break;
-            const tseg = this.segments[ti];
+            if (ti >= this._segments.length) break;
+            const tseg = this._segments[ti];
 
             if (rand() < 0.25)
               // Background palms: deep silhouettes spanning a wide range
@@ -517,9 +520,9 @@ export class Road
     ];
     const deepGap = [rInt(2, 6), rInt(2, 6)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg = this.segments[i];
+      const seg = this._segments[i];
       if (Math.abs(seg.curve) >= 5) continue;
 
       deepGap[0] = Math.max(0, deepGap[0] - 1);
@@ -570,9 +573,9 @@ export class Road
 
     const gap = [rInt(15, 30), rInt(20, 40)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const absCurve = Math.abs(seg.curve);
 
       if (absCurve >= 4) { gap[0] = Math.max(gap[0], 8); gap[1] = Math.max(gap[1], 8); continue; }
@@ -620,9 +623,9 @@ export class Road
     // Sparse — only one side at a time, long gaps between appearances.
     const gap = [rInt(40, 80), rInt(50, 90)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const absCurve = Math.abs(seg.curve);
 
       if (absCurve >= 4) { gap[0] = Math.max(gap[0], 12); gap[1] = Math.max(gap[1], 12); continue; }
@@ -665,9 +668,9 @@ export class Road
 
     const gap = [rInt(60, 120), rInt(70, 130)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const absCurve = Math.abs(seg.curve);
 
       if (absCurve >= 4) { gap[0] = Math.max(gap[0], 15); gap[1] = Math.max(gap[1], 15); continue; }
@@ -708,9 +711,9 @@ export class Road
 
     const gap = [rInt(100, 200), rInt(110, 210)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const absCurve = Math.abs(seg.curve);
 
       if (absCurve >= 4) { gap[0] = Math.max(gap[0], 20); gap[1] = Math.max(gap[1], 20); continue; }
@@ -765,13 +768,13 @@ export class Road
       (seg.sprites ??= []).push({ id, worldX, scale });
     };
 
-    const count = this.segments.length;
+    const count = this._segments.length;
     // Four independent cooldown tracks per side: near, mid, far, ultra-far
     const gap   = [0, 0, 0, 0, 0, 0, 0, 0];   // [near-L, near-R, mid-L, mid-R, far-L, far-R, ufar-L, ufar-R]
 
     for (let i = 0; i < count; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const absCurve = Math.abs(seg.curve);
 
       for (let g = 0; g < 8; g++) gap[g] = Math.max(0, gap[g] - 1);
@@ -786,8 +789,8 @@ export class Road
         if (gap[s] === 0)
         {
           if (rand() < 0.80) {
-            const count = rand() < 0.30 ? 2 : 1;
-            for (let c = 0; c < count; c++)
+            const clusterSize = rand() < 0.30 ? 2 : 1;
+            for (let c = 0; c < clusterSize; c++)
               plant(seg, pick(CACTI), sign * rInt(1800, 3000));
           }
           gap[s] = rInt(2, 5);
@@ -797,8 +800,8 @@ export class Road
         if (gap[2 + s] === 0)
         {
           if (rand() < 0.85) {
-            const count = rand() < 0.40 ? rInt(2, 3) : 1;
-            for (let c = 0; c < count; c++)
+            const clusterSize = rand() < 0.40 ? rInt(2, 3) : 1;
+            for (let c = 0; c < clusterSize; c++)
               plant(seg, pick(CACTI), sign * rInt(3500, 7000));
           }
           gap[2 + s] = rInt(1, 4);
@@ -808,8 +811,8 @@ export class Road
         if (gap[4 + s] === 0)
         {
           if (rand() < 0.90) {
-            const count = rInt(1, 3);
-            for (let c = 0; c < count; c++)
+            const clusterSize = rInt(1, 3);
+            for (let c = 0; c < clusterSize; c++)
               plant(seg, pick(CACTI), sign * rInt(7000, 16000));
           }
           gap[4 + s] = rInt(1, 4);
@@ -819,8 +822,8 @@ export class Road
         // sprH ≈ 700 * scale * 400 / worldX. worldX=12000, scale=0.35 → ~8px ✓
         if (gap[6 + s] === 0)
         {
-          const count = rInt(2, 4);
-          for (let c = 0; c < count; c++)
+          const clusterSize = rInt(2, 4);
+          for (let c = 0; c < clusterSize; c++)
           {
             const worldX = sign * rInt(12000, 22000);
             const scale  = 0.30 + rand() * 0.20;   // [0.30, 0.50]
@@ -866,9 +869,9 @@ export class Road
     let prevAbsCurve  = 0;
     let lastGroupAt   = -GROUP_COOLDOWN;  // segment index of last placed group
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const curve    = this.segments[i].curve;
+      const curve    = this._segments[i].curve;
       const absCurve = Math.abs(curve);
 
       // Detect curve start: magnitude rises past threshold and cooldown has elapsed
@@ -889,7 +892,7 @@ export class Road
         {
           const si = i - n * SPACING;
           if (si >= 0)
-            plant(this.segments[si], signId, worldX);
+            plant(this._segments[si], signId, worldX);
         }
 
         lastGroupAt = i;
@@ -926,9 +929,9 @@ export class Road
     // ── Pass 1: mid-range shrubs (2500–5000) — dense scatter ─────────────────
     const gap = [rInt(1, 3), rInt(1, 3)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const absCurve = Math.abs(seg.curve);
 
       if (absCurve >= 5) { gap[0] = Math.max(gap[0], 2); gap[1] = Math.max(gap[1], 2); continue; }
@@ -951,9 +954,9 @@ export class Road
     }
 
     // ── Pass 2: far shrubs (5000–10000) — thick continuous band ──────────────
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg = this.segments[i];
+      const seg = this._segments[i];
       if (Math.abs(seg.curve) >= 5) continue;
 
       for (let s = 0; s < 2; s++)
@@ -967,9 +970,9 @@ export class Road
 
     // ── Pass 3: extreme-edge shrubs (10000–20000) — fills the horizon wall ───
     // Scaled down to ~40% so they read as small distant ground-cover, not giants.
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg = this.segments[i];
+      const seg = this._segments[i];
       if (Math.abs(seg.curve) >= 5) continue;
 
       for (let s = 0; s < 2; s++)
@@ -985,9 +988,9 @@ export class Road
     // sprH ≈ worldH(~600) * scale * halfH / worldX.
     // worldX=12000, scale=0.35 → ~7px;  worldX=18000, scale=0.45 → ~6px.
     // Dense (every segment, 5–8 per side) to fill the edge band continuously.
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg = this.segments[i];
+      const seg = this._segments[i];
       if (Math.abs(seg.curve) >= 5) continue;
 
       for (let s = 0; s < 2; s++)
@@ -1045,9 +1048,9 @@ export class Road
 
     const gap = [rInt(15, 35), rInt(20, 45)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg      = this.segments[i];
+      const seg      = this._segments[i];
       const absCurve = Math.abs(seg.curve);
 
       if (absCurve >= 3) { gap[0] = Math.max(gap[0], 10); gap[1] = Math.max(gap[1], 10); continue; }
@@ -1088,9 +1091,9 @@ export class Road
 
     const farGap = [rInt(4, 10), rInt(5, 12)];
 
-    for (let i = 0; i < this.segments.length; i++)
+    for (let i = 0; i < this._segments.length; i++)
     {
-      const seg = this.segments[i];
+      const seg = this._segments[i];
       if (Math.abs(seg.curve) >= 4) continue;
 
       farGap[0] = Math.max(0, farGap[0] - 1);
@@ -1126,6 +1129,6 @@ export class Road
   {
     const n   = this.count;
     const idx = Math.floor(playerZ / SEGMENT_LENGTH) % n;
-    return this.segments[(idx + n) % n];
+    return this._segments[(idx + n) % n];
   }
 }

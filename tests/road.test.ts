@@ -54,10 +54,10 @@ describe('Road', () =>
    * This test guards against accidentally deleting or duplicating large
    * sections of the track layout in resetRoad().
    */
-  it('segment count is in the expected range for the current layout (~620)', () =>
+  it('segment count is in the expected range for the current layout (~1185)', () =>
   {
-    expect(road.count).toBeGreaterThan(400);
-    expect(road.count).toBeLessThan(900);
+    expect(road.count).toBeGreaterThan(900);
+    expect(road.count).toBeLessThan(1400);
   });
 
   // ── findSegment ───────────────────────────────────────────────────────────

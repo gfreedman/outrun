@@ -46,7 +46,7 @@ import
 {
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,
   SEGMENT_LENGTH, COLORS,
-  PLAYER_MAX_SPEED,
+  PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
   PARALLAX_SKY,
 } from './constants';
 import
@@ -438,7 +438,7 @@ export class Renderer
    * @param horizonY      - Screen Y of the horizon line.
    */
   private renderRoad(
-    segments:     RoadSegment[],
+    segments:     readonly RoadSegment[],
     segmentCount: number,
     playerZ:      number,
     playerX:      number,
@@ -563,9 +563,13 @@ export class Renderer
 
       const { color } = seg;
 
-      // Full-width grass band behind this segment strip
-      ctx.fillStyle = color.grass;
-      ctx.fillRect(0, sy2, w, sy1 - sy2);
+      // Full-width grass band — only draw SAND_DARK strips; the solid background
+      // fill above already covers SAND_LIGHT, saving ~half the grass fillRects.
+      if (color.grass !== COLORS.SAND_LIGHT)
+      {
+        ctx.fillStyle = color.grass;
+        ctx.fillRect(0, sy2, w, sy1 - sy2);
+      }
 
       // Asphalt road surface
       drawTrapezoid(ctx, sx1, sy1, sw1, sx2, sy2, sw2, color.road);
@@ -685,16 +689,18 @@ export class Renderer
         const drawW = Math.round(sprW);
         const drawH = Math.round(sprH);
 
+        // Skip bilinear smoothing for tiny sprites (< 20px tall) — they are
+        // distant silhouettes where smoothing blurs more than it helps.
+        ctx.imageSmoothingEnabled = sprH > 20;
+
         if (si.flipX)
         {
-          // Mirror around the sprite's vertical centre axis.
-          // ctx.scale(-1,1) flips the X axis, so we shift the draw origin
-          // to -(drawX + drawW) so the image lands at the same screen position
-          // but horizontally reversed.
-          ctx.save();
-          ctx.scale(-1, 1);
+          // Mirror horizontally using setTransform — avoids the save/restore
+          // overhead incurred by every right-side house on each frame.
+          // Canvas is CSS-pixel-only (no DPR scale), so identity is (1,0,0,1,0,0).
+          ctx.setTransform(-1, 0, 0, 1, 0, 0);
           sheet.draw(ctx, rect, -(drawX + drawW), drawY, drawW, drawH);
-          ctx.restore();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
         else
         {
@@ -702,6 +708,9 @@ export class Renderer
         }
       }
     }
+
+    // Restore smoothing enabled for the car and HUD passes that follow.
+    ctx.imageSmoothingEnabled = true;
   }
 
   // ── Player car ────────────────────────────────────────────────────────────
@@ -840,7 +849,7 @@ export class Renderer
     // Display actual speed directly — physics integration is already smooth
     // enough that no smoothing filter is needed, and a filter causes the
     // readout to lag at 0 after returning from off-road.
-    const kmh      = Math.min(999, Math.max(0, Math.round(speed * (293 / PLAYER_MAX_SPEED))));
+    const kmh      = Math.min(999, Math.max(0, Math.round(speed * (DISPLAY_MAX_KMH / PLAYER_MAX_SPEED))));
     const hundreds = Math.floor(kmh / 100);
     const tens     = Math.floor((kmh % 100) / 10);
     const ones     = kmh % 10;
@@ -948,7 +957,7 @@ export class Renderer
    * @param horizonOffset  - Pixel offset to shift the horizon (off-road jitter).
    */
   render(
-    segments:      RoadSegment[],
+    segments:      readonly RoadSegment[],
     segmentCount:  number,
     playerZ:       number,
     playerX:       number,

@@ -54,14 +54,14 @@ import { Road }         from './road';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { SpriteLoader } from './sprites';
-import { checkCollisions, getBlockingRadius, getCollisionClass } from './collision';
+import { checkCollisions, getBlockingRadius } from './collision';
 import
 {
   PLAYER_MAX_SPEED,
   PLAYER_ACCEL_LOW, PLAYER_ACCEL_MID,
   PLAYER_COAST_RATE,
   PLAYER_BRAKE_MAX, PLAYER_BRAKE_RAMP,
-  PLAYER_STEERING,
+  PLAYER_STEERING, PLAYER_STEER_RATE,
   OFFROAD_MAX_RATIO, OFFROAD_DECEL, OFFROAD_RECOVERY_TIME,
   SEGMENT_LENGTH, DRAW_DISTANCE,
   CENTRIFUGAL,
@@ -79,6 +79,9 @@ import
   NEAR_MISS_WOBBLE,
   COLLISION_MIN_OFFSET, ROAD_WIDTH,
 } from './constants';
+
+/** Segment offsets scanned around the player for collision/blocking. Hoisted to avoid per-frame allocation. */
+const SEGMENT_WINDOW = [-1, 0, 1, 2] as const;
 
 export class Game
 {
@@ -287,23 +290,19 @@ export class Game
 
     // ── Steering — grip / understeer model ────────────────────────────────
     //
-    // steerRatio: ensures the player can always steer, even at near-zero speed.
-    //   Floored at 0.3 so grass friction can't trap the player permanently.
-    //
     // gripFactor: lateral authority drops quadratically with speed.
-    //   At rest: full authority (gripFactor ≈ 1).
+    //   At rest: full authority (gripFactor = 1).
     //   At max speed: 50% authority (gripFactor = 0.5).
-    //   Combined with centrifugal force this makes high-speed cornering feel
-    //   like you're right on the limit.
+    //   This is correct understeer behaviour — high-speed cornering requires
+    //   earlier commitment and more progressive trail-braking to hold the line.
 
-    const steerRatio = Math.max(0.3, speedRatio);
-    const gripFactor = Math.max(0.68, 1 - speedRatio * speedRatio * 0.5);
+    const gripFactor = 1 - speedRatio * speedRatio * 0.5;
 
     // Lateral movement requires forward speed — a stopped car cannot slide sideways.
     if (this.speed > 0)
     {
-      if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * steerRatio * gripFactor * dt;
-      if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * steerRatio * gripFactor * dt;
+      if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * gripFactor * dt;
+      if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * gripFactor * dt;
     }
 
     // Hard wall at ±2 — can't go further off-road than one road-width off the edge
@@ -316,7 +315,7 @@ export class Game
     // The minus sign here is correct: it converts road-space convention
     // (positive curve = bend to the right) into screen-space push (rightward = +X).
     // The faster you go, the stronger the push.  At full speed on a HARD curve:
-    //   push = 6 * 1.0 * 0.3 = 1.8 road-widths/sec — must counter-steer actively.
+    //   push = 6 * 1.0 * 0.35 = 2.1 road-widths/sec — must counter-steer actively.
 
     const playerSegment = this.road.findSegment(this.playerZ);
     this.playerX -= playerSegment.curve * speedRatio * CENTRIFUGAL * dt;
@@ -352,26 +351,27 @@ export class Game
     // Apply slide to position
     this.playerX += this.slideVelocity * dt;
 
-    // Decay: counter-steer catches the slide much faster than natural decay
+    // Decay: counter-steer catches the slide much faster than natural decay.
+    // Math.exp gives frame-rate-independent exponential decay (correct physics).
     const counterSteering =
       (this.slideVelocity >  0.02 && input.isDown('ArrowLeft')) ||
       (this.slideVelocity < -0.02 && input.isDown('ArrowRight'));
     const decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
-    this.slideVelocity *= Math.max(0, 1 - decayRate * dt);
+    this.slideVelocity *= Math.exp(-decayRate * dt);
 
     // Hard cap — raised to 0.45 during a collision flick so the bounce is visible.
-    const slideCap = this.hitCooldown > 0 ? 0.45 : 0.15;
+    const slideCap = this.hitCooldown > 0 ? 0.45 : 0.5;
     this.slideVelocity = Math.max(-slideCap, Math.min(slideCap, this.slideVelocity));
 
     // ── steerAngle: visual-only, drives car sprite frame selection ─────────
     //
     // Ramps toward ±1 while a direction key is held, springs back to 0 on release.
-    // STEER_RATE = 3.0 means it reaches full lock in ~0.33 seconds.
+    // PLAYER_STEER_RATE = 3.0 means it reaches full lock in ~0.33 seconds.
+    // Math.exp gives frame-rate-independent spring-back (correct physics).
 
-    const STEER_RATE = 3.0;
-    if (input.isDown('ArrowLeft'))        this.steerAngle -= STEER_RATE * dt;
-    else if (input.isDown('ArrowRight'))  this.steerAngle += STEER_RATE * dt;
-    else                                  this.steerAngle *= Math.max(0, 1 - STEER_RATE * dt * 4);
+    if (input.isDown('ArrowLeft'))        this.steerAngle -= PLAYER_STEER_RATE * dt;
+    else if (input.isDown('ArrowRight'))  this.steerAngle += PLAYER_STEER_RATE * dt;
+    else                                  this.steerAngle *= Math.exp(-PLAYER_STEER_RATE * 4 * dt);
     this.steerAngle = Math.max(-1, Math.min(1, this.steerAngle));
 
     // ── Off-road friction ──────────────────────────────────────────────────
@@ -430,8 +430,7 @@ export class Game
   {
     if (Math.abs(this.playerX) < COLLISION_MIN_OFFSET) return;
 
-    const WINDOW = [-1, 0, 1, 2];
-    for (const offset of WINDOW)
+    for (const offset of SEGMENT_WINDOW)
     {
       const idx = ((segIdx + offset) % this.road.count + this.road.count) % this.road.count;
       for (const sprite of this.road.segments[idx].sprites ?? [])
@@ -504,12 +503,11 @@ export class Game
     // The flick must push AWAY from the object (opposite to bumpDir).
 
     const preHitSpeedRatio = this.speed / PLAYER_MAX_SPEED;
-    const steerRatio       = Math.max(0.3, preHitSpeedRatio);
-    const gripFactor       = Math.max(0.68, 1 - preHitSpeedRatio * preHitSpeedRatio * 0.5);
+    const gripFactor       = 1 - preHitSpeedRatio * preHitSpeedRatio * 0.5;
     const bumpSign         = -hit.bumpDir;
 
     // Lateral velocity component moving toward the object this frame
-    const steerApproach = hit.bumpDir * this.steerAngle * PLAYER_STEERING * steerRatio * gripFactor;
+    const steerApproach = hit.bumpDir * this.steerAngle * PLAYER_STEERING * gripFactor;
     const slideApproach = hit.bumpDir * this.slideVelocity;
     const approach      = Math.max(0, steerApproach + slideApproach);
 
