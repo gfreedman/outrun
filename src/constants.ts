@@ -281,6 +281,64 @@ export const SHAKE_CRUNCH_DURATION    = 2.00;
 /** The car never drops below this fraction of max speed from a hit. Law 2. */
 export const HIT_SPEED_FLOOR          = 0.04;   // always keeps 4% — feels alive
 
+// ── Traffic cars ──────────────────────────────────────────────────────────────
+
+/** Number of traffic cars maintained on the road at all times. */
+export const TRAFFIC_COUNT             = 3;
+
+/**
+ * Apparent world-space height of a traffic car (world units).
+ * Calibrated so a car at 10 segs ≈ 88px, at 30 segs ≈ 29px on a 600px canvas.
+ */
+export const TRAFFIC_CAR_WORLD_HEIGHT  = 700;
+
+/** Minimum forward speed for a traffic car (world units / sec ≈ 40 km/h). */
+export const TRAFFIC_SPEED_MIN         = 1200;
+
+/** Maximum forward speed for a traffic car (world units / sec ≈ 180 km/h). */
+export const TRAFFIC_SPEED_MAX         = 5400;
+
+/** Min seconds between lane-weave target changes. */
+export const TRAFFIC_LANE_TIMER_MIN    = 1.5;
+
+/** Max seconds between lane-weave target changes. */
+export const TRAFFIC_LANE_TIMER_MAX    = 4.5;
+
+/** Lateral drift rate toward new lane target (world units / sec). */
+export const TRAFFIC_WEAVE_RATE        = 900;
+
+/** Half-width of traffic car lateral collision hitbox (world units). */
+export const TRAFFIC_HITBOX_X          = 1000;
+
+/**
+ * Depth window (segments) for traffic collision detection.
+ */
+export const TRAFFIC_HITBOX_SEGS       = 5;
+
+/** Speed cap (fraction of PLAYER_MAX_SPEED) immediately after a traffic hit. */
+export const TRAFFIC_HIT_SPEED_CAP     = 0.20;
+
+/** Base lateral flick magnitude for a traffic hit. */
+export const TRAFFIC_HIT_FLICK_BASE    = 0.20;
+
+/** Restitution factor for traffic hit flick. */
+export const TRAFFIC_HIT_FLICK_RESTITUTION = 0.50;
+
+/** Cooldown seconds after traffic hit before next collision registers. */
+export const TRAFFIC_HIT_COOLDOWN      = 1.50;
+
+/** Camera shake duration (seconds) for a traffic hit. */
+export const SHAKE_TRAFFIC_DURATION    = 0.70;
+
+/** Camera shake intensity (max px offset) for a traffic hit. */
+export const SHAKE_TRAFFIC_INTENSITY   = 40;
+
+/** Post-traffic-hit speed recovery boost duration (seconds). */
+export const TRAFFIC_HIT_RECOVERY_TIME = 2.0;
+
+/** Speed recovery boost multiplier after traffic hit. */
+export const TRAFFIC_HIT_RECOVERY_BOOST = 2.0;
+
 // ── Color palette — authentic OutRun / Jake Gordon reference values ───────────
 
 export const COLORS =

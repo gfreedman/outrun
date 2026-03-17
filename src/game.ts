@@ -56,6 +56,12 @@ import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { SpriteLoader } from './sprites';
 import { checkCollisions, getBlockingRadius } from './collision';
+import {
+  TrafficCar,
+  initTraffic,
+  updateTraffic,
+  checkTrafficCollision,
+} from './traffic';
 import
 {
   PLAYER_MAX_SPEED,
@@ -80,6 +86,11 @@ import
   NEAR_MISS_WOBBLE,
   COLLISION_MIN_OFFSET, ROAD_WIDTH,
   COLLISION_WINDOW, MAX_FRAME_DT,
+  TRAFFIC_HIT_SPEED_CAP,
+  TRAFFIC_HIT_FLICK_BASE, TRAFFIC_HIT_FLICK_RESTITUTION,
+  TRAFFIC_HIT_COOLDOWN,
+  SHAKE_TRAFFIC_DURATION, SHAKE_TRAFFIC_INTENSITY,
+  TRAFFIC_HIT_RECOVERY_TIME, TRAFFIC_HIT_RECOVERY_BOOST,
 } from './constants';
 
 // COLLISION_WINDOW imported from constants — see that file for the asymmetry explanation (L5).
@@ -158,6 +169,9 @@ export class Game
   /** Max screen offset in px for current shake event. */
   private shakeIntensity = 0;
 
+  /** Active traffic cars — updated every frame by updateTraffic(). */
+  private trafficCars: TrafficCar[] = [];
+
   /** Timestamp of the previous frame in milliseconds, used to compute dt. */
   private lastTimestamp = 0;
 
@@ -190,7 +204,8 @@ export class Game
       sign:      new SpriteLoader('sprites/assets/sign_sheet.png'),
       house:     new SpriteLoader('sprites/assets/house_sheet.png'),
     });
-    this.input    = new InputManager();
+    this.input       = new InputManager();
+    this.trafficCars = initTraffic(this.road.count);
   }
 
   /** Kicks off the requestAnimationFrame loop. */
@@ -446,6 +461,9 @@ export class Game
     // ── Advance position ───────────────────────────────────────────────────
     // Modulo wrap keeps playerZ inside [0, trackLength) so the road loops.
     this.playerZ = ((this.playerZ + this.speed * dt) % trackLength + trackLength) % trackLength;
+
+    // ── Traffic cars ───────────────────────────────────────────────────────
+    updateTraffic(this.trafficCars, this.playerZ, this.road.count, dt);
   }
 
   // ── Collision ─────────────────────────────────────────────────────────────
@@ -518,7 +536,44 @@ export class Game
     if (!hit && nearMiss)
       this.playerX += nearMiss.wobbleDir * NEAR_MISS_WOBBLE;
 
-    if (!hit) return;
+    // ── Traffic collision (runs whenever not in cooldown, no static hit) ──
+    if (!hit)
+    {
+      const trafficHit = checkTrafficCollision(
+        this.playerX,
+        this.playerZ,
+        this.speed,
+        this.trafficCars,
+        this.road.count,
+      );
+
+      if (trafficHit)
+      {
+        // Hard cap — always slam to TRAFFIC_HIT_SPEED_CAP regardless of closing speed.
+        // The scaled formula produced caps > current speed at medium speeds (no penalty).
+        this.speed = Math.min(this.speed, PLAYER_MAX_SPEED * TRAFFIC_HIT_SPEED_CAP);
+
+        const bumpSign      = -trafficHit.bumpDir;
+        const preHitRatio   = this.speed / PLAYER_MAX_SPEED;
+        const flick         = Math.max(
+          TRAFFIC_HIT_FLICK_BASE,
+          preHitRatio * TRAFFIC_HIT_FLICK_RESTITUTION,
+        );
+        this.slideVelocity  = bumpSign * Math.min(flick, 0.45);
+
+        this.shakeTimer       = SHAKE_TRAFFIC_DURATION;
+        this.shakeIntensity   = SHAKE_TRAFFIC_INTENSITY;
+        this.hitCooldown      = TRAFFIC_HIT_COOLDOWN;
+        this.hitRecoveryTimer = TRAFFIC_HIT_RECOVERY_TIME;
+        this.hitRecoveryBoost = TRAFFIC_HIT_RECOVERY_BOOST;
+
+        if (this.speed > 0)
+          this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * HIT_SPEED_FLOOR);
+
+        this.playerX = Math.max(-2, Math.min(2, this.playerX));
+      }
+      return;
+    }
 
     // ── Compute angle-based flick ─────────────────────────────────────────
     //
@@ -625,6 +680,7 @@ export class Game
       this.speed,
       renderSteer,
       this.jitterY,
+      this.trafficCars,
     );
   }
 }

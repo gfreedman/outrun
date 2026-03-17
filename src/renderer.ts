@@ -42,12 +42,14 @@
  */
 
 import { RoadSegment, SpriteFamily } from './types';
+import { TrafficCar }               from './traffic';
 import
 {
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,
   SEGMENT_LENGTH, COLORS,
   PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
   PARALLAX_SKY, DRAW_DISTANCE,
+  TRAFFIC_CAR_WORLD_HEIGHT,
 } from './constants';
 import
 {
@@ -341,6 +343,14 @@ export class Renderer
   private skyOffset = 0;
 
   /**
+   * Off-screen canvas used to tint traffic car sprites pink.
+   * Fixed 256×256 — created once on first traffic draw and reused every frame.
+   * ctx.filter is silently ignored in some browsers; this approach is guaranteed.
+   */
+  private tintCanvas: HTMLCanvasElement | null = null;
+  private tintCtx:    CanvasRenderingContext2D | null = null;
+
+  /**
    * Creates a Renderer attached to the given canvas and pre-allocates all
    * per-frame reusable buffers so the render loop makes zero heap allocations.
    *
@@ -454,6 +464,7 @@ export class Renderer
     w:            number,
     h:            number,
     horizonY:     number,
+    trafficCars:  readonly TrafficCar[],
   ): void
   {
     const { ctx }  = this;
@@ -700,11 +711,11 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const p              = this.projPool[i];
-      const { seg, sc1, sx1, sy1 } = p;
+      const { seg, sc1, sx1, sy1, sx2, sy2, sw1, sw2 } = p;
 
-      if (!seg.sprites || sy1 < halfH) continue;
+      if (sy1 < halfH) continue;
 
-      for (const si of seg.sprites)
+      for (const si of seg.sprites ?? [])
       {
         // ── C8: screen-space X-cull before any sheet/rect lookup ─────────
         // Compute world→screen X first; skip sprites that are entirely off-screen.
@@ -769,6 +780,69 @@ export class Renderer
         else
         {
           sheet.draw(ctx, rect, drawX, drawY, drawW, drawH);
+        }
+      }
+
+      // ── Traffic cars at this segment depth ──────────────────────────────
+      if (trafficCars.length > 0 && this.carSprites?.isReady())
+      {
+        const trafficSegIdx = seg.index;
+        const trafficRect   = {
+          x: CAR_SPRITE_CENTER * CAR_SPRITE_FRAME_W,
+          y: 0,
+          w: CAR_SPRITE_FRAME_W,
+          h: CAR_SPRITE_FRAME_H,
+        };
+
+        for (const car of trafficCars)
+        {
+          if (Math.floor(car.worldZ / SEGMENT_LENGTH) % segmentCount !== trafficSegIdx)
+            continue;
+
+          // Direct perspective projection from the car's actual world depth.
+          // Linear screen-space interpolation (sy1→sy2) is incorrect because
+          // perspective is non-linear; it causes violent oscillation near boundaries.
+          let carRelZ = car.worldZ - cameraZ;
+          if (carRelZ > totalLen / 2) carRelZ -= totalLen;
+          if (carRelZ <= 0) continue;
+
+          const scCar   = CAMERA_DEPTH / carRelZ;
+          const syCar   = halfH + CAMERA_HEIGHT * scCar * halfH;
+          const carScrX = sx1 + car.worldX * scCar * halfW;
+          if (carScrX < -500 || carScrX > w + 500) continue;
+
+          const sprH = TRAFFIC_CAR_WORLD_HEIGHT * scCar * halfH;
+          if (sprH < 4) continue;
+
+          const sprW  = sprH * (CAR_SPRITE_FRAME_W / CAR_SPRITE_FRAME_H);
+          const drawW = Math.round(sprW);
+          const drawH = Math.round(sprH);
+          const drawX = Math.round(carScrX - sprW / 2);
+          const drawY = Math.round(syCar - sprH);
+
+          // Tint via off-screen canvas — ctx.filter is silently ignored in some
+          // browsers (notably older Safari).  source-atop compositing paints the
+          // pink fill only over the car sprite pixels, leaving transparent areas
+          // untouched so there is no rectangular halo around the car.
+          if (!this.tintCanvas)
+          {
+            this.tintCanvas = document.createElement('canvas');
+            this.tintCanvas.width  = 256;
+            this.tintCanvas.height = 256;
+            this.tintCtx = this.tintCanvas.getContext('2d')!;
+          }
+          const tc = this.tintCtx!;
+          tc.clearRect(0, 0, 256, 256);
+          tc.imageSmoothingEnabled = true;
+          this.carSprites.draw(tc, trafficRect, 0, 0, 256, 256);
+          tc.globalCompositeOperation = 'source-atop';
+          tc.fillStyle = '#FF44CC';   // vivid pink
+          tc.fillRect(0, 0, 256, 256);
+          tc.globalCompositeOperation = 'source-over';
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(this.tintCanvas, 0, 0, 256, 256, drawX, drawY, drawW, drawH);
+          ctx.imageSmoothingEnabled = false;
         }
       }
     }
@@ -1032,6 +1106,7 @@ export class Renderer
     speed:         number,
     steerAngle:    number,
     horizonOffset: number = 0,
+    trafficCars:   readonly TrafficCar[] = [],
   ): void
   {
     const { ctx }  = this;
@@ -1040,7 +1115,7 @@ export class Renderer
     ctx.save();
     ctx.clearRect(0, 0, w, h);
     this.renderSky(w, horizonY, stableHorizonY);
-    this.renderRoad(segments, segmentCount, playerZ, playerX, speed, drawDistance, w, h, horizonY);
+    this.renderRoad(segments, segmentCount, playerZ, playerX, speed, drawDistance, w, h, horizonY, trafficCars);
     this.renderCar(w, h, steerAngle);
     this.renderHUD(w, h, speed);
     ctx.restore();
