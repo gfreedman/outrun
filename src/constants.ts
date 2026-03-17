@@ -296,8 +296,8 @@ export const COLORS =
   ROAD_DARK:    '#888888',
 
   // Rumble strips — the classic red/white alternating OutRun kerbing
-  RUMBLE_RED:   '#CC0000',
-  RUMBLE_WHITE: '#FFFFFF',
+  RUMBLE_RED:   '#C45050',  // faded dusty red (was #CC0000)
+  RUMBLE_WHITE: '#E8E0D8',  // off-white, slightly warm (was #FFFFFF)
 
   // Sand / shoulder — Coconut Beach palette from the Sega System 16 hardware.
   // Two warm alternating tones create the scrolling banding rhythm.

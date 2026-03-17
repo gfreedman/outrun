@@ -872,12 +872,13 @@ export class Road
    * Algorithm:
    *  1. Scan segments looking for the START of a new curve — defined as
    *     |curve| crossing above CURVE_THRESHOLD after a run of straight/gentle road.
-   *  2. At each detected curve-start at index i, plant signs at the same
-   *     three positions as before (i − 3×SPACING, i − 2×SPACING, i − SPACING)
-   *     but on BOTH sides of the road — doubling the count from 3 to 6.
+   *  2. At each detected curve-start at index i, plant SIGN_COUNT signs on the
+   *     outside shoulder at SPACING-segment intervals before the corner apex.
    *  3. The sign type matches the curve direction (TURN_RIGHT / TURN_LEFT).
    *  4. A minimum cooldown prevents double-groups for back-to-back curves.
    *  5. Signs are rendered at 1.5× their default world height for visibility.
+   *  6. Indices wrap modulo track length — corner near track start places its
+   *     early signs at the track end, visible on lap 2+.
    */
   private plantSigns(): void
   {
@@ -885,6 +886,8 @@ export class Road
     const CURVE_THRESHOLD = 1.5;
     /** Segments between each sign in the group. */
     const SPACING         = 16;
+    /** Signs per corner group. */
+    const SIGN_COUNT      = 6;
     /** Minimum segments between groups (avoids re-triggering on a long curve). */
     const GROUP_COOLDOWN  = 110;
     /** WorldX distance from road centre for sign placement (clearly on sand/grass verge). */
@@ -897,8 +900,9 @@ export class Road
 
     let prevAbsCurve  = 0;
     let lastGroupAt   = -GROUP_COOLDOWN;  // segment index of last placed group
+    const total       = this._segments.length;
 
-    for (let i = 0; i < this._segments.length; i++)
+    for (let i = 0; i < total; i++)
     {
       const curve    = this._segments[i].curve;
       const absCurve = Math.abs(curve);
@@ -916,11 +920,7 @@ export class Road
         // Right bend → outside is the left shoulder; left bend → outside is the right.
         const worldX  = isRight ? -SIGN_X : SIGN_X;
 
-        // Always exactly 6 signs. Wrap modulo track length so the first
-        // corner (close to track start) places its early signs at the END
-        // of the track — where the player arrives from on lap 2+.
-        const total = this._segments.length;
-        for (let n = 6; n >= 1; n--)
+        for (let n = SIGN_COUNT; n >= 1; n--)
         {
           const si = ((i - n * SPACING) % total + total) % total;
           plant(this._segments[si], signId, worldX);
