@@ -869,11 +869,10 @@ export class Road
    * Algorithm:
    *  1. Scan segments looking for the START of a new curve — defined as
    *     |curve| crossing above CURVE_THRESHOLD after a run of straight/gentle road.
-   *  2. At each detected curve-start at index i, plant six signs evenly
-   *     spaced at i − 6×SPACING … i − SPACING (48 → 8 segments ahead).
-   *  3. The sign type and side match the curve direction:
-   *       curve > 0 (right) → SIGN_TURN_RIGHT on the right side (+worldX)
-   *       curve < 0 (left)  → SIGN_TURN_LEFT  on the left  side (−worldX)
+   *  2. At each detected curve-start at index i, plant signs at the same
+   *     three positions as before (i − 3×SPACING, i − 2×SPACING, i − SPACING)
+   *     but on BOTH sides of the road — doubling the count from 3 to 6.
+   *  3. The sign type matches the curve direction (TURN_RIGHT / TURN_LEFT).
    *  4. A minimum cooldown prevents double-groups for back-to-back curves.
    *  5. Signs are rendered at 1.5× their default world height for visibility.
    */
@@ -883,8 +882,6 @@ export class Road
     const CURVE_THRESHOLD = 1.5;
     /** Segments between each sign in the group. */
     const SPACING         = 8;
-    /** Number of signs per group (doubled from 3). */
-    const GROUP_SIZE      = 6;
     /** Minimum segments between groups (avoids re-triggering on a long curve). */
     const GROUP_COOLDOWN  = 40;
     /** WorldX distance from road centre for sign placement (clearly on sand/grass verge). */
@@ -916,8 +913,9 @@ export class Road
         // Right bend → outside is the left shoulder; left bend → outside is the right.
         const worldX  = isRight ? -SIGN_X : SIGN_X;
 
-        // Place GROUP_SIZE signs evenly spaced approaching the curve
-        for (let n = GROUP_SIZE; n >= 1; n--)
+        // 6 signs in a row on the outside shoulder — evenly spaced, counting
+        // down from 48 to 8 segments before the corner apex.
+        for (let n = 6; n >= 1; n--)
         {
           const si = i - n * SPACING;
           if (si >= 0)
