@@ -290,7 +290,10 @@ export class Road
     const HH = ROAD_HILL.HIGH;    // 60 — blind crest territory
 
     // ── 1. Launch straight ────────────────────────────────────────────────
-    r(1,  38,  1,    0,   0);             // 40 — build speed, feel the car
+    // 100 segments ensures the first corner trigger lands at seg ~108,
+    // giving all 6 warning signs positive indices (need trigger >= 96 for
+    // SPACING=16 × 6 signs).
+    r(1,  98,  1,    0,   0);             // 100 — build speed, feel the car
 
     // ── 2. Flugplatz — long climbing right sweeper ────────────────────────
     // Feels manageable at first. At full speed it fights you the whole way.
@@ -913,13 +916,14 @@ export class Road
         // Right bend → outside is the left shoulder; left bend → outside is the right.
         const worldX  = isRight ? -SIGN_X : SIGN_X;
 
-        // 6 signs in a row on the outside shoulder — evenly spaced, counting
-        // down from 48 to 8 segments before the corner apex.
+        // Always exactly 6 signs. Wrap modulo track length so the first
+        // corner (close to track start) places its early signs at the END
+        // of the track — where the player arrives from on lap 2+.
+        const total = this._segments.length;
         for (let n = 6; n >= 1; n--)
         {
-          const si = i - n * SPACING;
-          if (si >= 0)
-            plant(this._segments[si], signId, worldX);
+          const si = ((i - n * SPACING) % total + total) % total;
+          plant(this._segments[si], signId, worldX);
         }
 
         lastGroupAt = i;
