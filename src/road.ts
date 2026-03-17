@@ -881,9 +881,9 @@ export class Road
     /** Minimum curve magnitude to trigger warning signs. */
     const CURVE_THRESHOLD = 1.5;
     /** Segments between each sign in the group. */
-    const SPACING         = 4;
+    const SPACING         = 16;
     /** Minimum segments between groups (avoids re-triggering on a long curve). */
-    const GROUP_COOLDOWN  = 40;
+    const GROUP_COOLDOWN  = 110;
     /** WorldX distance from road centre for sign placement (clearly on sand/grass verge). */
     const SIGN_X          = 2500;
 

@@ -476,8 +476,8 @@ export const SIGN_RECTS: Partial<Record<SpriteId, SpriteRect>> =
 /** World-space height of each road sign in world units. */
 export const SIGN_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
 {
-  SIGN_TURN_RIGHT:   900,
-  SIGN_TURN_LEFT:    900,
+  SIGN_TURN_RIGHT:   1800,
+  SIGN_TURN_LEFT:    1800,
 };
 
 // ── Houses and buildings ───────────────────────────────────────────────────────
