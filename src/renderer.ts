@@ -309,9 +309,6 @@ export class Renderer
   /** Number of valid entries in projPool for the current frame. */
   private projCount = 0;
 
-  /** DEBUG: timestamp of last sign-count log. */
-  private _dbgLastLog = 0;
-
   // ── Sky gradient cache ────────────────────────────────────────────────────
   //
   // createLinearGradient() is expensive — cache the result and only
@@ -700,10 +697,6 @@ export class Renderer
     // car which is continuously scaled and benefits from smoothing (L6).
     ctx.imageSmoothingEnabled = false;
 
-    // ── DEBUG: count sign renders (remove when done) ──────────────────────
-    let _dbgSignsRendered = 0;
-    let _dbgSignsSkipped: string[] = [];
-
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const p              = this.projPool[i];
@@ -717,13 +710,6 @@ export class Renderer
         // Compute world→screen X first; skip sprites that are entirely off-screen.
         // 500px margin accommodates the widest sprites (large houses, big boards).
         const sprX = sx1 + si.worldX * sc1 * halfW;
-        if (si.family === 'sign') {
-          const sprH2 = 1800 * (si.scale ?? 1) * sc1 * halfH;
-          if (sprX < -500 || sprX > w + 500) _dbgSignsSkipped.push(`seg?  X-cull sprX=${sprX.toFixed(0)}`);
-          else if (sy1 < halfH) _dbgSignsSkipped.push(`seg?  sy1<halfH sy1=${sy1.toFixed(0)}`);
-          else if (sprH2 < 4) _dbgSignsSkipped.push(`seg?  sprH<4 sprH=${sprH2.toFixed(1)}`);
-          else _dbgSignsRendered++;
-        }
         if (sprX < -500 || sprX > w + 500) continue;
 
         // ── C7: dispatch by pre-classified family — one comparison per level ─
@@ -785,12 +771,6 @@ export class Renderer
           sheet.draw(ctx, rect, drawX, drawY, drawW, drawH);
         }
       }
-    }
-
-    // ── DEBUG log (throttled) ─────────────────────────────────────────────
-    if (!this._dbgLastLog || Date.now() - this._dbgLastLog > 1000) {
-      this._dbgLastLog = Date.now();
-      console.log(`[SIGNS] rendered=${_dbgSignsRendered} skipped=${_dbgSignsSkipped.length}`, _dbgSignsSkipped.slice(0,6));
     }
 
     // Restore smoothing for the car sprite, which is continuously scaled
