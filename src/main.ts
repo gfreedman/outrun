@@ -16,14 +16,29 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 const game   = new Game(canvas);
 
 /**
- * Resizes the canvas to fill the entire browser window.
- * Called on page load and again whenever the user resizes the window.
+ * Maximum pixel-buffer dimensions (L7).
+ *
+ * At 4K (2560×1440) a full-res canvas 2D fill covers 3.7M pixels per frame —
+ * canvas 2D fill cost scales linearly with area.  Capping the pixel buffer at
+ * 1280×720 and stretching via CSS keeps the retro upscale intent while
+ * limiting fill area to ~0.9M pixels regardless of display resolution.
+ */
+const MAX_CANVAS_W = 1280;
+const MAX_CANVAS_H = 720;
+
+/**
+ * Resizes the canvas buffer (capped at 1280×720) and stretches it
+ * via CSS to fill the browser window.
  */
 function resize(): void
 {
-  canvas.width  = window.innerWidth;
-  canvas.height = window.innerHeight;
-  game.resize(window.innerWidth, window.innerHeight);
+  const w = Math.min(window.innerWidth,  MAX_CANVAS_W);
+  const h = Math.min(window.innerHeight, MAX_CANVAS_H);
+  canvas.width        = w;
+  canvas.height       = h;
+  canvas.style.width  = '100vw';
+  canvas.style.height = '100vh';
+  game.resize(w, h);
 }
 
 resize();

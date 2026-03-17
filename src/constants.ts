@@ -133,15 +133,25 @@ export const ROAD_LENGTH = { NONE: 0, SHORT: 25, MEDIUM: 50, LONG: 100 } as cons
  * Horizontal curve intensity values for road sections.
  * Each unit shifts each successive segment a little sideways in the renderer.
  * Accumulated quadratically so even small values produce a visible bend.
+ * Enum (not const object) so switch statements get exhaustiveness checking (L2).
  */
-export const ROAD_CURVE  = { NONE: 0, EASY: 2, MEDIUM: 4, HARD: 6 } as const;
+export enum ROAD_CURVE  { NONE = 0, EASY = 2, MEDIUM = 4, HARD = 6 }
 
 /**
  * Vertical hill height values, in world units total rise/fall for a section.
  * Compared against CAMERA_HEIGHT (1000), so HIGH (60) is a 6% grade — noticeable
  * at close range but gentle at distance, matching OutRun's rolling hills.
+ * Enum (not const object) so switch statements get exhaustiveness checking (L2).
  */
-export const ROAD_HILL   = { NONE: 0, LOW: 20, MEDIUM: 40, HIGH: 60 } as const;
+export enum ROAD_HILL   { NONE = 0, LOW = 20, MEDIUM = 40, HIGH = 60 }
+
+/**
+ * Maximum frame delta-time cap in seconds.
+ * Prevents a huge physics jump if the tab loses focus and returns.
+ * Currently 33 ms → 30 fps floor.  Raising this above ~66 ms (15 fps)
+ * makes centrifugal / slide physics noticeably frame-rate-dependent (L1).
+ */
+export const MAX_FRAME_DT = 1 / 30;   // 33 ms — 30 fps physics floor
 
 /**
  * How hard curves push the player's car outward (centrifugal drift).
@@ -185,6 +195,24 @@ export const DRIFT_CATCH = 10.0;
  * Ready for future sky texture layers; currently drives the skyOffset accumulator.
  */
 export const PARALLAX_SKY   = 0.001;
+
+// ── Collision window ──────────────────────────────────────────────────────────
+
+/**
+ * Segment index offsets scanned around the player each frame for collision
+ * detection and solid-object blocking.
+ *
+ * The window is ASYMMETRIC [-1, 0, 1, 2] — intentionally biased one segment
+ * ahead of the player.  The extra forward segment (+2) catches fast-moving
+ * objects that the player will reach BEFORE the next frame; the backward
+ * segment (-1) catches objects the player may have partially passed this frame.
+ * A symmetric [-2,-1,0,1,2] window would fire collisions on objects already
+ * fully behind the car; a forward-only [0,1,2] window can ghost-pass at high
+ * speed.  Changing this to symmetric is a KNOWN gotcha — do not "fix" (L5).
+ *
+ * Defined here so collision.ts and game.ts always share the same window.
+ */
+export const COLLISION_WINDOW = [-1, 0, 1, 2] as const;
 
 // ── Hit detection — lateral hitbox half-widths (world units) ─────────────────
 export const HITBOX_CACTUS    = 450;

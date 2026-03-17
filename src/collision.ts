@@ -17,6 +17,7 @@ import {
   HITBOX_CACTUS, HITBOX_PALM, HITBOX_BILLBOARD, HITBOX_HOUSE,
   BLOCK_SMACK, BLOCK_HOUSE,
   NEAR_MISS_RATIO, COLLISION_MIN_OFFSET,
+  COLLISION_WINDOW,
 } from './constants';
 
 export type { CollisionClass };
@@ -101,8 +102,7 @@ export function getBlockingRadius(family: SpriteFamily): number
 
 // ── Module-level constants (hoisted to avoid per-frame allocation) ────────────
 
-/** Segment offsets scanned around the player each frame. */
-const SEGMENT_WINDOW = [-1, 0, 1, 2] as const;
+// COLLISION_WINDOW imported from constants — see that file for the asymmetry explanation (L5).
 
 /**
  * Severity rank for each collision class.
@@ -208,7 +208,7 @@ export function checkCollisions(
   let worstHit:      HitResult | null      = null;
   let firstNearMiss: NearMissResult | null = null;
 
-  for (const offset of SEGMENT_WINDOW)
+  for (const offset of COLLISION_WINDOW)
   {
     const idx = ((playerSegIdx + offset) % segmentCount + segmentCount) % segmentCount;
     const { hit, nearMiss } = checkSegmentCollision(playerX, segments[idx]);

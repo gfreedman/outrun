@@ -79,10 +79,10 @@ import
   SHAKE_CRUNCH_INTENSITY, SHAKE_CRUNCH_DURATION,
   NEAR_MISS_WOBBLE,
   COLLISION_MIN_OFFSET, ROAD_WIDTH,
+  COLLISION_WINDOW, MAX_FRAME_DT,
 } from './constants';
 
-/** Segment offsets scanned around the player for collision/blocking. Hoisted to avoid per-frame allocation. */
-const SEGMENT_WINDOW = [-1, 0, 1, 2] as const;
+// COLLISION_WINDOW imported from constants — see that file for the asymmetry explanation (L5).
 
 export class Game
 {
@@ -246,7 +246,7 @@ export class Game
    */
   private loop = (timestamp: number): void =>
   {
-    const dt = Math.min((timestamp - this.lastTimestamp) / 1000, 1 / 30);
+    const dt = Math.min((timestamp - this.lastTimestamp) / 1000, MAX_FRAME_DT);
     this.lastTimestamp = timestamp;
     this.update(dt);
     this.draw();
@@ -441,7 +441,7 @@ export class Game
     this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
 
     // ── Roadside collision ─────────────────────────────────────────────────
-    this.applyCollision(dt);
+    this.updateCollisions(dt);
 
     // ── Advance position ───────────────────────────────────────────────────
     // Modulo wrap keeps playerZ inside [0, trackLength) so the road loops.
@@ -458,7 +458,7 @@ export class Game
   {
     if (Math.abs(this.playerX) < COLLISION_MIN_OFFSET) return;
 
-    for (const offset of SEGMENT_WINDOW)
+    for (const offset of COLLISION_WINDOW)
     {
       const idx = ((segIdx + offset) % this.road.count + this.road.count) % this.road.count;
       for (const sprite of this.road.segments[idx].sprites ?? [])
@@ -481,7 +481,7 @@ export class Game
    * Runs collision detection for the current frame and applies physics effects.
    * Called after playerX and speed are settled for the frame.
    */
-  private applyCollision(dt: number): void
+  private updateCollisions(dt: number): void
   {
     // ── Tick timers ──────────────────────────────────────────────────────
     this.hitCooldown      = Math.max(0, this.hitCooldown      - dt);

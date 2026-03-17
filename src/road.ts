@@ -581,7 +581,7 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, family: 'billboard' as SpriteFamily, worldX });
+      (seg.sprites ??= []).push({ id, family: 'billboard' as SpriteFamily, worldX, scale: 1 });
     };
 
     const BEAGLE:  readonly string[] = ['BILLBOARD_BEAGLE_PETS', 'BILLBOARD_ADOPT_BEAGLE', 'BILLBOARD_BEAGLE_POWER', 'BILLBOARD_LOYAL_FRIENDLY'];
@@ -632,7 +632,7 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, family: 'cookie' as SpriteFamily, worldX });
+      (seg.sprites ??= []).push({ id, family: 'cookie' as SpriteFamily, worldX, scale: 1 });
     };
 
     const POOL: readonly string[] = [
@@ -678,7 +678,7 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, family: 'barney' as SpriteFamily, worldX });
+      (seg.sprites ??= []).push({ id, family: 'barney' as SpriteFamily, worldX, scale: 1 });
     };
 
     const POOL: readonly string[] = [
@@ -722,7 +722,7 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, family: 'big' as SpriteFamily, worldX });
+      (seg.sprites ??= []).push({ id, family: 'big' as SpriteFamily, worldX, scale: 1 });
     };
 
     const POOL: readonly string[] = [
@@ -770,6 +770,12 @@ export class Road
    */
   private plantCactuses(): void
   {
+    // TODO (L10): Cactus is a desert/Southwest biome element — thematically
+    // inconsistent with this Mediterranean coastal track.  Replace with
+    // agave, sea-grape, or bougainvillea if the setting stays Coconut Beach,
+    // OR change the track theme to a desert/Arizona setting where cacti fit.
+    // For now, cactuses remain as an arcade abstraction.
+
     // Mulberry32 PRNG — deterministic, independent seed from palms/billboards.
     const { rand, rInt, pick } = makePRNG(0xBADC0FFE);
 
@@ -883,7 +889,7 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number): void =>
     {
-      (seg.sprites ??= []).push({ id, family: 'sign' as SpriteFamily, worldX });
+      (seg.sprites ??= []).push({ id, family: 'sign' as SpriteFamily, worldX, scale: 1 });
     };
 
     let prevAbsCurve  = 0;
@@ -1049,7 +1055,7 @@ export class Road
 
     const plant = (seg: RoadSegment, id: string, worldX: number, flipX = false): void =>
     {
-      (seg.sprites ??= []).push({ id, family: 'house' as SpriteFamily, worldX, flipX });
+      (seg.sprites ??= []).push({ id, family: 'house' as SpriteFamily, worldX, flipX, scale: 1 });
     };
 
     // Text on facade — left side only, never flip.

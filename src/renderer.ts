@@ -47,7 +47,7 @@ import
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,
   SEGMENT_LENGTH, COLORS,
   PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
-  PARALLAX_SKY,
+  PARALLAX_SKY, DRAW_DISTANCE,
 } from './constants';
 import
 {
@@ -160,6 +160,35 @@ interface HudLayout
   barStride: number;   // barSegW + gap between segments
 }
 
+// ── Helper: fillSegment ───────────────────────────────────────────────────────
+
+/**
+ * Draws one rectangular 7-segment LED bar at the given position.
+ * Module-level to avoid allocating a fresh closure object on each
+ * drawSegDigit() call (~360 closures/sec at 60 fps, 6 calls/frame) (L8).
+ *
+ * @param ctx      - Canvas 2D rendering context.
+ * @param mask     - Bitmask for the current digit (from SEG_DIGIT).
+ * @param bit      - Which bit in mask this segment tests.
+ * @param colorOn  - CSS colour for a lit segment.
+ * @param colorOff - CSS colour for an unlit segment ('' = invisible).
+ * @param rx, ry, rw, rh - Destination rectangle.
+ */
+function fillSegment(
+  ctx:      CanvasRenderingContext2D,
+  mask:     number,
+  bit:      number,
+  colorOn:  string,
+  colorOff: string,
+  rx: number, ry: number, rw: number, rh: number,
+): void
+{
+  const color = (mask >> bit) & 1 ? colorOn : colorOff;
+  if (!color || rw <= 0 || rh <= 0) return;
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
+}
+
 // ── Helper: drawTrapezoid ─────────────────────────────────────────────────────
 
 /**
@@ -242,31 +271,14 @@ function drawSegDigit(
   const g    = 1;      // hard 1-px tip gap — proportional gaps eat the segments at small sizes
   const hw   = dh / 2; // midpoint between top and bottom
 
-  /**
-   * Draws one rectangular segment at the given position.
-   * Picks colorOn if the bit is set in mask, colorOff otherwise.
-   * Skips drawing entirely if the rectangle has zero area.
-   *
-   * @param bit - Which bit in mask this segment corresponds to.
-   * @param rx, ry, rw, rh - Rectangle position and size.
-   */
-  const seg = (bit: number, rx: number, ry: number, rw: number, rh: number): void =>
-  {
-    // Pick colour: lit segments use colorOn, unlit use colorOff.
-    // If colorOff is '' the caller wants unlit segments invisible — skip them.
-    const color = (mask >> bit) & 1 ? colorOn : colorOff;
-    if (!color || rw <= 0 || rh <= 0) return;
-    ctx.fillStyle = color;
-    ctx.fillRect(Math.round(rx), Math.round(ry), Math.round(rw), Math.round(rh));
-  };
-
-  seg(0, x + t + g,  y,              dw - 2*t - 2*g, t);    // a — top horizontal
-  seg(1, x + dw - t, y + t + g,      t,               hw - t - 2*g);  // b — top-right
-  seg(2, x + dw - t, y + hw + g,     t,               hw - t - 2*g);  // c — bot-right
-  seg(3, x + t + g,  y + dh - t,     dw - 2*t - 2*g, t);    // d — bottom horizontal
-  seg(4, x,          y + hw + g,     t,               hw - t - 2*g);  // e — bot-left
-  seg(5, x,          y + t + g,      t,               hw - t - 2*g);  // f — top-left
-  seg(6, x + t + g,  y + hw - t / 2, dw - 2*t - 2*g, t);    // g — middle horizontal
+  // fillSegment is module-level to avoid per-call closure allocation (L8).
+  fillSegment(ctx, mask, 0, colorOn, colorOff, x + t + g,  y,              dw - 2*t - 2*g, t);           // a — top horizontal
+  fillSegment(ctx, mask, 1, colorOn, colorOff, x + dw - t, y + t + g,      t,               hw - t - 2*g); // b — top-right
+  fillSegment(ctx, mask, 2, colorOn, colorOff, x + dw - t, y + hw + g,     t,               hw - t - 2*g); // c — bot-right
+  fillSegment(ctx, mask, 3, colorOn, colorOff, x + t + g,  y + dh - t,     dw - 2*t - 2*g, t);           // d — bottom horizontal
+  fillSegment(ctx, mask, 4, colorOn, colorOff, x,           y + hw + g,     t,               hw - t - 2*g); // e — bot-left
+  fillSegment(ctx, mask, 5, colorOn, colorOff, x,           y + t + g,      t,               hw - t - 2*g); // f — top-left
+  fillSegment(ctx, mask, 6, colorOn, colorOff, x + t + g,  y + hw - t / 2, dw - 2*t - 2*g, t);           // g — middle horizontal
 }
 
 // ── Renderer ──────────────────────────────────────────────────────────────────
@@ -359,7 +371,9 @@ export class Renderer
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
-    this.projPool = Array.from({ length: 300 }, () => (
+    // Size is DRAW_DISTANCE + 100 — 100 slots of headroom beyond the draw
+    // distance so hill occlusion never over-fills the pool (L3).
+    this.projPool = Array.from({ length: DRAW_DISTANCE + 100 }, () => (
     {
       seg: null! as RoadSegment,
       sc1: 0,
@@ -677,6 +691,12 @@ export class Renderer
     //   canvas bounds automatically, and a tiny amount of crown peeking above
     //   the horizon on distant trees is far less jarring than sliced stumps.
 
+    // Roadside sprites are pixel-art sourced from hardware-palette originals.
+    // Bilinear smoothing gives them a watercolour softness instead of crisp
+    // pixel fidelity.  Disable for the entire Pass 3; re-enable after for the
+    // car which is continuously scaled and benefits from smoothing (L6).
+    ctx.imageSmoothingEnabled = false;
+
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const p              = this.projPool[i];
@@ -716,7 +736,7 @@ export class Renderer
         if (!sheet?.isReady()) continue;
         if (!rect || !worldH) continue;
 
-        const sprH = worldH * (si.scale ?? 1) * sc1 * halfH;
+        const sprH = worldH * si.scale! * sc1 * halfH;
         if (sprH < 4) continue;   // C8: raised from 2 — tiny sprites are invisible
 
         const sprW = sprH * (rect.w / rect.h) * (si.stretchX ?? 1);
@@ -737,10 +757,6 @@ export class Renderer
         const drawW = Math.round(sprW);
         const drawH = Math.round(sprH);
 
-        // Skip bilinear smoothing for tiny sprites (< 20px tall) — they are
-        // distant silhouettes where smoothing blurs more than it helps.
-        ctx.imageSmoothingEnabled = sprH > 20;
-
         if (si.flipX)
         {
           // Mirror horizontally using setTransform — avoids the save/restore
@@ -757,7 +773,8 @@ export class Renderer
       }
     }
 
-    // Restore smoothing enabled for the car and HUD passes that follow.
+    // Restore smoothing for the car sprite, which is continuously scaled
+    // and benefits from bilinear filtering (L6).
     ctx.imageSmoothingEnabled = true;
   }
 
