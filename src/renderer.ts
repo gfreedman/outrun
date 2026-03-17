@@ -51,7 +51,7 @@ import
 } from './constants';
 import
 {
-  SpriteLoader, SpriteId,
+  SpriteLoader, SpriteSheetMap, SpriteId,
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
   CAR_PIVOT_OFFSETS,
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
@@ -332,39 +332,30 @@ export class Renderer
    * Creates a Renderer attached to the given canvas and pre-allocates all
    * per-frame reusable buffers so the render loop makes zero heap allocations.
    *
-   * @param canvas           - The HTML canvas element to draw into.
-   * @param carSprites       - Loader for the car sprite sheet.
-   * @param roadSprites      - Loader for the palm/roadside sprite sheet.
-   * @param billboardSprites - Loader for the billboard sprite sheet.
-   * @param cactusSprites    - Loader for the cactus sprite sheet.
+   * @param canvas  - The HTML canvas element to draw into.
+   * @param sprites - Named sprite sheet map.  Any omitted sheets are treated
+   *                  as null — sprites of that family are silently skipped.
+   *                  Using a named map prevents silent mis-ordering bugs when
+   *                  sheets are added or rearranged (M9).
    */
   constructor(
-    canvas: HTMLCanvasElement,
-    carSprites:       SpriteLoader | null = null,
-    roadSprites:      SpriteLoader | null = null,
-    billboardSprites: SpriteLoader | null = null,
-    cactusSprites:    SpriteLoader | null = null,
-    cookieSprites:    SpriteLoader | null = null,
-    barneySprites:    SpriteLoader | null = null,
-    bigSprites:       SpriteLoader | null = null,
-    shrubSprites:     SpriteLoader | null = null,
-    signSprites:      SpriteLoader | null = null,
-    houseSprites:     SpriteLoader | null = null,
+    canvas:  HTMLCanvasElement,
+    sprites: Partial<SpriteSheetMap> = {},
   )
   {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get 2D context');
     this.ctx              = ctx;
-    this.carSprites       = carSprites;
-    this.roadSprites      = roadSprites;
-    this.billboardSprites = billboardSprites;
-    this.cactusSprites    = cactusSprites;
-    this.cookieSprites    = cookieSprites;
-    this.barneySprites    = barneySprites;
-    this.bigSprites       = bigSprites;
-    this.shrubSprites     = shrubSprites;
-    this.signSprites      = signSprites;
-    this.houseSprites     = houseSprites;
+    this.carSprites       = sprites.car       ?? null;
+    this.roadSprites      = sprites.road      ?? null;
+    this.billboardSprites = sprites.billboard ?? null;
+    this.cactusSprites    = sprites.cactus    ?? null;
+    this.cookieSprites    = sprites.cookie    ?? null;
+    this.barneySprites    = sprites.barney    ?? null;
+    this.bigSprites       = sprites.big       ?? null;
+    this.shrubSprites     = sprites.shrub     ?? null;
+    this.signSprites      = sprites.sign      ?? null;
+    this.houseSprites     = sprites.house     ?? null;
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
@@ -554,55 +545,114 @@ export class Renderer
       }
     }
 
-    // ── Pass 2: render back-to-front (painter's algorithm) ────────────────
+    // ── Pass 2: render back-to-front — five batched colour groups ─────────
+    //
+    // Instead of one beginPath/fill per trapezoid (~1 000+ API calls/frame),
+    // we group all trapezoids of the same colour into a single batched path.
+    // The sub-passes are ordered so far geometry is always under near geometry
+    // even though we now draw each colour in a separate sweep:
+    //
+    //   A. Grass fillRects  — per-segment, but cheapest call type; no change
+    //   B. Road surface     — one batch (uniform #888888 across all segments)
+    //   C. Rumble red       — one batch (alternating band 0)
+    //   D. Rumble white     — one batch (alternating band 1)
+    //   E. Lane dashes      — one batch (COLORS.LANE segments only)
+    //   F. Edge track marks — one batch (white, on lane segments only)
+    //
+    // The trapezoids within each batch don't overlap in screen space (Pass 1
+    // maxy occlusion prevents it), so painter order within a batch is irrelevant.
 
+    // ── A. Grass ───────────────────────────────────────────────────────────
     for (let i = this.projCount - 1; i >= 0; i--)
     {
-      const p                                    = this.projPool[i];
-      const { seg, sc1, sx1, sy1, sw1, sx2, sy2, sw2 } = p;
-
-      if (sy2 >= sy1) continue;   // degenerate segment — skip
-
-      const { color } = seg;
-
-      // Full-width grass band — only draw SAND_DARK strips; the solid background
-      // fill above already covers SAND_LIGHT, saving ~half the grass fillRects.
-      if (color.grass !== COLORS.SAND_LIGHT)
+      const { sy1, sy2, seg } = this.projPool[i];
+      if (sy2 >= sy1) continue;
+      if (seg.color.grass !== COLORS.SAND_LIGHT)
       {
-        ctx.fillStyle = color.grass;
+        ctx.fillStyle = seg.color.grass;
         ctx.fillRect(0, sy2, w, sy1 - sy2);
       }
-
-      // Asphalt road surface
-      drawTrapezoid(ctx, sx1, sy1, sw1, sx2, sy2, sw2, color.road);
-
-      // Rumble strips — narrow kerb bands centred at the road edge.
-      // Each strip is ~9% of road half-width (straddles the asphalt/grass boundary).
-      // color.rumble alternates red/white every 8 segments — the classic OutRun kerbing.
-      const rw1 = sw1 * 0.09;
-      const rw2 = sw2 * 0.09;
-      drawTrapezoid(ctx, sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2, color.rumble);
-      drawTrapezoid(ctx, sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2, color.rumble);
-
-      // Lane markings — only drawn on alternating "dash" segments
-      if (color.lane)
-      {
-        const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
-        const lw2 = sw2 * 0.06, lo2 = sw2 * 0.33;
-        drawTrapezoid(ctx, sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2, color.lane);
-        drawTrapezoid(ctx, sx1 + lo1, sy1, lw1, sx2 + lo2, sy2, lw2, color.lane);
-
-        const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
-        const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
-        const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
-        const enW2 = sw2 * 0.020, enO2 = sw2 * 0.790;
-        drawTrapezoid(ctx, sx1 - etO1, sy1, etW1, sx2 - etO2, sy2, etW2, '#FFFFFF');
-        drawTrapezoid(ctx, sx1 - enO1, sy1, enW1, sx2 - enO2, sy2, enW2, '#FFFFFF');
-        drawTrapezoid(ctx, sx1 + etO1, sy1, etW1, sx2 + etO2, sy2, etW2, '#FFFFFF');
-        drawTrapezoid(ctx, sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2, '#FFFFFF');
-      }
-
     }
+
+    // Helper: add one trapezoid subpath into the currently open path.
+    const addTrap = (x1: number, y1: number, w1: number,
+                     x2: number, y2: number, w2: number): void =>
+    {
+      ctx.moveTo(x1 - w1, y1);
+      ctx.lineTo(x1 + w1, y1);
+      ctx.lineTo(x2 + w2, y2);
+      ctx.lineTo(x2 - w2, y2);
+      ctx.closePath();
+    };
+
+    // ── B. Road surface ────────────────────────────────────────────────────
+    ctx.fillStyle = COLORS.ROAD_DARK;   // ROAD_LIGHT === ROAD_DARK, one uniform grey
+    ctx.beginPath();
+    for (let i = this.projCount - 1; i >= 0; i--)
+    {
+      const { sx1, sy1, sw1, sx2, sy2, sw2 } = this.projPool[i];
+      if (sy2 >= sy1) continue;
+      addTrap(sx1, sy1, sw1, sx2, sy2, sw2);
+    }
+    ctx.fill();
+
+    // ── C. Rumble red ──────────────────────────────────────────────────────
+    ctx.fillStyle = COLORS.RUMBLE_RED;
+    ctx.beginPath();
+    for (let i = this.projCount - 1; i >= 0; i--)
+    {
+      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
+      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_RED) continue;
+      const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
+      addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
+      addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
+    }
+    ctx.fill();
+
+    // ── D. Rumble white ────────────────────────────────────────────────────
+    ctx.fillStyle = COLORS.RUMBLE_WHITE;
+    ctx.beginPath();
+    for (let i = this.projCount - 1; i >= 0; i--)
+    {
+      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
+      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_WHITE) continue;
+      const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
+      addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
+      addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
+    }
+    ctx.fill();
+
+    // ── E. Lane dashes ─────────────────────────────────────────────────────
+    ctx.fillStyle = COLORS.LANE;
+    ctx.beginPath();
+    for (let i = this.projCount - 1; i >= 0; i--)
+    {
+      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
+      if (sy2 >= sy1 || !seg.color.lane) continue;
+      const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
+      const lw2 = sw2 * 0.06, lo2 = sw2 * 0.33;
+      addTrap(sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2);
+      addTrap(sx1 + lo1, sy1, lw1, sx2 + lo2, sy2, lw2);
+    }
+    ctx.fill();
+
+    // ── F. Edge track marks (white) ────────────────────────────────────────
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    for (let i = this.projCount - 1; i >= 0; i--)
+    {
+      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
+      if (sy2 >= sy1 || !seg.color.lane) continue;
+      const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
+      const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
+      const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
+      const enW2 = sw2 * 0.020, enO2 = sw2 * 0.790;
+      addTrap(sx1 - etO1, sy1, etW1, sx2 - etO2, sy2, etW2);
+      addTrap(sx1 - enO1, sy1, enW1, sx2 - enO2, sy2, enW2);
+      addTrap(sx1 + etO1, sy1, etW1, sx2 + etO2, sy2, etW2);
+      addTrap(sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2);
+    }
+    ctx.fill();
 
     // ── Pass 3: roadside sprites ───────────────────────────────────────────
     //

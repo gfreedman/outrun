@@ -244,7 +244,7 @@ export const HIT_CRUNCH_RECOVERY_TIME  = 2.0;
 // ── Camera shake ──────────────────────────────────────────────────────────────
 export const SHAKE_GLANCE_INTENSITY   = 8;      // max screen offset in px
 export const SHAKE_GLANCE_DURATION    = 0.15;
-export const SHAKE_SMACK_INTENSITY    = 12;
+export const SHAKE_SMACK_INTENSITY    = 28;
 export const SHAKE_SMACK_DURATION     = 0.50;
 export const SHAKE_CRUNCH_INTENSITY   = 18;
 export const SHAKE_CRUNCH_DURATION    = 2.00;

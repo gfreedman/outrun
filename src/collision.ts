@@ -14,7 +14,7 @@
 import { CollisionClass, RoadSegment, SpriteFamily } from './types';
 import {
   ROAD_WIDTH,
-  HITBOX_CACTUS, HITBOX_PALM, HITBOX_HOUSE,
+  HITBOX_CACTUS, HITBOX_PALM, HITBOX_BILLBOARD, HITBOX_HOUSE,
   BLOCK_SMACK, BLOCK_HOUSE,
   NEAR_MISS_RATIO, COLLISION_MIN_OFFSET,
 } from './constants';
@@ -39,6 +39,25 @@ const FAMILY_COLLISION_CLASS: Record<SpriteFamily, CollisionClass> =
   shrub:     'ghost',
   sign:      'ghost',
   house:     'crunch',
+};
+
+/**
+ * Maps sprite family to its lateral detection hitbox (world units).
+ * Billboards use HITBOX_BILLBOARD (700) — wider than palms (550) because the
+ * sign face extends further from the post.  HITBOX_BILLBOARD was previously
+ * defined but unconnected; this table makes it active (M8).
+ */
+const FAMILY_HITBOX_RADIUS: Record<SpriteFamily, number> =
+{
+  palm:      HITBOX_PALM,
+  billboard: HITBOX_BILLBOARD,   // 700 > 550 — wider than a palm trunk
+  cookie:    HITBOX_PALM,
+  barney:    HITBOX_PALM,
+  big:       HITBOX_PALM,
+  cactus:    HITBOX_CACTUS,
+  shrub:     0,
+  sign:      0,
+  house:     HITBOX_HOUSE,
 };
 
 /** Maps sprite family to its physical blocking radius (world units). */
@@ -147,7 +166,7 @@ export function checkSegmentCollision(
     const cls = FAMILY_COLLISION_CLASS[sprite.family];
     if (cls === 'ghost') continue;
 
-    const radius   = getHitboxRadius(cls);
+    const radius   = FAMILY_HITBOX_RADIUS[sprite.family];
     const delta    = Math.abs(playerWorldX - sprite.worldX);
     const sameSide = Math.sign(playerWorldX) === Math.sign(sprite.worldX);
 

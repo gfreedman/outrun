@@ -23,8 +23,7 @@ function resize(): void
 {
   canvas.width  = window.innerWidth;
   canvas.height = window.innerHeight;
-  game.w = window.innerWidth;
-  game.h = window.innerHeight;
+  game.resize(window.innerWidth, window.innerHeight);
 }
 
 resize();

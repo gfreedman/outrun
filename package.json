@@ -2,6 +2,7 @@
   "name": "outrun",
   "version": "1.0.0",
   "scripts": {
+    "prebuild": "tsx scripts/generate-road.ts",
     "dev": "esbuild src/main.ts --bundle --outfile=dist/script.js --sourcemap --watch",
     "build": "esbuild src/main.ts --bundle --outfile=dist/script.js --minify",
     "test": "vitest",
@@ -11,6 +12,7 @@
   "devDependencies": {
     "esbuild": "^0.25.0",
     "husky": "^9.1.7",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

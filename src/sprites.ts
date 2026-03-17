@@ -297,6 +297,29 @@ export const BIG_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
   BIG_WRESTLING:           5600,
 };
 
+// ── SpriteSheetMap ────────────────────────────────────────────────────────────
+
+/**
+ * Named map of all sprite sheets the Renderer can accept.
+ * Pass a Partial<SpriteSheetMap> to the Renderer constructor — any omitted
+ * sheets are treated as null (sprites of that type silently not drawn).
+ * Using a named map instead of 10 positional parameters prevents silent
+ * mis-ordering bugs when sheets are added or rearranged.
+ */
+export interface SpriteSheetMap
+{
+  car:       SpriteLoader;
+  road:      SpriteLoader;
+  billboard: SpriteLoader;
+  cactus:    SpriteLoader;
+  cookie:    SpriteLoader;
+  barney:    SpriteLoader;
+  big:       SpriteLoader;
+  shrub:     SpriteLoader;
+  sign:      SpriteLoader;
+  house:     SpriteLoader;
+}
+
 // ── Loader ────────────────────────────────────────────────────────────────────
 
 /**
@@ -325,7 +348,7 @@ export class SpriteLoader
     {
       const img    = new Image();
       img.onload   = () => { this.img = img; resolve(); };
-      img.onerror  = reject;
+      img.onerror  = (e) => { console.error(`SpriteLoader: failed to load "${src}"`, e); reject(e); };
       img.src      = src;
     });
   }

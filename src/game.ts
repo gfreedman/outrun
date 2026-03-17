@@ -51,6 +51,7 @@
  */
 
 import { Road }         from './road';
+import { ROAD_DATA }   from './road-data';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { SpriteLoader } from './sprites';
@@ -176,18 +177,19 @@ export class Game
    */
   constructor(canvas: HTMLCanvasElement)
   {
-    const carSprites       = new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png');
-    const roadSprites      = new SpriteLoader('sprites/assets/palm_sheet.png');
-    const billboardSprites = new SpriteLoader('sprites/assets/billboard_sheet.png');
-    const cactusSprites    = new SpriteLoader('sprites/assets/cactus_sheet.png');
-    const cookieSprites    = new SpriteLoader('sprites/assets/cookie_sheet.png');
-    const barneySprites    = new SpriteLoader('sprites/assets/barney_sheet.png');
-    const bigSprites       = new SpriteLoader('sprites/assets/big_sheet.png');
-    const shrubSprites     = new SpriteLoader('sprites/assets/shrub_sheet.png');
-    const signSprites      = new SpriteLoader('sprites/assets/sign_sheet.png');
-    const houseSprites     = new SpriteLoader('sprites/assets/house_sheet.png');
-    this.road     = new Road();
-    this.renderer = new Renderer(canvas, carSprites, roadSprites, billboardSprites, cactusSprites, cookieSprites, barneySprites, bigSprites, shrubSprites, signSprites, houseSprites);
+    this.road     = Road.fromData(ROAD_DATA);
+    this.renderer = new Renderer(canvas, {
+      car:       new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
+      road:      new SpriteLoader('sprites/assets/palm_sheet.png'),
+      billboard: new SpriteLoader('sprites/assets/billboard_sheet.png'),
+      cactus:    new SpriteLoader('sprites/assets/cactus_sheet.png'),
+      cookie:    new SpriteLoader('sprites/assets/cookie_sheet.png'),
+      barney:    new SpriteLoader('sprites/assets/barney_sheet.png'),
+      big:       new SpriteLoader('sprites/assets/big_sheet.png'),
+      shrub:     new SpriteLoader('sprites/assets/shrub_sheet.png'),
+      sign:      new SpriteLoader('sprites/assets/sign_sheet.png'),
+      house:     new SpriteLoader('sprites/assets/house_sheet.png'),
+    });
     this.input    = new InputManager();
   }
 
@@ -207,6 +209,20 @@ export class Game
     cancelAnimationFrame(this.rafId);
     // Reset to 0 so start() can safely restart the loop later.
     this.rafId = 0;
+  }
+
+  /**
+   * Updates the canvas logical dimensions atomically.
+   * Call this from the window resize handler instead of setting w/h directly,
+   * so any future per-resize work (e.g. notifying the renderer) can be added here.
+   *
+   * @param w - New canvas CSS-pixel width.
+   * @param h - New canvas CSS-pixel height.
+   */
+  resize(w: number, h: number): void
+  {
+    this.w = w;
+    this.h = h;
   }
 
   /**
@@ -230,7 +246,7 @@ export class Game
    */
   private loop = (timestamp: number): void =>
   {
-    const dt = Math.min((timestamp - this.lastTimestamp) / 1000, 0.05);
+    const dt = Math.min((timestamp - this.lastTimestamp) / 1000, 1 / 30);
     this.lastTimestamp = timestamp;
     this.update(dt);
     this.draw();
@@ -483,7 +499,7 @@ export class Game
     // Decay post-hit recovery boost when timer expires
     if (this.hitRecoveryTimer <= 0) this.hitRecoveryBoost = 1.0;
 
-    const segIdx = Math.floor(this.playerZ / SEGMENT_LENGTH) % this.road.count;
+    const segIdx = this.road.findSegmentIndex(this.playerZ);
 
     // ── ALWAYS block solid objects (prevents phasing through palms/houses) ─
     this.blockSolidObjects(segIdx);
