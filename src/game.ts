@@ -194,6 +194,7 @@ export class Game
     this.road     = Road.fromData(ROAD_DATA);
     this.renderer = new Renderer(canvas, {
       car:       new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
+      yellowCar: new SpriteLoader('sprites/assets/cars/yellow_car_sprites.png'),
       road:      new SpriteLoader('sprites/assets/palm_sheet.png'),
       billboard: new SpriteLoader('sprites/assets/billboard_sheet.png'),
       cactus:    new SpriteLoader('sprites/assets/cactus_sheet.png'),
@@ -399,11 +400,14 @@ export class Game
     const counterSteering =
       (this.slideVelocity >  0.02 && input.isDown('ArrowLeft')) ||
       (this.slideVelocity < -0.02 && input.isDown('ArrowRight'));
-    const decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
+    // During a hit cooldown, slow the natural decay so the bounce travels further.
+    // Counter-steer still catches it — but the player has to actually work for it.
+    let decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
+    if (this.hitCooldown > 0) decayRate = Math.min(decayRate, 2.5);
     this.slideVelocity *= Math.exp(-decayRate * dt);
 
-    // Hard cap — raised to 0.45 during a collision flick so the bounce is visible.
-    const slideCap = this.hitCooldown > 0 ? 0.45 : 0.5;
+    // Raise cap during a collision so the full flick can apply.
+    const slideCap = this.hitCooldown > 0 ? 0.75 : 0.5;
     this.slideVelocity = Math.max(-slideCap, Math.min(slideCap, this.slideVelocity));
 
     // ── steerAngle: visual-only, drives car sprite frame selection ─────────
@@ -437,8 +441,12 @@ export class Game
       if (input.isDown('ArrowUp'))
         this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * 0.05);
       this.offRoadRecovery  = 0;
-      // Random horizon jitter simulates rough grass terrain — only when moving
-      this.jitterY = this.speed > 0 ? (Math.random() - 0.5) * 8 : 0;
+      // Smooth terrain jitter: lerp toward a new random target each frame.
+      // Blending at rate 8 means ~12% progress per frame at 60 fps —
+      // large jumps are dampened over ~6 frames, producing a rolling-wave feel
+      // instead of the frame-rate-speed noise the raw random produced.
+      const jitterTarget = this.speed > 0 ? (Math.random() - 0.5) * 10 : 0;
+      this.jitterY += (jitterTarget - this.jitterY) * (1 - Math.exp(-8 * dt));
     }
     else
     {
@@ -450,7 +458,9 @@ export class Game
         const recoveryMax = PLAYER_MAX_SPEED * (OFFROAD_MAX_RATIO + (1 - OFFROAD_MAX_RATIO) * this.offRoadRecovery);
         this.speed = Math.min(this.speed, recoveryMax);
       }
-      this.jitterY = 0;
+      // Decay smoothly to zero when back on asphalt — avoids an instant snap
+      // from whatever the last grass jitter value was.
+      this.jitterY *= Math.exp(-15 * dt);
     }
 
     this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
@@ -549,17 +559,18 @@ export class Game
 
       if (trafficHit)
       {
+        // Capture ratio BEFORE capping speed — faster approach = bigger flick.
+        const preHitRatio   = this.speed / PLAYER_MAX_SPEED;
+
         // Hard cap — always slam to TRAFFIC_HIT_SPEED_CAP regardless of closing speed.
-        // The scaled formula produced caps > current speed at medium speeds (no penalty).
         this.speed = Math.min(this.speed, PLAYER_MAX_SPEED * TRAFFIC_HIT_SPEED_CAP);
 
         const bumpSign      = -trafficHit.bumpDir;
-        const preHitRatio   = this.speed / PLAYER_MAX_SPEED;
         const flick         = Math.max(
           TRAFFIC_HIT_FLICK_BASE,
           preHitRatio * TRAFFIC_HIT_FLICK_RESTITUTION,
         );
-        this.slideVelocity  = bumpSign * Math.min(flick, 0.45);
+        this.slideVelocity  = bumpSign * Math.min(flick, 0.75);
 
         this.shakeTimer       = SHAKE_TRAFFIC_DURATION;
         this.shakeIntensity   = SHAKE_TRAFFIC_INTENSITY;
@@ -569,6 +580,11 @@ export class Game
 
         if (this.speed > 0)
           this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * HIT_SPEED_FLOOR);
+
+        // Kick the traffic car away — same direction as player bounced, but mirrored.
+        // bumpDir +1 = car was to the RIGHT → player bounces left, car flies right.
+        trafficHit.hitCar.hitVelX   = trafficHit.bumpDir * 4500;
+        trafficHit.hitCar.spinAngle = 0;
 
         this.playerX = Math.max(-2, Math.min(2, this.playerX));
       }

@@ -45,6 +45,13 @@ export const CAR_SPRITE_FRAME_H = 149;   // pixels per frame
 export const CAR_SPRITE_TOTAL   = 37;    // total frames in the strip
 export const CAR_SPRITE_CENTER  = 18;    // index of the straight-ahead frame
 
+// ── Yellow rival car sprite sheet (traffic cars) ──────────────────────────────
+// Extracted from yellow.png — 16 steering frames, 4× upscaled from 183×37 source.
+export const YELLOW_CAR_FRAME_W = 302;   // pixels per frame
+export const YELLOW_CAR_FRAME_H = 148;   // pixels per frame
+export const YELLOW_CAR_FRAMES  = 1;     // single straight-ahead frame
+export const YELLOW_CAR_CENTER  = 0;     // index of the straight-ahead frame
+
 /**
  * Returns the source rectangle for a given frame index.
  * Clamps index into the valid range [0, 36] so out-of-bounds calls are safe.
@@ -308,16 +315,17 @@ export const BIG_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
  */
 export interface SpriteSheetMap
 {
-  car:       SpriteLoader;
-  road:      SpriteLoader;
-  billboard: SpriteLoader;
-  cactus:    SpriteLoader;
-  cookie:    SpriteLoader;
-  barney:    SpriteLoader;
-  big:       SpriteLoader;
-  shrub:     SpriteLoader;
-  sign:      SpriteLoader;
-  house:     SpriteLoader;
+  car:        SpriteLoader;
+  yellowCar:  SpriteLoader;
+  road:       SpriteLoader;
+  billboard:  SpriteLoader;
+  cactus:     SpriteLoader;
+  cookie:     SpriteLoader;
+  barney:     SpriteLoader;
+  big:        SpriteLoader;
+  shrub:      SpriteLoader;
+  sign:       SpriteLoader;
+  house:      SpriteLoader;
 }
 
 // ── Loader ────────────────────────────────────────────────────────────────────

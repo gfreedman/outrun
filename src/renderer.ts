@@ -55,6 +55,7 @@ import
 {
   SpriteLoader, SpriteSheetMap, SpriteId,
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
+  YELLOW_CAR_FRAME_W, YELLOW_CAR_FRAME_H, YELLOW_CAR_CENTER,
   CAR_PIVOT_OFFSETS,
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
   BILLBOARD_RECTS, BILLBOARD_WORLD_HEIGHT,
@@ -342,13 +343,7 @@ export class Renderer
    */
   private skyOffset = 0;
 
-  /**
-   * Off-screen canvas used to tint traffic car sprites pink.
-   * Fixed 256×256 — created once on first traffic draw and reused every frame.
-   * ctx.filter is silently ignored in some browsers; this approach is guaranteed.
-   */
-  private tintCanvas: HTMLCanvasElement | null = null;
-  private tintCtx:    CanvasRenderingContext2D | null = null;
+  private yellowCarSprites: SpriteLoader | null = null;
 
   /**
    * Creates a Renderer attached to the given canvas and pre-allocates all
@@ -369,6 +364,7 @@ export class Renderer
     if (!ctx) throw new Error('Could not get 2D context');
     this.ctx              = ctx;
     this.carSprites       = sprites.car       ?? null;
+    this.yellowCarSprites = sprites.yellowCar ?? null;
     this.roadSprites      = sprites.road      ?? null;
     this.billboardSprites = sprites.billboard ?? null;
     this.cactusSprites    = sprites.cactus    ?? null;
@@ -784,14 +780,14 @@ export class Renderer
       }
 
       // ── Traffic cars at this segment depth ──────────────────────────────
-      if (trafficCars.length > 0 && this.carSprites?.isReady())
+      if (trafficCars.length > 0 && this.yellowCarSprites?.isReady())
       {
         const trafficSegIdx = seg.index;
-        const trafficRect   = {
-          x: CAR_SPRITE_CENTER * CAR_SPRITE_FRAME_W,
+        const yellowRect    = {
+          x: YELLOW_CAR_CENTER * YELLOW_CAR_FRAME_W,
           y: 0,
-          w: CAR_SPRITE_FRAME_W,
-          h: CAR_SPRITE_FRAME_H,
+          w: YELLOW_CAR_FRAME_W,
+          h: YELLOW_CAR_FRAME_H,
         };
 
         for (const car of trafficCars)
@@ -800,8 +796,6 @@ export class Renderer
             continue;
 
           // Direct perspective projection from the car's actual world depth.
-          // Linear screen-space interpolation (sy1→sy2) is incorrect because
-          // perspective is non-linear; it causes violent oscillation near boundaries.
           let carRelZ = car.worldZ - cameraZ;
           if (carRelZ > totalLen / 2) carRelZ -= totalLen;
           if (carRelZ <= 0) continue;
@@ -814,34 +808,22 @@ export class Renderer
           const sprH = TRAFFIC_CAR_WORLD_HEIGHT * scCar * halfH;
           if (sprH < 4) continue;
 
-          const sprW  = sprH * (CAR_SPRITE_FRAME_W / CAR_SPRITE_FRAME_H);
+          const sprW  = sprH * (YELLOW_CAR_FRAME_W / YELLOW_CAR_FRAME_H);
           const drawW = Math.round(sprW);
           const drawH = Math.round(sprH);
           const drawX = Math.round(carScrX - sprW / 2);
           const drawY = Math.round(syCar - sprH);
 
-          // Tint via off-screen canvas — ctx.filter is silently ignored in some
-          // browsers (notably older Safari).  source-atop compositing paints the
-          // pink fill only over the car sprite pixels, leaving transparent areas
-          // untouched so there is no rectangular halo around the car.
-          if (!this.tintCanvas)
-          {
-            this.tintCanvas = document.createElement('canvas');
-            this.tintCanvas.width  = 256;
-            this.tintCanvas.height = 256;
-            this.tintCtx = this.tintCanvas.getContext('2d')!;
-          }
-          const tc = this.tintCtx!;
-          tc.clearRect(0, 0, 256, 256);
-          tc.imageSmoothingEnabled = true;
-          this.carSprites.draw(tc, trafficRect, 0, 0, 256, 256);
-          tc.globalCompositeOperation = 'source-atop';
-          tc.fillStyle = '#FF44CC';   // vivid pink
-          tc.fillRect(0, 0, 256, 256);
-          tc.globalCompositeOperation = 'source-over';
-
           ctx.imageSmoothingEnabled = true;
-          ctx.drawImage(this.tintCanvas, 0, 0, 256, 256, drawX, drawY, drawW, drawH);
+          if (car.spinAngle !== 0)
+          {
+            ctx.save();
+            ctx.translate(drawX + drawW / 2, drawY + drawH / 2);
+            ctx.rotate(car.spinAngle);
+            ctx.translate(-(drawX + drawW / 2), -(drawY + drawH / 2));
+          }
+          this.yellowCarSprites.draw(ctx, yellowRect, drawX, drawY, drawW, drawH);
+          if (car.spinAngle !== 0) ctx.restore();
           ctx.imageSmoothingEnabled = false;
         }
       }

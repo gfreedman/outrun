@@ -38,6 +38,10 @@ export interface TrafficCar
   targetX:   number;
   /** Seconds until next lane-target change. */
   laneTimer: number;
+  /** Lateral throw velocity after being hit (world units / sec). Decays over time. */
+  hitVelX:   number;
+  /** Cumulative spin angle in radians — accumulates while hitVelX is active. */
+  spinAngle: number;
 }
 
 export interface TrafficHitResult
@@ -52,6 +56,8 @@ export interface TrafficHitResult
    * Higher closing speed → bigger penalty.
    */
   closingSpeed: number;
+  /** Reference to the car that was hit — caller applies the lateral kick. */
+  hitCar:       TrafficCar;
 }
 
 // ── Lane positions (world units) ──────────────────────────────────────────────
@@ -95,6 +101,8 @@ export function initTraffic(segmentCount: number): TrafficCar[]
       speed:     randomSpeed(),
       targetX:   worldX,
       laneTimer: randomLaneTimer(),
+      hitVelX:   0,
+      spinAngle: 0,
     });
   }
 
@@ -126,9 +134,23 @@ export function updateTraffic(
       car.laneTimer = randomLaneTimer();
     }
 
-    const dx   = car.targetX - car.worldX;
-    const step = TRAFFIC_WEAVE_RATE * dt;
-    car.worldX  = Math.abs(dx) <= step ? car.targetX : car.worldX + Math.sign(dx) * step;
+    // ── Hit reaction — lateral throw + spin ───────────────────────────
+    if (car.hitVelX !== 0)
+    {
+      car.worldX    += car.hitVelX * dt;
+      // Spin accumulates proportional to lateral velocity (faster throw = faster spin)
+      car.spinAngle += Math.sign(car.hitVelX) * (Math.abs(car.hitVelX) / 1000) * 3.0 * dt;
+      // Exponential decay — car keeps flying for ~2 seconds before settling
+      car.hitVelX   *= Math.exp(-1.2 * dt);
+      if (Math.abs(car.hitVelX) < 30) car.hitVelX = 0;
+    }
+    else
+    {
+      // Normal lane-weave only when not in hit reaction
+      const dx   = car.targetX - car.worldX;
+      const step = TRAFFIC_WEAVE_RATE * dt;
+      car.worldX  = Math.abs(dx) <= step ? car.targetX : car.worldX + Math.sign(dx) * step;
+    }
 
     // ── Recycle if behind or too far ahead ────────────────────────────
     //
@@ -146,6 +168,8 @@ export function updateTraffic(
       car.speed     = randomSpeed();
       car.targetX   = car.worldX;
       car.laneTimer = randomLaneTimer();
+      car.hitVelX   = 0;
+      car.spinAngle = 0;
     }
   }
 }
@@ -190,6 +214,7 @@ export function checkTrafficCollision(
     return {
       bumpDir:      car.worldX >= playerWorldX ? +1 : -1,
       closingSpeed: Math.max(0, playerSpeed - car.speed),
+      hitCar:       car,
     };
   }
 

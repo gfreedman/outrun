@@ -270,12 +270,12 @@ export const HIT_CRUNCH_RECOVERY_BOOST = 2.0;
 export const HIT_CRUNCH_RECOVERY_TIME  = 2.0;
 
 // ── Camera shake ──────────────────────────────────────────────────────────────
-export const SHAKE_GLANCE_INTENSITY   = 8;      // max screen offset in px
-export const SHAKE_GLANCE_DURATION    = 0.15;
-export const SHAKE_SMACK_INTENSITY    = 28;
-export const SHAKE_SMACK_DURATION     = 0.50;
-export const SHAKE_CRUNCH_INTENSITY   = 18;
-export const SHAKE_CRUNCH_DURATION    = 2.00;
+export const SHAKE_GLANCE_INTENSITY   = 4;      // max screen offset in px
+export const SHAKE_GLANCE_DURATION    = 0.08;
+export const SHAKE_SMACK_INTENSITY    = 14;
+export const SHAKE_SMACK_DURATION     = 0.25;
+export const SHAKE_CRUNCH_INTENSITY   = 10;
+export const SHAKE_CRUNCH_DURATION    = 1.00;
 
 // ── Speed floor during any collision ─────────────────────────────────────────
 /** The car never drops below this fraction of max speed from a hit. Law 2. */
@@ -318,20 +318,23 @@ export const TRAFFIC_HITBOX_SEGS       = 5;
 /** Speed cap (fraction of PLAYER_MAX_SPEED) immediately after a traffic hit. */
 export const TRAFFIC_HIT_SPEED_CAP     = 0.20;
 
-/** Base lateral flick magnitude for a traffic hit. */
-export const TRAFFIC_HIT_FLICK_BASE    = 0.20;
+/** Base lateral flick magnitude for a traffic hit (road-widths/sec). */
+export const TRAFFIC_HIT_FLICK_BASE    = 0.35;
 
-/** Restitution factor for traffic hit flick. */
-export const TRAFFIC_HIT_FLICK_RESTITUTION = 0.50;
+/**
+ * Restitution factor: scales flick by pre-hit speed ratio.
+ * At 80% max speed → flick = 0.64. At 40% → 0.35 (falls back to base).
+ */
+export const TRAFFIC_HIT_FLICK_RESTITUTION = 0.80;
 
 /** Cooldown seconds after traffic hit before next collision registers. */
 export const TRAFFIC_HIT_COOLDOWN      = 1.50;
 
 /** Camera shake duration (seconds) for a traffic hit. */
-export const SHAKE_TRAFFIC_DURATION    = 0.70;
+export const SHAKE_TRAFFIC_DURATION    = 0.35;
 
 /** Camera shake intensity (max px offset) for a traffic hit. */
-export const SHAKE_TRAFFIC_INTENSITY   = 40;
+export const SHAKE_TRAFFIC_INTENSITY   = 20;
 
 /** Post-traffic-hit speed recovery boost duration (seconds). */
 export const TRAFFIC_HIT_RECOVERY_TIME = 2.0;
