@@ -292,6 +292,9 @@ export const TRAFFIC_COUNT             = 3;
  */
 export const TRAFFIC_CAR_WORLD_HEIGHT  = 700;
 
+/** Apparent world-space height of the Barney car — same scale as the yellow car. */
+export const TRAFFIC_BARNEY_WORLD_HEIGHT = 700;
+
 /** Minimum forward speed for a traffic car (world units / sec ≈ 40 km/h). */
 export const TRAFFIC_SPEED_MIN         = 1200;
 

@@ -49,13 +49,14 @@ import
   SEGMENT_LENGTH, COLORS,
   PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
   PARALLAX_SKY, DRAW_DISTANCE,
-  TRAFFIC_CAR_WORLD_HEIGHT,
+  TRAFFIC_CAR_WORLD_HEIGHT, TRAFFIC_BARNEY_WORLD_HEIGHT,
 } from './constants';
 import
 {
   SpriteLoader, SpriteSheetMap, SpriteId,
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
   YELLOW_CAR_FRAME_W, YELLOW_CAR_FRAME_H, YELLOW_CAR_CENTER,
+  BARNEY_CAR_FRAME_W, BARNEY_CAR_FRAME_H, BARNEY_CAR_CENTER,
   CAR_PIVOT_OFFSETS,
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
   BILLBOARD_RECTS, BILLBOARD_WORLD_HEIGHT,
@@ -343,7 +344,8 @@ export class Renderer
    */
   private skyOffset = 0;
 
-  private yellowCarSprites: SpriteLoader | null = null;
+  private yellowCarSprites:  SpriteLoader | null = null;
+  private barneyCarSprites:  SpriteLoader | null = null;
 
   /**
    * Creates a Renderer attached to the given canvas and pre-allocates all
@@ -364,7 +366,8 @@ export class Renderer
     if (!ctx) throw new Error('Could not get 2D context');
     this.ctx              = ctx;
     this.carSprites       = sprites.car       ?? null;
-    this.yellowCarSprites = sprites.yellowCar ?? null;
+    this.yellowCarSprites  = sprites.yellowCar  ?? null;
+    this.barneyCarSprites  = sprites.barneyCar  ?? null;
     this.roadSprites      = sprites.road      ?? null;
     this.billboardSprites = sprites.billboard ?? null;
     this.cactusSprites    = sprites.cactus    ?? null;
@@ -779,21 +782,28 @@ export class Renderer
         }
       }
 
-      // ── Traffic cars at this segment depth ──────────────────────────────
-      if (trafficCars.length > 0 && this.yellowCarSprites?.isReady())
+      // ── Traffic vehicles at this segment depth ──────────────────────────
+      if (trafficCars.length > 0)
       {
         const trafficSegIdx = seg.index;
-        const yellowRect    = {
-          x: YELLOW_CAR_CENTER * YELLOW_CAR_FRAME_W,
-          y: 0,
-          w: YELLOW_CAR_FRAME_W,
-          h: YELLOW_CAR_FRAME_H,
-        };
 
         for (const car of trafficCars)
         {
           if (Math.floor(car.worldZ / SEGMENT_LENGTH) % segmentCount !== trafficSegIdx)
             continue;
+
+          // Pick sheet + dimensions by vehicle type
+          const isBarney = car.type === 'barney';
+          const sheet    = isBarney ? this.barneyCarSprites : this.yellowCarSprites;
+          if (!sheet?.isReady()) continue;
+
+          const frameW  = isBarney ? BARNEY_CAR_FRAME_W : YELLOW_CAR_FRAME_W;
+          const frameH  = isBarney ? BARNEY_CAR_FRAME_H : YELLOW_CAR_FRAME_H;
+          const worldH  = isBarney ? TRAFFIC_BARNEY_WORLD_HEIGHT : TRAFFIC_CAR_WORLD_HEIGHT;
+          const rect    = {
+            x: isBarney ? BARNEY_CAR_CENTER * BARNEY_CAR_FRAME_W : YELLOW_CAR_CENTER * YELLOW_CAR_FRAME_W,
+            y: 0, w: frameW, h: frameH,
+          };
 
           // Direct perspective projection from the car's actual world depth.
           let carRelZ = car.worldZ - cameraZ;
@@ -805,10 +815,10 @@ export class Renderer
           const carScrX = sx1 + car.worldX * scCar * halfW;
           if (carScrX < -500 || carScrX > w + 500) continue;
 
-          const sprH = TRAFFIC_CAR_WORLD_HEIGHT * scCar * halfH;
+          const sprH = worldH * scCar * halfH;
           if (sprH < 4) continue;
 
-          const sprW  = sprH * (YELLOW_CAR_FRAME_W / YELLOW_CAR_FRAME_H);
+          const sprW  = sprH * (frameW / frameH);
           const drawW = Math.round(sprW);
           const drawH = Math.round(sprH);
           const drawX = Math.round(carScrX - sprW / 2);
@@ -822,7 +832,7 @@ export class Renderer
             ctx.rotate(car.spinAngle);
             ctx.translate(-(drawX + drawW / 2), -(drawY + drawH / 2));
           }
-          this.yellowCarSprites.draw(ctx, yellowRect, drawX, drawY, drawW, drawH);
+          sheet.draw(ctx, rect, drawX, drawY, drawW, drawH);
           if (car.spinAngle !== 0) ctx.restore();
           ctx.imageSmoothingEnabled = false;
         }

@@ -52,6 +52,13 @@ export const YELLOW_CAR_FRAME_H = 148;   // pixels per frame
 export const YELLOW_CAR_FRAMES  = 1;     // single straight-ahead frame
 export const YELLOW_CAR_CENTER  = 0;     // index of the straight-ahead frame
 
+// ── Barney car sprite sheet (traffic rival) ────────────────────────────────────
+// Single frame extracted from barney_car.png, 213×148px.
+export const BARNEY_CAR_FRAME_W = 166;
+export const BARNEY_CAR_FRAME_H = 148;
+export const BARNEY_CAR_FRAMES  = 1;
+export const BARNEY_CAR_CENTER  = 0;
+
 /**
  * Returns the source rectangle for a given frame index.
  * Clamps index into the valid range [0, 36] so out-of-bounds calls are safe.
@@ -317,6 +324,7 @@ export interface SpriteSheetMap
 {
   car:        SpriteLoader;
   yellowCar:  SpriteLoader;
+  barneyCar:  SpriteLoader;
   road:       SpriteLoader;
   billboard:  SpriteLoader;
   cactus:     SpriteLoader;

@@ -195,6 +195,7 @@ export class Game
     this.renderer = new Renderer(canvas, {
       car:       new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
       yellowCar: new SpriteLoader('sprites/assets/cars/yellow_car_sprites.png'),
+      barneyCar: new SpriteLoader('sprites/assets/cars/barney_car_sprites.png'),
       road:      new SpriteLoader('sprites/assets/palm_sheet.png'),
       billboard: new SpriteLoader('sprites/assets/billboard_sheet.png'),
       cactus:    new SpriteLoader('sprites/assets/cactus_sheet.png'),

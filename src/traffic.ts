@@ -26,8 +26,12 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type TrafficType = 'car' | 'barney';
+
 export interface TrafficCar
 {
+  /** Vehicle type — determines which sprite sheet and world height to use. */
+  type:      TrafficType;
   /** World depth (same coordinate as playerZ; wraps modulo trackLength). */
   worldZ:    number;
   /** Lateral position in world units. Lanes: ±500 inner, ±1200 outer. */
@@ -80,6 +84,11 @@ function randomLaneTimer(): number
   return TRAFFIC_LANE_TIMER_MIN + Math.random() * (TRAFFIC_LANE_TIMER_MAX - TRAFFIC_LANE_TIMER_MIN);
 }
 
+function randomType(): TrafficType
+{
+  return Math.random() < 0.4 ? 'barney' : 'car';   // 40% Barney cars, 60% yellow cars
+}
+
 // ── Pool management ───────────────────────────────────────────────────────────
 
 /** Creates the initial pool of TRAFFIC_COUNT cars spread evenly ahead. */
@@ -96,6 +105,7 @@ export function initTraffic(segmentCount: number): TrafficCar[]
     const worldX    = randomLane();
 
     cars.push({
+      type:      randomType(),
       worldZ,
       worldX,
       speed:     randomSpeed(),
@@ -163,6 +173,7 @@ export function updateTraffic(
     if (relZ < 0 || relZ > maxAhead)
     {
       const spawnSegs = 20 + Math.floor(Math.random() * (DRAW_DISTANCE - 25));
+      car.type      = randomType();
       car.worldZ    = (playerZ + spawnSegs * SEGMENT_LENGTH) % trackLength;
       car.worldX    = randomLane();
       car.speed     = randomSpeed();
