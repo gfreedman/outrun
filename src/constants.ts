@@ -293,7 +293,13 @@ export const TRAFFIC_COUNT             = 3;
 export const TRAFFIC_CAR_WORLD_HEIGHT  = 700;
 
 /** Apparent world-space height of the Barney car — same scale as the yellow car. */
-export const TRAFFIC_BARNEY_WORLD_HEIGHT = 700;
+export const TRAFFIC_BARNEY_WORLD_HEIGHT   = 700;
+
+/** Apparent world-space heights for the four new traffic car types. */
+export const TRAFFIC_GOTTAGO_WORLD_HEIGHT  = 700;
+export const TRAFFIC_YOSHI_WORLD_HEIGHT    = 700;
+export const TRAFFIC_BANANA_WORLD_HEIGHT   = 700;
+export const TRAFFIC_MEGA_WORLD_HEIGHT     = 700;
 
 /** Minimum forward speed for a traffic car (world units / sec ≈ 40 km/h). */
 export const TRAFFIC_SPEED_MIN         = 1200;
@@ -310,8 +316,12 @@ export const TRAFFIC_LANE_TIMER_MAX    = 4.5;
 /** Lateral drift rate toward new lane target (world units / sec). */
 export const TRAFFIC_WEAVE_RATE        = 900;
 
-/** Half-width of traffic car lateral collision hitbox (world units). */
-export const TRAFFIC_HITBOX_X          = 1000;
+/**
+ * Half-width of traffic car lateral collision hitbox (world units).
+ * Lanes are spaced 700 wu apart (inner: ±500, outer: ±1200).
+ * 400 means same-lane hits register; adjacent-lane near-misses do not.
+ */
+export const TRAFFIC_HITBOX_X          = 400;
 
 /**
  * Depth window (segments) for traffic collision detection.

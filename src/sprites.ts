@@ -59,6 +59,27 @@ export const BARNEY_CAR_FRAME_H = 148;
 export const BARNEY_CAR_FRAMES  = 1;
 export const BARNEY_CAR_CENTER  = 0;
 
+// ── New traffic car sprite sheets ────────────────────────────────────────────
+export const GOTTAGO_CAR_FRAME_W = 211;
+export const GOTTAGO_CAR_FRAME_H = 145;
+export const GOTTAGO_CAR_FRAMES  = 1;
+export const GOTTAGO_CAR_CENTER  = 0;
+
+export const YOSHI_CAR_FRAME_W = 149;
+export const YOSHI_CAR_FRAME_H = 144;
+export const YOSHI_CAR_FRAMES  = 1;
+export const YOSHI_CAR_CENTER  = 0;
+
+export const BANANA_CAR_FRAME_W = 209;
+export const BANANA_CAR_FRAME_H = 144;
+export const BANANA_CAR_FRAMES  = 1;
+export const BANANA_CAR_CENTER  = 0;
+
+export const MEGA_CAR_FRAME_W = 213;
+export const MEGA_CAR_FRAME_H = 150;
+export const MEGA_CAR_FRAMES  = 1;
+export const MEGA_CAR_CENTER  = 0;
+
 /**
  * Returns the source rectangle for a given frame index.
  * Clamps index into the valid range [0, 36] so out-of-bounds calls are safe.
@@ -325,6 +346,10 @@ export interface SpriteSheetMap
   car:        SpriteLoader;
   yellowCar:  SpriteLoader;
   barneyCar:  SpriteLoader;
+  gottago:    SpriteLoader;
+  yoshi:      SpriteLoader;
+  banana:     SpriteLoader;
+  mega:       SpriteLoader;
   road:       SpriteLoader;
   billboard:  SpriteLoader;
   cactus:     SpriteLoader;

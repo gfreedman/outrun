@@ -50,6 +50,8 @@ import
   PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
   PARALLAX_SKY, DRAW_DISTANCE,
   TRAFFIC_CAR_WORLD_HEIGHT, TRAFFIC_BARNEY_WORLD_HEIGHT,
+  TRAFFIC_GOTTAGO_WORLD_HEIGHT, TRAFFIC_YOSHI_WORLD_HEIGHT,
+  TRAFFIC_BANANA_WORLD_HEIGHT, TRAFFIC_MEGA_WORLD_HEIGHT,
 } from './constants';
 import
 {
@@ -57,6 +59,10 @@ import
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
   YELLOW_CAR_FRAME_W, YELLOW_CAR_FRAME_H, YELLOW_CAR_CENTER,
   BARNEY_CAR_FRAME_W, BARNEY_CAR_FRAME_H, BARNEY_CAR_CENTER,
+  GOTTAGO_CAR_FRAME_W, GOTTAGO_CAR_FRAME_H, GOTTAGO_CAR_CENTER,
+  YOSHI_CAR_FRAME_W, YOSHI_CAR_FRAME_H, YOSHI_CAR_CENTER,
+  BANANA_CAR_FRAME_W, BANANA_CAR_FRAME_H, BANANA_CAR_CENTER,
+  MEGA_CAR_FRAME_W, MEGA_CAR_FRAME_H, MEGA_CAR_CENTER,
   CAR_PIVOT_OFFSETS,
   SPRITE_RECTS, SPRITE_WORLD_HEIGHT,
   BILLBOARD_RECTS, BILLBOARD_WORLD_HEIGHT,
@@ -346,6 +352,10 @@ export class Renderer
 
   private yellowCarSprites:  SpriteLoader | null = null;
   private barneyCarSprites:  SpriteLoader | null = null;
+  private gottagoCarSprites: SpriteLoader | null = null;
+  private yoshiCarSprites:   SpriteLoader | null = null;
+  private bananaCarSprites:  SpriteLoader | null = null;
+  private megaCarSprites:    SpriteLoader | null = null;
 
   /**
    * Creates a Renderer attached to the given canvas and pre-allocates all
@@ -368,6 +378,10 @@ export class Renderer
     this.carSprites       = sprites.car       ?? null;
     this.yellowCarSprites  = sprites.yellowCar  ?? null;
     this.barneyCarSprites  = sprites.barneyCar  ?? null;
+    this.gottagoCarSprites = sprites.gottago    ?? null;
+    this.yoshiCarSprites   = sprites.yoshi      ?? null;
+    this.bananaCarSprites  = sprites.banana     ?? null;
+    this.megaCarSprites    = sprites.mega       ?? null;
     this.roadSprites      = sprites.road      ?? null;
     this.billboardSprites = sprites.billboard ?? null;
     this.cactusSprites    = sprites.cactus    ?? null;
@@ -793,17 +807,23 @@ export class Renderer
             continue;
 
           // Pick sheet + dimensions by vehicle type
-          const isBarney = car.type === 'barney';
-          const sheet    = isBarney ? this.barneyCarSprites : this.yellowCarSprites;
+          type TrafficSpec = { sheet: SpriteLoader | null; fw: number; fh: number; fc: number; wh: number };
+          const TRAFFIC_SPECS: Record<string, TrafficSpec> = {
+            car:     { sheet: this.yellowCarSprites,  fw: YELLOW_CAR_FRAME_W,  fh: YELLOW_CAR_FRAME_H,  fc: YELLOW_CAR_CENTER,  wh: TRAFFIC_CAR_WORLD_HEIGHT      },
+            barney:  { sheet: this.barneyCarSprites,  fw: BARNEY_CAR_FRAME_W,  fh: BARNEY_CAR_FRAME_H,  fc: BARNEY_CAR_CENTER,  wh: TRAFFIC_BARNEY_WORLD_HEIGHT   },
+            gottago: { sheet: this.gottagoCarSprites, fw: GOTTAGO_CAR_FRAME_W, fh: GOTTAGO_CAR_FRAME_H, fc: GOTTAGO_CAR_CENTER, wh: TRAFFIC_GOTTAGO_WORLD_HEIGHT  },
+            yoshi:   { sheet: this.yoshiCarSprites,   fw: YOSHI_CAR_FRAME_W,   fh: YOSHI_CAR_FRAME_H,   fc: YOSHI_CAR_CENTER,   wh: TRAFFIC_YOSHI_WORLD_HEIGHT    },
+            banana:  { sheet: this.bananaCarSprites,  fw: BANANA_CAR_FRAME_W,  fh: BANANA_CAR_FRAME_H,  fc: BANANA_CAR_CENTER,  wh: TRAFFIC_BANANA_WORLD_HEIGHT   },
+            mega:    { sheet: this.megaCarSprites,    fw: MEGA_CAR_FRAME_W,    fh: MEGA_CAR_FRAME_H,    fc: MEGA_CAR_CENTER,    wh: TRAFFIC_MEGA_WORLD_HEIGHT     },
+          };
+          const spec   = TRAFFIC_SPECS[car.type] ?? TRAFFIC_SPECS['car'];
+          const sheet  = spec.sheet;
           if (!sheet?.isReady()) continue;
 
-          const frameW  = isBarney ? BARNEY_CAR_FRAME_W : YELLOW_CAR_FRAME_W;
-          const frameH  = isBarney ? BARNEY_CAR_FRAME_H : YELLOW_CAR_FRAME_H;
-          const worldH  = isBarney ? TRAFFIC_BARNEY_WORLD_HEIGHT : TRAFFIC_CAR_WORLD_HEIGHT;
-          const rect    = {
-            x: isBarney ? BARNEY_CAR_CENTER * BARNEY_CAR_FRAME_W : YELLOW_CAR_CENTER * YELLOW_CAR_FRAME_W,
-            y: 0, w: frameW, h: frameH,
-          };
+          const frameW  = spec.fw;
+          const frameH  = spec.fh;
+          const worldH  = spec.wh;
+          const rect    = { x: spec.fc * frameW, y: 0, w: frameW, h: frameH };
 
           // Direct perspective projection from the car's actual world depth.
           let carRelZ = car.worldZ - cameraZ;

@@ -26,7 +26,7 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type TrafficType = 'car' | 'barney';
+export type TrafficType = 'car' | 'barney' | 'gottago' | 'yoshi' | 'banana' | 'mega';
 
 export interface TrafficCar
 {
@@ -84,9 +84,11 @@ function randomLaneTimer(): number
   return TRAFFIC_LANE_TIMER_MIN + Math.random() * (TRAFFIC_LANE_TIMER_MAX - TRAFFIC_LANE_TIMER_MIN);
 }
 
+const TRAFFIC_TYPES: TrafficType[] = ['car', 'barney', 'gottago', 'yoshi', 'banana', 'mega'];
+
 function randomType(): TrafficType
 {
-  return Math.random() < 0.4 ? 'barney' : 'car';   // 40% Barney cars, 60% yellow cars
+  return TRAFFIC_TYPES[Math.floor(Math.random() * TRAFFIC_TYPES.length)];
 }
 
 // ── Pool management ───────────────────────────────────────────────────────────
@@ -172,7 +174,9 @@ export function updateTraffic(
 
     if (relZ < 0 || relZ > maxAhead)
     {
-      const spawnSegs = 20 + Math.floor(Math.random() * (DRAW_DISTANCE - 25));
+      // Always spawn at the far horizon so cars are never seen popping in.
+      // Jitter ±5 segs so cars don't all materialise at the exact same depth.
+      const spawnSegs = DRAW_DISTANCE - 5 + Math.floor(Math.random() * 10);
       car.type      = randomType();
       car.worldZ    = (playerZ + spawnSegs * SEGMENT_LENGTH) % trackLength;
       car.worldX    = randomLane();
