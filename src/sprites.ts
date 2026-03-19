@@ -3,13 +3,16 @@
  *
  * Sprite metadata and the SpriteLoader helper used by the renderer.
  *
- * Two sprite sheets are used:
+ * Sprite sheets used:
  *   sprites/assets/cars/player_car_sprites_1x.png  — 37-frame Ferrari Testarossa animation strip.
- *   sprites/assets/sprite_sheet_transparent.png    — roadside objects (palm trees, etc.).
+ *   sprites/assets/cars/{type}_car_sprites.png     — one sheet per traffic car type (single frame).
+ *   sprites/assets/sprite_sheet_transparent.png    — roadside objects (palm trees, billboards, etc.).
  *
- * The background colour of the roadside sheet has been zeroed out offline so
- * no runtime colour-keying is needed — straight alpha blending works correctly.
+ * All background colours have been zeroed out offline so no runtime colour-keying
+ * is needed — straight alpha blending works correctly.
  */
+
+import { TrafficType } from './traffic';
 
 // ── Rectangle type ────────────────────────────────────────────────────────────
 
@@ -46,8 +49,6 @@ export const CAR_SPRITE_TOTAL   = 37;    // total frames in the strip
 export const CAR_SPRITE_CENTER  = 18;    // index of the straight-ahead frame
 
 // ── Traffic car specs ─────────────────────────────────────────────────────────
-
-import { TrafficType } from './traffic';
 
 /**
  * Per-type rendering metadata for a traffic car.

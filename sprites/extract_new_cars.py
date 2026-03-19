@@ -15,15 +15,15 @@ dark title header at the top.  Target cars:
 
 ── Why tiny margins? ─────────────────────────────────────────────────────────
 
-JPEG lossy compression creates a colour-bleed halo ≈ 8-15 px wide around
+JPEG lossy compression creates a colour-bleed halo ≈ 8–15 px wide around
 every high-chroma pixel.  If the crop margin is larger than this radius, the
 crop's own border falls inside the bleed zone, making those border checker
-squares appear slightly chromatic (chroma 30-60).  The BFS flood-fill seeds
-from the crop border — if those seeds don't pass is_bg(BG_CHROMA=40), the
+squares appear slightly chromatic (chroma 30–60).  The BFS flood-fill seeds
+from the crop border — if those seeds don't pass is_bg(BG_CHROMA=60), the
 entire flood-fill fails and the checker background is never removed.
 
 By using a 3-pixel margin we keep the crop border far outside the bleed zone
-(checker squares there have chroma < 10, well inside BG_CHROMA=40), so seeds
+(checker squares there have chroma < 10, well inside BG_CHROMA=60), so seeds
 fire reliably.  Any small bleed of adjacent content (e.g. row separator bars)
 is handled by keep_largest: those blobs are tiny vs the main car silhouette.
 
@@ -38,7 +38,7 @@ is handled by keep_largest: those blobs are tiny vs the main car silhouette.
 import os
 import numpy as np
 from PIL import Image
-from scipy.ndimage import label as sp_label, binary_dilation
+from scipy.ndimage import label as sp_label
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -240,15 +240,19 @@ def extract_car(full_arr: np.ndarray, gx1: int, gy1: int,
     """
     Extract one car sprite.  Pipeline:
 
-    1. Crop with tiny MARGIN (3 px) so border checker is outside JPEG bleed.
-    2. Estimate background from border checker pixels.
-    3. Flood-fill from edges (BG_CHROMA=40, BG_TOL=90): removes exterior checker.
-    4. keep_largest: discards tiny separator blobs and stray noise.
-    5. Tight-crop with PAD.
-    6. Second flood-fill on tighter crop (new edges expose some checker).
-    7. remove_interior_bg: cleans enclosed checker in windows/crevices.
-    8. Defringe: erodes residual grey-halo pixels from silhouette edge.
-    9. keep_largest + tight_crop.
+    Pass 1:
+      1. Crop with tiny MARGIN (3 px) so border checker is outside JPEG bleed.
+      2. Flood-fill from edges (BG_CHROMA=60, BG_TOL=120): removes exterior checker.
+         NOTE: No second flood-fill in pass 2 — the tight-crop border sits flush
+         against the car and a second BFS would seed from the car's own pixels,
+         eating wheels and lower-body detail.
+      3. keep_largest: discards tiny separator blobs and stray noise.
+      4. Tight-crop with PAD.
+
+    Pass 2:
+      5. remove_interior_bg: cleans enclosed checker in windows/wheel-wells.
+      6. Defringe: erodes residual grey-halo pixels from silhouette edge.
+      7. keep_largest + tight_crop.
     """
     H, W = full_arr.shape[:2]
     cx1  = max(0, gx1 + MARGIN)
@@ -319,13 +323,9 @@ for (row, col), stem in sorted(TARGETS.items()):
 
 print()
 print("=" * 60)
-print("Constants for sprites.ts")
+print("Output dimensions  (update TRAFFIC_CAR_SPECS in src/sprites.ts if changed)")
 print("=" * 60)
 for stem, (w, h) in sorted(results.items()):
-    C = stem.upper()
-    print(f"  export const {C}_CAR_FRAME_W = {w};")
-    print(f"  export const {C}_CAR_FRAME_H = {h};")
-    print(f"  export const {C}_CAR_FRAMES  = 1;")
-    print(f"  export const {C}_CAR_CENTER  = 0;")
+    print(f"  {stem:<10}  frameW={w}  frameH={h}")
 print()
 print("Done.")

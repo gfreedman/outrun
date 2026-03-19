@@ -4,7 +4,7 @@
  * Dynamic traffic cars — the core gameplay challenge of OutRun.
  *
  * Architecture:
- *   - TrafficCar objects live in a fixed-size pool (TRAFFIC_COUNT = 6).
+ *   - TrafficCar objects live in a fixed-size pool (TRAFFIC_COUNT = 3).
  *   - Each car has a world-Z depth, world-X lateral position, forward speed,
  *     and a lazy lane-weave AI (picks a new target lane every 1.5–4.5 s).
  *   - updateTraffic() advances positions each frame and recycles cars that
