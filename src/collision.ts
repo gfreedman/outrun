@@ -77,21 +77,6 @@ const FAMILY_BLOCKING_RADIUS: Record<SpriteFamily, number> =
 };
 
 /**
- * Returns the lateral detection radius (world units) for a collision class.
- * Ghost returns 0 — it will never match a delta check.
- */
-export function getHitboxRadius(cls: CollisionClass): number
-{
-  switch (cls)
-  {
-    case 'glance': return HITBOX_CACTUS;
-    case 'smack':  return HITBOX_PALM;
-    case 'crunch': return HITBOX_HOUSE;
-    default:       return 0;
-  }
-}
-
-/**
  * Returns the physical blocking radius (world units) for a sprite family.
  * Used by game.ts to prevent the player from phasing through solid objects.
  */

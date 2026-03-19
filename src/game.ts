@@ -70,16 +70,20 @@ import
   PLAYER_COAST_RATE,
   PLAYER_BRAKE_MAX, PLAYER_BRAKE_RAMP,
   PLAYER_STEERING, PLAYER_STEER_RATE,
+  ACCEL_LOW_BAND, ACCEL_HIGH_BAND,
   OFFROAD_MAX_RATIO, OFFROAD_DECEL, OFFROAD_RECOVERY_TIME,
+  OFFROAD_CRAWL_RATIO, OFFROAD_JITTER_BLEND, OFFROAD_JITTER_DECAY,
   SEGMENT_LENGTH, DRAW_DISTANCE,
   CENTRIFUGAL,
   DRIFT_ONSET, DRIFT_RATE, DRIFT_DECAY, DRIFT_CATCH,
   HIT_GLANCE_SPEED_MULT, HIT_GLANCE_BUMP, HIT_GLANCE_COOLDOWN,
   HIT_SMACK_SPEED_MULT, HIT_SMACK_SPEED_CAP, HIT_SMACK_BUMP,
   HIT_SMACK_COOLDOWN, HIT_SMACK_RECOVERY_BOOST, HIT_SMACK_RECOVERY_TIME,
+  HIT_SMACK_RESTITUTION, HIT_SMACK_FLICK_BASE,
   HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_DECEL, HIT_CRUNCH_GRIND_TIME,
   HIT_CRUNCH_BUMP, HIT_CRUNCH_COOLDOWN,
   HIT_CRUNCH_RECOVERY_BOOST, HIT_CRUNCH_RECOVERY_TIME,
+  HIT_CRUNCH_RESTITUTION, HIT_CRUNCH_FLICK_BASE,
   HIT_SPEED_FLOOR,
   SHAKE_GLANCE_INTENSITY, SHAKE_GLANCE_DURATION,
   SHAKE_SMACK_INTENSITY, SHAKE_SMACK_DURATION,
@@ -296,22 +300,22 @@ export class Game
       // Phase 3 (80–100%): MID tapers linearly to 0 — fighting aero drag
       let accel: number;
 
-      if (speedRatio < 0.15)
+      if (speedRatio < ACCEL_LOW_BAND)
       {
         // Smoothstep: S-shaped curve that starts and ends at zero slope.
-        // t goes 0→1 across the 0–15% speed band.
-        const t = speedRatio / 0.15;
+        // t goes 0→1 across the low-speed band.
+        const t = speedRatio / ACCEL_LOW_BAND;
         const smooth = t * t * (3 - 2 * t);
         accel = PLAYER_ACCEL_LOW + (PLAYER_ACCEL_MID - PLAYER_ACCEL_LOW) * smooth;
       }
-      else if (speedRatio < 0.80)
+      else if (speedRatio < ACCEL_HIGH_BAND)
       {
         accel = PLAYER_ACCEL_MID;
       }
       else
       {
-        // Linear taper from MID down to 0 over the 80–100% speed band
-        accel = PLAYER_ACCEL_MID * (1 - speedRatio) / 0.20;
+        // Linear taper from MID down to 0 over the high-speed band
+        accel = PLAYER_ACCEL_MID * (1 - speedRatio) / (1 - ACCEL_HIGH_BAND);
       }
 
       this.speed    += accel * this.hitRecoveryBoost * dt;
@@ -444,14 +448,14 @@ export class Game
       // speed (~15 km/h) so the car isn't completely frozen and the speedometer
       // reads non-zero while steering back to the road.
       if (input.isDown('ArrowUp'))
-        this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * 0.05);
+        this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * OFFROAD_CRAWL_RATIO);
       this.offRoadRecovery  = 0;
       // Smooth terrain jitter: lerp toward a new random target each frame.
       // Blending at rate 8 means ~12% progress per frame at 60 fps —
       // large jumps are dampened over ~6 frames, producing a rolling-wave feel
       // instead of the frame-rate-speed noise the raw random produced.
       const jitterTarget = this.speed > 0 ? (Math.random() - 0.5) * 10 : 0;
-      this.jitterY += (jitterTarget - this.jitterY) * (1 - Math.exp(-8 * dt));
+      this.jitterY += (jitterTarget - this.jitterY) * (1 - Math.exp(-OFFROAD_JITTER_BLEND * dt));
     }
     else
     {
@@ -465,7 +469,7 @@ export class Game
       }
       // Decay smoothly to zero when back on asphalt — avoids an instant snap
       // from whatever the last grass jitter value was.
-      this.jitterY *= Math.exp(-15 * dt);
+      this.jitterY *= Math.exp(-OFFROAD_JITTER_DECAY * dt);
     }
 
     this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
@@ -637,7 +641,7 @@ export class Game
         this.speed *= HIT_SMACK_SPEED_MULT;
         this.speed  = Math.min(this.speed, PLAYER_MAX_SPEED * HIT_SMACK_SPEED_CAP);
 
-        const flick         = Math.max(0.08, approach * 0.55 + preHitSpeedRatio * 0.10);
+        const flick         = Math.max(0.08, approach * HIT_SMACK_RESTITUTION + preHitSpeedRatio * HIT_SMACK_FLICK_BASE);
         this.slideVelocity  = bumpSign * Math.min(flick, 0.45);
 
         this.shakeTimer       = SHAKE_SMACK_DURATION;
@@ -656,7 +660,7 @@ export class Game
         this.speed = Math.min(this.speed, PLAYER_MAX_SPEED * HIT_CRUNCH_SPEED_CAP);
         this.grindTimer = HIT_CRUNCH_GRIND_TIME;
 
-        const flick        = Math.max(0.14, approach * 0.30 + preHitSpeedRatio * 0.15);
+        const flick        = Math.max(0.14, approach * HIT_CRUNCH_RESTITUTION + preHitSpeedRatio * HIT_CRUNCH_FLICK_BASE);
         this.slideVelocity = bumpSign * Math.min(flick, 0.45);
 
         this.shakeTimer     = SHAKE_CRUNCH_DURATION;

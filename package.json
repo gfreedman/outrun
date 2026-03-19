@@ -5,6 +5,7 @@
     "prebuild": "tsx scripts/generate-road.ts",
     "dev": "esbuild src/main.ts --bundle --outfile=dist/script.js --sourcemap --watch",
     "build": "esbuild src/main.ts --bundle --outfile=dist/script.js --minify",
+    "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
     "prepare": "husky"

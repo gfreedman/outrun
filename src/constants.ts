@@ -47,6 +47,29 @@ export const PLAYER_MAX_SPEED   = 10800;
  */
 export const DISPLAY_MAX_KMH    = 293;
 
+// ── Three-phase throttle — speed band boundaries ──────────────────────────────
+
+/**
+ * speedRatio below this threshold uses the low-speed smoothstep ramp (tyres
+ * finding grip).  Above it, full MID thrust applies.
+ * Changing this shifts the transition between launch-feel and power-band.
+ */
+export const ACCEL_LOW_BAND  = 0.15;
+
+/**
+ * speedRatio above this threshold tapers MID thrust linearly down to 0
+ * (simulates peak-power then aero-drag falloff near top speed).
+ * Must be greater than ACCEL_LOW_BAND and less than 1.
+ */
+export const ACCEL_HIGH_BAND = 0.80;
+
+/**
+ * Minimum speed ratio maintained when the player holds throttle on grass.
+ * Prevents a fully-stopped car on the verge — the engine always has a crawl.
+ * 0.05 ≈ 15 km/h at PLAYER_MAX_SPEED 293 km/h.
+ */
+export const OFFROAD_CRAWL_RATIO = 0.05;
+
 // ── Acceleration — three-phase "Alive & Kinetic" curve ───────────────────────
 
 /**
@@ -268,6 +291,35 @@ export const HIT_CRUNCH_BUMP           = 0.22;
 export const HIT_CRUNCH_COOLDOWN       = 1.50;
 export const HIT_CRUNCH_RECOVERY_BOOST = 2.0;
 export const HIT_CRUNCH_RECOVERY_TIME  = 2.0;
+
+// ── Collision restitution factors ─────────────────────────────────────────────
+//
+// These combine with the player's lateral approach speed to compute the flick
+// (lateral velocity imparted at impact).  flick = approach × RESTITUTION + speed × BASE.
+// Lower restitution = object absorbs more energy.  Lower base = glancing hits matter more.
+
+/** Smack (palm / billboard) restitution: fairly springy post. */
+export const HIT_SMACK_RESTITUTION   = 0.55;
+/** Smack minimum speed-component base even on a head-on hit. */
+export const HIT_SMACK_FLICK_BASE    = 0.10;
+/** Crunch (house) restitution: concrete absorbs more energy than a post. */
+export const HIT_CRUNCH_RESTITUTION  = 0.30;
+/** Crunch minimum speed-component base — car always bounces off a wall. */
+export const HIT_CRUNCH_FLICK_BASE   = 0.15;
+
+// ── Off-road terrain jitter ───────────────────────────────────────────────────
+
+/**
+ * Exponential blend rate toward a new jitter target while on grass.
+ * Higher = more responsive, choppier feel.  8 ≈ 12% progress per 60 fps frame.
+ */
+export const OFFROAD_JITTER_BLEND    = 8;
+
+/**
+ * Exponential decay rate applied to jitter when the player returns to asphalt.
+ * Higher = jitter fades out faster after re-joining the road.
+ */
+export const OFFROAD_JITTER_DECAY    = 15;
 
 // ── Camera shake ──────────────────────────────────────────────────────────────
 export const SHAKE_GLANCE_INTENSITY   = 4;      // max screen offset in px

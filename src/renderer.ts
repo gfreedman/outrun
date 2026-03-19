@@ -42,7 +42,7 @@
  */
 
 import { RoadSegment, SpriteFamily } from './types';
-import { TrafficCar }               from './traffic';
+import { TrafficCar, TrafficType }  from './traffic';
 import
 {
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,

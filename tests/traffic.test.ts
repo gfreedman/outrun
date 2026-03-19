@@ -180,8 +180,8 @@ describe('checkTrafficCollision', () =>
     const playerX     = 0;   // normalised
     const playerZ     = 0;
     const playerSpeed = 5000;
-    // Place car 50 segs ahead — well beyond TRAFFIC_HITBOX_SEGS (5)
-    const cars = [makeCar(0, 50 * SEGMENT_LENGTH)];
+    // Place car just beyond the depth window
+    const cars = [makeCar(0, (TRAFFIC_HITBOX_SEGS + 5) * SEGMENT_LENGTH)];
     const result = checkTrafficCollision(playerX, playerZ, playerSpeed, cars, SEG_COUNT);
     expect(result).toBeNull();
   });
@@ -198,17 +198,21 @@ describe('checkTrafficCollision', () =>
   });
 
   /**
-   * Adjacent inner lanes are 1000 wu apart (−500 and +500).
-   * TRAFFIC_HITBOX_X = 400, so the gap (1000) > 2 × 400 = 800.
+   * Inner lanes are at ±500 wu, so adjacent gap = 1000 wu.
+   * TRAFFIC_HITBOX_X = 400, so the gap (1000) > 2 × TRAFFIC_HITBOX_X (800).
    * A car in the adjacent lane must NOT trigger a collision.
    */
   it('does not fire for a car in an adjacent lane (gap > 2 × TRAFFIC_HITBOX_X)', () =>
   {
-    const playerX     = -500 / ROAD_WIDTH;   // inner-left lane, normalised
+    const innerLeft   = -500;                          // inner-left lane (world units)
+    const innerRight  =  500;                          // inner-right lane (world units)
+    const playerX     = innerLeft / ROAD_WIDTH;        // normalised
     const playerZ     = 0;
     const playerSpeed = 8000;
-    // Car in inner-right lane, 2 segs ahead
-    const cars = [makeCar(500, 2 * SEGMENT_LENGTH)];
+    // Verify the geometry: adjacent gap must exceed the combined hitbox so no hit fires
+    expect(Math.abs(innerRight - innerLeft)).toBeGreaterThan(2 * TRAFFIC_HITBOX_X);
+    // Car in inner-right lane, within depth window
+    const cars = [makeCar(innerRight, 2 * SEGMENT_LENGTH)];
     const result = checkTrafficCollision(playerX, playerZ, playerSpeed, cars, SEG_COUNT);
     expect(result).toBeNull();
   });
