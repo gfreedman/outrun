@@ -54,9 +54,10 @@ import { Road }         from './road';
 import { ROAD_DATA }   from './road-data';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
-import { SpriteLoader } from './sprites';
+import { SpriteLoader, TRAFFIC_CAR_SPECS } from './sprites';
 import { checkCollisions, getBlockingRadius } from './collision';
 import {
+  TrafficType,
   TrafficCar,
   initTraffic,
   updateTraffic,
@@ -193,13 +194,12 @@ export class Game
   {
     this.road     = Road.fromData(ROAD_DATA);
     this.renderer = new Renderer(canvas, {
-      car:       new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
-      yellowCar: new SpriteLoader('sprites/assets/cars/yellow_car_sprites.png'),
-      barneyCar: new SpriteLoader('sprites/assets/cars/barney_car_sprites.png'),
-      gottago:   new SpriteLoader('sprites/assets/cars/gottago_car_sprites.png'),
-      yoshi:     new SpriteLoader('sprites/assets/cars/yoshi_car_sprites.png'),
-      banana:    new SpriteLoader('sprites/assets/cars/banana_car_sprites.png'),
-      mega:      new SpriteLoader('sprites/assets/cars/mega_car_sprites.png'),
+      car:         new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
+      trafficCars: Object.fromEntries(
+        (Object.keys(TRAFFIC_CAR_SPECS) as TrafficType[]).map(
+          type => [type, new SpriteLoader(TRAFFIC_CAR_SPECS[type].assetPath)],
+        ),
+      ) as Record<TrafficType, SpriteLoader>,
       road:      new SpriteLoader('sprites/assets/palm_sheet.png'),
       billboard: new SpriteLoader('sprites/assets/billboard_sheet.png'),
       cactus:    new SpriteLoader('sprites/assets/cactus_sheet.png'),

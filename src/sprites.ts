@@ -45,40 +45,40 @@ export const CAR_SPRITE_FRAME_H = 149;   // pixels per frame
 export const CAR_SPRITE_TOTAL   = 37;    // total frames in the strip
 export const CAR_SPRITE_CENTER  = 18;    // index of the straight-ahead frame
 
-// ── Yellow rival car sprite sheet (traffic cars) ──────────────────────────────
-// Extracted from yellow.png — 16 steering frames, 4× upscaled from 183×37 source.
-export const YELLOW_CAR_FRAME_W = 302;   // pixels per frame
-export const YELLOW_CAR_FRAME_H = 148;   // pixels per frame
-export const YELLOW_CAR_FRAMES  = 1;     // single straight-ahead frame
-export const YELLOW_CAR_CENTER  = 0;     // index of the straight-ahead frame
+// ── Traffic car specs ─────────────────────────────────────────────────────────
 
-// ── Barney car sprite sheet (traffic rival) ────────────────────────────────────
-// Single frame extracted from barney_car.png, 213×148px.
-export const BARNEY_CAR_FRAME_W = 166;
-export const BARNEY_CAR_FRAME_H = 148;
-export const BARNEY_CAR_FRAMES  = 1;
-export const BARNEY_CAR_CENTER  = 0;
+import { TrafficType } from './traffic';
 
-// ── New traffic car sprite sheets ────────────────────────────────────────────
-export const GOTTAGO_CAR_FRAME_W = 211;
-export const GOTTAGO_CAR_FRAME_H = 145;
-export const GOTTAGO_CAR_FRAMES  = 1;
-export const GOTTAGO_CAR_CENTER  = 0;
+/**
+ * Per-type rendering metadata for a traffic car.
+ * This is the single source of truth for frame dimensions, world-space height,
+ * and asset path.  Adding a new car type only requires a new entry here plus
+ * updating the TrafficType union in traffic.ts.
+ */
+export interface TrafficCarSpec
+{
+  /** Sprite sheet frame width in pixels. */
+  frameW:    number;
+  /** Sprite sheet frame height in pixels. */
+  frameH:    number;
+  /**
+   * World-space height used for perspective scaling (world units).
+   * Calibrated so a car at 10 segs ≈ 88 px on a 600 px canvas.
+   */
+  worldH:    number;
+  /** URL of the PNG sprite sheet, relative to the HTML page. */
+  assetPath: string;
+}
 
-export const YOSHI_CAR_FRAME_W = 149;
-export const YOSHI_CAR_FRAME_H = 144;
-export const YOSHI_CAR_FRAMES  = 1;
-export const YOSHI_CAR_CENTER  = 0;
-
-export const BANANA_CAR_FRAME_W = 209;
-export const BANANA_CAR_FRAME_H = 144;
-export const BANANA_CAR_FRAMES  = 1;
-export const BANANA_CAR_CENTER  = 0;
-
-export const MEGA_CAR_FRAME_W = 213;
-export const MEGA_CAR_FRAME_H = 150;
-export const MEGA_CAR_FRAMES  = 1;
-export const MEGA_CAR_CENTER  = 0;
+export const TRAFFIC_CAR_SPECS: Record<TrafficType, TrafficCarSpec> =
+{
+  car:     { frameW: 302, frameH: 148, worldH: 700, assetPath: 'sprites/assets/cars/yellow_car_sprites.png'  },
+  barney:  { frameW: 166, frameH: 148, worldH: 700, assetPath: 'sprites/assets/cars/barney_car_sprites.png'  },
+  gottago: { frameW: 211, frameH: 145, worldH: 700, assetPath: 'sprites/assets/cars/gottago_car_sprites.png' },
+  yoshi:   { frameW: 149, frameH: 144, worldH: 700, assetPath: 'sprites/assets/cars/yoshi_car_sprites.png'   },
+  banana:  { frameW: 209, frameH: 144, worldH: 700, assetPath: 'sprites/assets/cars/banana_car_sprites.png'  },
+  mega:    { frameW: 213, frameH: 150, worldH: 700, assetPath: 'sprites/assets/cars/mega_car_sprites.png'    },
+};
 
 /**
  * Returns the source rectangle for a given frame index.
@@ -343,22 +343,18 @@ export const BIG_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
  */
 export interface SpriteSheetMap
 {
-  car:        SpriteLoader;
-  yellowCar:  SpriteLoader;
-  barneyCar:  SpriteLoader;
-  gottago:    SpriteLoader;
-  yoshi:      SpriteLoader;
-  banana:     SpriteLoader;
-  mega:       SpriteLoader;
-  road:       SpriteLoader;
-  billboard:  SpriteLoader;
-  cactus:     SpriteLoader;
-  cookie:     SpriteLoader;
-  barney:     SpriteLoader;
-  big:        SpriteLoader;
-  shrub:      SpriteLoader;
-  sign:       SpriteLoader;
-  house:      SpriteLoader;
+  car:         SpriteLoader;
+  /** One SpriteLoader per traffic car type, keyed by TrafficType. */
+  trafficCars: Partial<Record<TrafficType, SpriteLoader>>;
+  road:        SpriteLoader;
+  billboard:   SpriteLoader;
+  cactus:      SpriteLoader;
+  cookie:      SpriteLoader;
+  barney:      SpriteLoader;
+  big:         SpriteLoader;
+  shrub:       SpriteLoader;
+  sign:        SpriteLoader;
+  house:       SpriteLoader;
 }
 
 // ── Loader ────────────────────────────────────────────────────────────────────

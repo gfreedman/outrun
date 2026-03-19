@@ -287,19 +287,11 @@ export const HIT_SPEED_FLOOR          = 0.04;   // always keeps 4% — feels ali
 export const TRAFFIC_COUNT             = 3;
 
 /**
- * Apparent world-space height of a traffic car (world units).
+ * Default world-space height for traffic cars (world units).
+ * Per-type overrides live in TRAFFIC_CAR_SPECS (sprites.ts).
  * Calibrated so a car at 10 segs ≈ 88px, at 30 segs ≈ 29px on a 600px canvas.
  */
-export const TRAFFIC_CAR_WORLD_HEIGHT  = 700;
-
-/** Apparent world-space height of the Barney car — same scale as the yellow car. */
-export const TRAFFIC_BARNEY_WORLD_HEIGHT   = 700;
-
-/** Apparent world-space heights for the four new traffic car types. */
-export const TRAFFIC_GOTTAGO_WORLD_HEIGHT  = 700;
-export const TRAFFIC_YOSHI_WORLD_HEIGHT    = 700;
-export const TRAFFIC_BANANA_WORLD_HEIGHT   = 700;
-export const TRAFFIC_MEGA_WORLD_HEIGHT     = 700;
+export const TRAFFIC_WORLD_HEIGHT = 700;
 
 /** Minimum forward speed for a traffic car (world units / sec ≈ 40 km/h). */
 export const TRAFFIC_SPEED_MIN         = 1200;
