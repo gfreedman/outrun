@@ -418,3 +418,13 @@ export const COLORS =
   // Centre lane dash colour
   LANE:         '#CCCCCC',
 } as const;
+
+// ── Road colour banding ───────────────────────────────────────────────────────
+
+/**
+ * Number of consecutive segments that share one colour band before the
+ * alternating pattern flips.  Controls the frequency of the red/white rumble
+ * strips, the sand/light-sand grass rhythm, and the lane-dash spacing.
+ * Higher = longer bands (more spaced out), lower = faster rhythm.
+ */
+export const COLOR_BAND_PERIOD = 8;

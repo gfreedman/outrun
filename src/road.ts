@@ -15,7 +15,7 @@
  */
 
 import { RoadSegment, ProjectedPoint, SegmentColor, SpriteFamily, SpriteInstance } from './types';
-import { SEGMENT_LENGTH, COLORS, ROAD_CURVE, ROAD_HILL } from './constants';
+import { SEGMENT_LENGTH, COLORS, ROAD_CURVE, ROAD_HILL, COLOR_BAND_PERIOD } from './constants';
 
 // ── Easing functions ──────────────────────────────────────────────────────────
 //
@@ -83,13 +83,14 @@ function makeProjectedPoint(worldZ: number, worldY: number = 0): ProjectedPoint
  */
 function makeColor(i: number): SegmentColor
 {
-  const band = Math.floor(i / 8) % 2 === 0;
-  const dash = Math.floor(i / 8) % 2 === 0;
+  // Every COLOR_BAND_PERIOD segments forms one colour band (alternating 0/1).
+  // Road, grass, rumble, and lane dashes all alternate at the same period.
+  const band = Math.floor(i / COLOR_BAND_PERIOD) % 2 === 0;
   return {
     road:   band ? COLORS.ROAD_LIGHT  : COLORS.ROAD_DARK,
-    grass:  band ? COLORS.SAND_LIGHT : COLORS.SAND_DARK,
+    grass:  band ? COLORS.SAND_LIGHT  : COLORS.SAND_DARK,
     rumble: band ? COLORS.RUMBLE_RED  : COLORS.RUMBLE_WHITE,
-    lane:   dash ? COLORS.LANE        : '',
+    lane:   band ? COLORS.LANE        : '',
   };
 }
 

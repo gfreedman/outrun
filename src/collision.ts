@@ -22,58 +22,45 @@ import {
 
 export { CollisionClass };
 
-// ── Classification tables — O(1) lookup by family ────────────────────────────
+// ── Per-family collision configuration ───────────────────────────────────────
 //
-// Now that sprites carry a pre-classified family field (set at placement time
-// in road.ts), all collision checks use direct property lookup instead of
-// repeated id.startsWith() chains in the hot path.
+// Sprites carry a pre-classified `family` field set at placement time in road.ts,
+// so all hot-path checks are O(1) property lookups with no string scanning.
+//
+// Adding a new SpriteFamily requires ONE entry here instead of three separate
+// tables.  TypeScript enforces exhaustiveness via Record<SpriteFamily, ...>.
 
-/** Maps sprite family to its collision class. */
-const FAMILY_COLLISION_CLASS: Record<SpriteFamily, CollisionClass> =
+interface FamilyConfig
 {
-  palm:      CollisionClass.Smack,
-  billboard: CollisionClass.Smack,
-  cookie:    CollisionClass.Smack,
-  barney:    CollisionClass.Smack,
-  big:       CollisionClass.Smack,
-  cactus:    CollisionClass.Glance,
-  shrub:     CollisionClass.Ghost,
-  sign:      CollisionClass.Ghost,
-  house:     CollisionClass.Crunch,
-};
+  /** Collision severity: ghost = no effect, glance = cactus poke, smack = palm/post, crunch = house grind. */
+  cls:          CollisionClass;
+  /**
+   * Lateral detection hitbox half-width (world units).
+   * Billboards (700) are wider than palms (550) because the sign face extends
+   * further from the post.  Ghost and ghost-adjacent sprites use 0.
+   */
+  hitboxRadius: number;
+  /**
+   * Physical blocking radius (world units).
+   * Prevents the player from phasing through solid objects.
+   * Must be < hitboxRadius so the player is inside the detection zone at impact.
+   * 0 = not a solid wall (cactus, shrub, sign).
+   */
+  blockRadius:  number;
+}
 
-/**
- * Maps sprite family to its lateral detection hitbox (world units).
- * Billboards use HITBOX_BILLBOARD (700) — wider than palms (550) because the
- * sign face extends further from the post.  HITBOX_BILLBOARD was previously
- * defined but unconnected; this table makes it active (M8).
- */
-const FAMILY_HITBOX_RADIUS: Record<SpriteFamily, number> =
+const FAMILY_CONFIG: Record<SpriteFamily, FamilyConfig> =
 {
-  palm:      HITBOX_PALM,
-  billboard: HITBOX_BILLBOARD,   // 700 > 550 — wider than a palm trunk
-  cookie:    HITBOX_PALM,
-  barney:    HITBOX_PALM,
-  big:       HITBOX_PALM,
-  cactus:    HITBOX_CACTUS,
-  shrub:     0,
-  sign:      0,
-  house:     HITBOX_HOUSE,
-};
-
-/** Maps sprite family to its physical blocking radius (world units). */
-const FAMILY_BLOCKING_RADIUS: Record<SpriteFamily, number> =
-{
-  palm:      BLOCK_SMACK,
-  billboard: BLOCK_SMACK,
-  cookie:    BLOCK_SMACK,
-  barney:    BLOCK_SMACK,
-  big:       BLOCK_SMACK,
-  cactus:    0,
-  shrub:     0,
-  sign:      0,
-  // BLOCK_HOUSE < HITBOX_HOUSE — keeps player inside detection zone at the wall.
-  house:     BLOCK_HOUSE,
+  palm:      { cls: CollisionClass.Smack,  hitboxRadius: HITBOX_PALM,      blockRadius: BLOCK_SMACK },
+  billboard: { cls: CollisionClass.Smack,  hitboxRadius: HITBOX_BILLBOARD,  blockRadius: BLOCK_SMACK },
+  cookie:    { cls: CollisionClass.Smack,  hitboxRadius: HITBOX_PALM,       blockRadius: BLOCK_SMACK },
+  barney:    { cls: CollisionClass.Smack,  hitboxRadius: HITBOX_PALM,       blockRadius: BLOCK_SMACK },
+  big:       { cls: CollisionClass.Smack,  hitboxRadius: HITBOX_PALM,       blockRadius: BLOCK_SMACK },
+  cactus:    { cls: CollisionClass.Glance, hitboxRadius: HITBOX_CACTUS,     blockRadius: 0           },
+  shrub:     { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
+  sign:      { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
+  // BLOCK_HOUSE < HITBOX_HOUSE so the player is inside the detection zone at the wall boundary.
+  house:     { cls: CollisionClass.Crunch, hitboxRadius: HITBOX_HOUSE,      blockRadius: BLOCK_HOUSE },
 };
 
 /**
@@ -82,7 +69,7 @@ const FAMILY_BLOCKING_RADIUS: Record<SpriteFamily, number> =
  */
 export function getBlockingRadius(family: SpriteFamily): number
 {
-  return FAMILY_BLOCKING_RADIUS[family];
+  return FAMILY_CONFIG[family].blockRadius;
 }
 
 // ── Module-level constants (hoisted to avoid per-frame allocation) ────────────
@@ -148,10 +135,8 @@ export function checkSegmentCollision(
 
   for (const sprite of segment.sprites ?? [])
   {
-    const cls = FAMILY_COLLISION_CLASS[sprite.family];
+    const { cls, hitboxRadius: radius } = FAMILY_CONFIG[sprite.family];
     if (cls === CollisionClass.Ghost) continue;
-
-    const radius   = FAMILY_HITBOX_RADIUS[sprite.family];
     const delta    = Math.abs(playerWorldX - sprite.worldX);
     const sameSide = Math.sign(playerWorldX) === Math.sign(sprite.worldX);
 

@@ -567,7 +567,7 @@ export class Renderer
       }
     }
 
-    // ── Pass 2: render back-to-front — five batched colour groups ─────────
+    // ── Pass 2: render back-to-front — six batched colour groups ──────────
     //
     // Instead of one beginPath/fill per trapezoid (~1 000+ API calls/frame),
     // we group all trapezoids of the same colour into a single batched path.

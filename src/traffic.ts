@@ -105,6 +105,23 @@ function randomType(): TrafficType
   return TRAFFIC_TYPES[Math.floor(Math.random() * TRAFFIC_TYPES.length)];
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Signed distance from playerZ to car.worldZ along the shortest arc of the
+ * looping track.  Positive = car is ahead of the player.
+ *
+ * Used by both updateTraffic (recycle gate) and checkTrafficCollision (depth
+ * window).  Centralised here so the two sites can't drift apart.
+ */
+function relativeZ(carWorldZ: number, playerZ: number, trackLength: number): number
+{
+  let relZ = carWorldZ - playerZ;
+  if (relZ >  trackLength / 2) relZ -= trackLength;
+  if (relZ < -trackLength / 2) relZ += trackLength;
+  return relZ;
+}
+
 // ── Pool management ───────────────────────────────────────────────────────────
 
 /** Creates the initial pool of TRAFFIC_COUNT cars spread evenly ahead. */
@@ -182,9 +199,7 @@ export function updateTraffic(
     //
     // relZ is the signed distance ahead of the player (shortest arc around loop).
     // If negative, the car is behind the player — respawn it ahead.
-    let relZ = car.worldZ - playerZ;
-    if (relZ >  trackLength / 2) relZ -= trackLength;
-    if (relZ < -trackLength / 2) relZ += trackLength;
+    const relZ = relativeZ(car.worldZ, playerZ, trackLength);
 
     if (relZ < 0 || relZ > maxAhead)
     {
@@ -230,9 +245,7 @@ export function checkTrafficCollision(
   for (const car of cars)
   {
     // Signed relative depth (shortest arc)
-    let relZ = car.worldZ - playerZ;
-    if (relZ >  trackLength / 2) relZ -= trackLength;
-    if (relZ < -trackLength / 2) relZ += trackLength;
+    const relZ = relativeZ(car.worldZ, playerZ, trackLength);
 
     // Must be in the window directly ahead of the player
     if (relZ < 0 || relZ > depthWindow) continue;
