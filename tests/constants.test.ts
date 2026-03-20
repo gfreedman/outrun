@@ -23,6 +23,8 @@ import
   ROAD_CURVE, ROAD_HILL,
   CENTRIFUGAL,
   DRIFT_ONSET, DRIFT_RATE, DRIFT_DECAY, DRIFT_CATCH,
+  COLOR_BAND_PERIOD,
+  ACCEL_LOW_BAND, ACCEL_HIGH_BAND,
 } from '../src/constants';
 
 // ── Physics invariants ────────────────────────────────────────────────────────
@@ -148,6 +150,32 @@ describe('Physics invariants', () =>
     expect(ROAD_HILL.LOW).toBeGreaterThan(ROAD_HILL.NONE);
     expect(ROAD_HILL.MEDIUM).toBeGreaterThan(ROAD_HILL.LOW);
     expect(ROAD_HILL.HIGH).toBeGreaterThan(ROAD_HILL.MEDIUM);
+  });
+
+  // ── Visual / rendering invariants ─────────────────────────────────────────
+
+  /**
+   * COLOR_BAND_PERIOD drives the rumble-strip and lane-dash rhythm.
+   * It must be a positive whole number — fractional values would make
+   * Math.floor(i / COLOR_BAND_PERIOD) % 2 produce inconsistent banding.
+   */
+  it('COLOR_BAND_PERIOD is a positive integer', () =>
+  {
+    expect(COLOR_BAND_PERIOD).toBeGreaterThan(0);
+    expect(Number.isInteger(COLOR_BAND_PERIOD)).toBe(true);
+  });
+
+  /**
+   * Three-phase throttle band boundaries must be ordered and in (0, 1).
+   * ACCEL_LOW_BAND < ACCEL_HIGH_BAND < 1 ensures the three phases never
+   * overlap and the taper formula (1 - speedRatio) / (1 - ACCEL_HIGH_BAND)
+   * doesn't divide by zero.
+   */
+  it('ACCEL_LOW_BAND < ACCEL_HIGH_BAND < 1 — throttle phases are non-overlapping', () =>
+  {
+    expect(ACCEL_LOW_BAND).toBeGreaterThan(0);
+    expect(ACCEL_HIGH_BAND).toBeGreaterThan(ACCEL_LOW_BAND);
+    expect(ACCEL_HIGH_BAND).toBeLessThan(1);
   });
 
 });
