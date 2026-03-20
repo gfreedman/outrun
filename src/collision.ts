@@ -20,7 +20,7 @@ import {
   COLLISION_WINDOW,
 } from './constants';
 
-export type { CollisionClass };
+export { CollisionClass };
 
 // ── Classification tables — O(1) lookup by family ────────────────────────────
 //
@@ -31,15 +31,15 @@ export type { CollisionClass };
 /** Maps sprite family to its collision class. */
 const FAMILY_COLLISION_CLASS: Record<SpriteFamily, CollisionClass> =
 {
-  palm:      'smack',
-  billboard: 'smack',
-  cookie:    'smack',
-  barney:    'smack',
-  big:       'smack',
-  cactus:    'glance',
-  shrub:     'ghost',
-  sign:      'ghost',
-  house:     'crunch',
+  palm:      CollisionClass.Smack,
+  billboard: CollisionClass.Smack,
+  cookie:    CollisionClass.Smack,
+  barney:    CollisionClass.Smack,
+  big:       CollisionClass.Smack,
+  cactus:    CollisionClass.Glance,
+  shrub:     CollisionClass.Ghost,
+  sign:      CollisionClass.Ghost,
+  house:     CollisionClass.Crunch,
 };
 
 /**
@@ -95,10 +95,10 @@ export function getBlockingRadius(family: SpriteFamily): number
  */
 const CLASS_RANK: Record<CollisionClass, number> =
 {
-  ghost:  0,
-  glance: 1,
-  smack:  2,
-  crunch: 3,
+  [CollisionClass.Ghost]:  0,
+  [CollisionClass.Glance]: 1,
+  [CollisionClass.Smack]:  2,
+  [CollisionClass.Crunch]: 3,
 };
 
 // ── Hit result ────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ export function checkSegmentCollision(
   for (const sprite of segment.sprites ?? [])
   {
     const cls = FAMILY_COLLISION_CLASS[sprite.family];
-    if (cls === 'ghost') continue;
+    if (cls === CollisionClass.Ghost) continue;
 
     const radius   = FAMILY_HITBOX_RADIUS[sprite.family];
     const delta    = Math.abs(playerWorldX - sprite.worldX);

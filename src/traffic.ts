@@ -26,7 +26,21 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type TrafficType = 'car' | 'barney' | 'gottago' | 'yoshi' | 'banana' | 'mega';
+/**
+ * Vehicle type for a traffic car.
+ * Enum (not string union) so Object.values(TrafficType) always reflects the full
+ * set — adding a member here automatically includes it in randomType() and the
+ * sprite loader loop in game.ts without needing to update a parallel array.
+ */
+export enum TrafficType
+{
+  Car     = 'car',
+  Barney  = 'barney',
+  GottaGo = 'gottago',
+  Yoshi   = 'yoshi',
+  Banana  = 'banana',
+  Mega    = 'mega',
+}
 
 export interface TrafficCar
 {
@@ -84,7 +98,7 @@ function randomLaneTimer(): number
   return TRAFFIC_LANE_TIMER_MIN + Math.random() * (TRAFFIC_LANE_TIMER_MAX - TRAFFIC_LANE_TIMER_MIN);
 }
 
-const TRAFFIC_TYPES: TrafficType[] = ['car', 'barney', 'gottago', 'yoshi', 'banana', 'mega'];
+const TRAFFIC_TYPES = Object.values(TrafficType);
 
 function randomType(): TrafficType
 {

@@ -55,7 +55,7 @@ import { ROAD_DATA }   from './road-data';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { SpriteLoader, TRAFFIC_CAR_SPECS } from './sprites';
-import { checkCollisions, getBlockingRadius } from './collision';
+import { checkCollisions, getBlockingRadius, CollisionClass } from './collision';
 import {
   TrafficType,
   TrafficCar,
@@ -200,7 +200,7 @@ export class Game
     this.renderer = new Renderer(canvas, {
       car:         new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
       trafficCars: Object.fromEntries(
-        (Object.keys(TRAFFIC_CAR_SPECS) as TrafficType[]).map(
+        Object.values(TrafficType).map(
           type => [type, new SpriteLoader(TRAFFIC_CAR_SPECS[type].assetPath)],
         ),
       ) as Record<TrafficType, SpriteLoader>,
@@ -622,7 +622,7 @@ export class Game
     // ── Apply collision effects by class ─────────────────────────────────
     switch (hit.cls)
     {
-      case 'glance':
+      case CollisionClass.Glance:
       {
         // Small poke — speed penalty + tiny lateral bump, no dramatic flick
         this.speed   *= HIT_GLANCE_SPEED_MULT;
@@ -633,7 +633,7 @@ export class Game
         break;
       }
 
-      case 'smack':
+      case CollisionClass.Smack:
       {
         // Hard whack — speed loss + angle-computed flick off the object.
         // Restitution 0.55: palm/post is fairly springy.
@@ -652,7 +652,7 @@ export class Game
         break;
       }
 
-      case 'crunch':
+      case CollisionClass.Crunch:
       {
         // Building wall — instant crawl + sustained grind + strong flick.
         // Restitution 0.30: concrete absorbs a lot of energy.
@@ -669,6 +669,18 @@ export class Game
         this.hitRecoveryTimer = HIT_CRUNCH_RECOVERY_TIME;
         this.hitRecoveryBoost = HIT_CRUNCH_RECOVERY_BOOST;
         break;
+      }
+
+      case CollisionClass.Ghost:
+        // Ghost sprites never reach here (filtered in checkSegmentCollision),
+        // but the case is required for the exhaustiveness sentinel below.
+        break;
+
+      default:
+      {
+        // Exhaustiveness sentinel: if a new CollisionClass member is added but
+        // not handled above, TypeScript reports a type error here at compile time.
+        const _exhaustive: never = hit.cls;
       }
     }
 

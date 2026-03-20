@@ -127,7 +127,18 @@ export interface RoadSegment
  * smack  = hard hit (palm, billboard).
  * crunch = building grind (house).
  */
-export type CollisionClass = 'ghost' | 'glance' | 'smack' | 'crunch';
+/**
+ * Enum (not string union) so the switch in game.ts can carry a `never` exhaustiveness
+ * sentinel — same pattern as ROAD_CURVE / ROAD_HILL.  Adding a new member here
+ * causes a compile error in the switch until a handler is written.
+ */
+export enum CollisionClass
+{
+  Ghost  = 'ghost',
+  Glance = 'glance',
+  Smack  = 'smack',
+  Crunch = 'crunch',
+}
 
 // ── Game state ────────────────────────────────────────────────────────────────
 

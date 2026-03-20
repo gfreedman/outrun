@@ -33,7 +33,7 @@ import {
   CAMERA_HEIGHT,
 } from '../src/constants';
 import { TRAFFIC_CAR_SPECS } from '../src/sprites';
-import { type TrafficType } from '../src/traffic';
+import { TrafficType } from '../src/traffic';
 
 // Arbitrary but realistic segment count (matches typical Coconut Beach layout)
 const SEG_COUNT  = 1200;
@@ -79,7 +79,7 @@ describe('initTraffic', () =>
 
   it('all cars start with a recognised TrafficType', () =>
   {
-    const valid = new Set(Object.keys(TRAFFIC_CAR_SPECS));
+    const valid = new Set(Object.values(TrafficType));
     for (const car of cars)
     {
       expect(valid.has(car.type)).toBe(true);
@@ -164,7 +164,7 @@ describe('checkTrafficCollision', () =>
   function makeCar(worldX: number, worldZ: number): TrafficCar
   {
     return {
-      type: 'car',
+      type: TrafficType.Car,
       worldZ,
       worldX,
       speed:     2000,
@@ -271,11 +271,9 @@ describe('TRAFFIC_CAR_SPECS', () =>
    * Every TrafficType that traffic.ts can spawn must have a spec entry.
    * A missing entry would cause the renderer to silently skip that car.
    */
-  const EXPECTED_TYPES: TrafficType[] = ['car', 'barney', 'gottago', 'yoshi', 'banana', 'mega'];
-
   it('has an entry for every TrafficType', () =>
   {
-    for (const type of EXPECTED_TYPES)
+    for (const type of Object.values(TrafficType))
     {
       expect(TRAFFIC_CAR_SPECS).toHaveProperty(type);
     }
