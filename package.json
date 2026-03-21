@@ -1,6 +1,8 @@
 {
   "name": "outrun",
   "version": "1.0.0",
+  "description": "Browser-based OutRun tribute — pseudo-3D road renderer, physics, traffic, and sprites in vanilla TypeScript.",
+  "license": "MIT",
   "scripts": {
     "prebuild": "tsx scripts/generate-road.ts",
     "dev": "esbuild src/main.ts --bundle --outfile=dist/script.js --sourcemap --watch",
