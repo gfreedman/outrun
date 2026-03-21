@@ -428,3 +428,38 @@ export const COLORS =
  * Higher = longer bands (more spaced out), lower = faster rhythm.
  */
 export const COLOR_BAND_PERIOD = 8;
+
+// ── Cloud parallax ────────────────────────────────────────────────────────────
+
+/**
+ * Width of the virtual scrolling sky canvas, in multiples of screen width.
+ * Clouds are placed across this virtual canvas and wrap seamlessly.
+ * 3× means a cloud can be up to 2 full screens off-screen before re-appearing.
+ */
+export const CLOUD_VIRTUAL_W     = 3.0;
+
+/**
+ * Curve-parallax factor for the far cloud layer (upper sky).
+ * 0.25 = far clouds shift at 25% of the accumulated skyOffset on curves.
+ */
+export const CLOUD_PARALLAX_FAR  = 0.25;
+
+/**
+ * Curve-parallax factor for the near cloud layer (mid-sky).
+ * 0.75 = near clouds shift at 75% of the accumulated skyOffset on curves.
+ */
+export const CLOUD_PARALLAX_NEAR = 0.75;
+
+/**
+ * Per-frame forward drift accumulation at max speed, in virtual-width fractions.
+ * Gives the gentle overhead-passing sensation when driving on a straight road.
+ * 0.0006 ≈ 46 px/s at 1280px wide — one full virtual wrap takes ~83 seconds.
+ */
+export const CLOUD_DRIFT_RATE    = 0.0006;
+
+/**
+ * Normalized sky-height threshold below which cloud alpha fades to 0.
+ * Clouds whose bottom edge falls below this fraction dissolve into the horizon haze,
+ * integrating them naturally with the sky gradient.
+ */
+export const CLOUD_HORIZON_FADE  = 0.72;

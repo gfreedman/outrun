@@ -342,6 +342,17 @@ export const BIG_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
  * Using a named map instead of 10 positional parameters prevents silent
  * mis-ordering bugs when sheets are added or rearranged.
  */
+// ── Cloud sprite sheet ────────────────────────────────────────────────────────
+
+/** Width of one cell in clouds_1x.png — all 19 frames share this cell size. */
+export const CLOUD_CELL_W      = 509;
+/** Height of one cell in clouds_1x.png. */
+export const CLOUD_CELL_H      = 216;
+/** Total number of white cloud frames extracted from the source sheet. */
+export const CLOUD_FRAME_COUNT = 19;
+
+// ── SpriteSheetMap ────────────────────────────────────────────────────────────
+
 export interface SpriteSheetMap
 {
   car:         SpriteLoader;
@@ -356,6 +367,7 @@ export interface SpriteSheetMap
   shrub:       SpriteLoader;
   sign:        SpriteLoader;
   house:       SpriteLoader;
+  clouds:      SpriteLoader;
 }
 
 // ── Loader ────────────────────────────────────────────────────────────────────

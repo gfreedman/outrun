@@ -213,6 +213,7 @@ export class Game
       shrub:     new SpriteLoader('sprites/assets/shrub_sheet.png'),
       sign:      new SpriteLoader('sprites/assets/sign_sheet.png'),
       house:     new SpriteLoader('sprites/assets/house_sheet.png'),
+      clouds:    new SpriteLoader('sprites/assets/clouds_1x.png'),
     });
     this.input       = new InputManager();
     this.trafficCars = initTraffic(this.road.count);

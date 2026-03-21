@@ -49,10 +49,13 @@ import
   SEGMENT_LENGTH, COLORS,
   PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
   PARALLAX_SKY, DRAW_DISTANCE,
+  CLOUD_VIRTUAL_W, CLOUD_PARALLAX_FAR, CLOUD_PARALLAX_NEAR,
+  CLOUD_DRIFT_RATE, CLOUD_HORIZON_FADE,
 } from './constants';
 import
 {
   SpriteLoader, SpriteSheetMap, SpriteId,
+  CLOUD_CELL_W, CLOUD_CELL_H, CLOUD_FRAME_COUNT,
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
   TRAFFIC_CAR_SPECS,
   CAR_PIVOT_OFFSETS,
@@ -113,6 +116,27 @@ const BAR_COLOR_BLUE  = '#8899BB';            // pale steel-blue  (System 16 low
 const BAR_COLOR_GREEN = '#33BB44';            // medium green     (System 16 high speed)
 const BAR_COLOR_PINK  = '#FF44CC';            // pink             (redline cap, last seg)
 const BAR_COLOR_UNLIT = 'rgba(80,80,80,0.5)'; // 50% transparent — background shows through
+
+// ── CloudInstance ─────────────────────────────────────────────────────────────
+
+/**
+ * One cloud sprite placed in the scrolling sky.
+ * Positions are normalised so they are screen-size-independent and never need
+ * to be recalculated on resize — only the draw offset changes each frame.
+ */
+interface CloudInstance
+{
+  /** Index into the 19-frame cloud strip (0 = largest cumulus). */
+  frameIndex: number;
+  /** Horizontal position in virtual sky units [0, CLOUD_VIRTUAL_W]. */
+  skyX:       number;
+  /** Vertical position within the sky, normalised [0, 1] (0 = top). */
+  skyY:       number;
+  /** Rendered height as a fraction of total sky height. */
+  scale:      number;
+  /** 0 = far layer (slow, upper sky) | 1 = near layer (faster, mid-sky). */
+  layer:      0 | 1;
+}
 
 // ── ProjectedSeg ──────────────────────────────────────────────────────────────
 
@@ -342,6 +366,19 @@ export class Renderer
    */
   private skyOffset = 0;
 
+  /**
+   * Forward-motion cloud drift accumulator, in virtual-width fractions [0, CLOUD_VIRTUAL_W).
+   * Increases with speed regardless of curve — gives the overhead-passing sensation
+   * on straight sections where skyOffset stays near zero.
+   */
+  private cloudDriftX = 0;
+
+  /** Cloud sprite sheet (clouds_1x.png). Null until loaded or if omitted from SpriteSheetMap. */
+  private readonly cloudSprites: SpriteLoader | null;
+
+  /** Pre-computed cloud layout, initialised once in the constructor. */
+  private readonly clouds: CloudInstance[];
+
   /** Sprite sheets keyed by TrafficType — populated from SpriteSheetMap.trafficCars. */
   private readonly trafficCarSheets = new Map<TrafficType, SpriteLoader>();
 
@@ -375,6 +412,8 @@ export class Renderer
     this.shrubSprites     = sprites.shrub     ?? null;
     this.signSprites      = sprites.sign      ?? null;
     this.houseSprites     = sprites.house     ?? null;
+    this.cloudSprites     = sprites.clouds    ?? null;
+    this.clouds           = this.initClouds();
 
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
@@ -425,6 +464,116 @@ export class Renderer
 
     ctx.fillStyle = this.skyGradient!;
     ctx.fillRect(0, 0, w, horizonY);
+
+    // Clouds drawn with bilinear smoothing — atmospheric elements, not pixel art.
+    // imageSmoothingEnabled is already true at this point (set in constructor,
+    // preserved by ctx.save/restore); renderRoad handles its own toggle.
+    this.renderClouds(w, horizonY);
+  }
+
+  /**
+   * Deterministically places 12 cloud instances across the virtual sky canvas.
+   *
+   * Two depth layers (6 far + 6 near) are evenly spread across CLOUD_VIRTUAL_W
+   * screen-widths with a small positional jitter.  All values are normalised so
+   * they never need recalculating on window resize — only the draw offset changes.
+   *
+   * Uses Math.sin() as a cheap deterministic hash: same layout on every run,
+   * no seed or random state needed.
+   */
+  private initClouds(): CloudInstance[]
+  {
+    const clouds: CloudInstance[] = [];
+    // Cheap deterministic hash — produces a stable pseudo-random value in (0, 1)
+    const h = (n: number): number => Math.abs(Math.sin(n * 127.1 + 311.7));
+
+    const TOTAL = 12;
+    const PER_LAYER = TOTAL / 2;
+
+    for (let i = 0; i < TOTAL; i++)
+    {
+      const isFar = i < PER_LAYER;
+      const layer = (isFar ? 0 : 1) as 0 | 1;
+      const local = isFar ? i : i - PER_LAYER;
+
+      // Evenly spaced across the virtual width with a small jitter (±10%)
+      const base   = (local + 0.5) / PER_LAYER;
+      const jitter = (h(i) - 0.5) * 0.20;
+      const skyX   = ((base + jitter) * CLOUD_VIRTUAL_W + CLOUD_VIRTUAL_W) % CLOUD_VIRTUAL_W;
+
+      // Y band: far layer stays in the upper sky, near layer occupies the middle
+      const yMin   = isFar ? 0.04 : 0.26;
+      const yMax   = isFar ? 0.30 : 0.60;
+      const skyY   = yMin + h(i + 100) * (yMax - yMin);
+
+      // Scale: far clouds are smaller (more depth cue)
+      const sMin   = isFar ? 0.18 : 0.34;
+      const sMax   = isFar ? 0.32 : 0.58;
+      const scale  = sMin + h(i + 200) * (sMax - sMin);
+
+      // Frame selection: spread variety across the 19 available cloud shapes
+      const frameIndex = (i * 3 + Math.floor(h(i + 300) * CLOUD_FRAME_COUNT)) % CLOUD_FRAME_COUNT;
+
+      clouds.push({ frameIndex, skyX, skyY, scale, layer });
+    }
+    return clouds;
+  }
+
+  /**
+   * Draws all cloud instances onto the sky area.
+   *
+   * Each cloud is positioned in a virtual canvas of CLOUD_VIRTUAL_W × screen widths.
+   * The visible window scrolls via two offsets:
+   *   - cloudDriftX: slow forward motion accumulated from speed (straight-road feel)
+   *   - skyOffset:   curve-induced left/right shift, scaled by per-layer parallax factor
+   *
+   * Clouds that straddle the left or right edge are drawn twice to wrap seamlessly.
+   * Alpha fades to 0 near the horizon so clouds dissolve into the sky haze naturally.
+   *
+   * @param w    - Canvas width in pixels.
+   * @param skyH - Sky height (= horizonY) in pixels.
+   */
+  private renderClouds(w: number, skyH: number): void
+  {
+    if (!this.cloudSprites?.isReady()) return;
+
+    const { ctx }    = this;
+    const virtualPx  = w * CLOUD_VIRTUAL_W;
+    // skyOffset is accumulated as (PARALLAX_SKY × curve × speedPct) per frame,
+    // treated here as a fraction of screen width → multiply by w for pixels.
+    const curvePxBase = this.skyOffset * w;
+    const driftPx     = this.cloudDriftX * w;
+
+    for (const cloud of this.clouds)
+    {
+      const parallaxFactor = cloud.layer === 0 ? CLOUD_PARALLAX_FAR : CLOUD_PARALLAX_NEAR;
+      const totalOffset    = driftPx + curvePxBase * parallaxFactor;
+
+      // Map cloud's virtual-canvas position to a screen X in [0, virtualPx)
+      const cloudPixX  = cloud.skyX * w;
+      const rawScreenX = ((cloudPixX - totalOffset) % virtualPx + virtualPx) % virtualPx;
+
+      const dstH = cloud.scale * skyH;
+      const dstW = dstH * (CLOUD_CELL_W / CLOUD_CELL_H);
+      const dstY = cloud.skyY * skyH;
+
+      // Fade alpha as the cloud's bottom edge approaches the horizon haze band
+      const cloudBottom = dstY + dstH;
+      const fadeStart   = skyH * CLOUD_HORIZON_FADE;
+      ctx.globalAlpha   = cloudBottom > fadeStart
+        ? 1 - Math.min(1, (cloudBottom - fadeStart) / (skyH - fadeStart))
+        : 1;
+
+      const srcRect = { x: cloud.frameIndex * CLOUD_CELL_W, y: 0, w: CLOUD_CELL_W, h: CLOUD_CELL_H };
+
+      // Draw at rawScreenX and the wrapped copy (covers both left and right edges)
+      for (const drawX of [rawScreenX, rawScreenX - virtualPx])
+      {
+        if (drawX < w && drawX + dstW > 0)
+          this.cloudSprites!.draw(ctx, srcRect, drawX, dstY, dstW, dstH);
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   // ── Road + roadside sprites ───────────────────────────────────────────────
@@ -480,10 +629,11 @@ export class Renderer
     const baseSegment = segments[startIndex];
     const basePercent = (playerZ % SEGMENT_LENGTH) / SEGMENT_LENGTH;
 
-    // Accumulate sky parallax; clamp modulo a large period to prevent
-    // the value growing unbounded over a long play session.
-    const speedPercent = speed / PLAYER_MAX_SPEED;
-    this.skyOffset     = (this.skyOffset + PARALLAX_SKY * baseSegment.curve * speedPercent) % 10000;
+    // Accumulate sky parallax and cloud drift; both clamped to prevent
+    // unbounded growth over long play sessions.
+    const speedPercent   = speed / PLAYER_MAX_SPEED;
+    this.skyOffset       = (this.skyOffset   + PARALLAX_SKY    * baseSegment.curve * speedPercent) % 10000;
+    this.cloudDriftX     = (this.cloudDriftX + CLOUD_DRIFT_RATE * speedPercent)                    % CLOUD_VIRTUAL_W;
 
     // ── Pass 1: project front-to-back, determine visibility ───────────────
     //
