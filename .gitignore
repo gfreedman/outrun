@@ -12,3 +12,6 @@ generate_review_pdf.py
 sprites/debug/
 sprites/source_analysis_*.png
 sprites/sprite_sheet_proof.png
+sprites/source_for_sprites/debug/
+sprites/source_for_sprites/source_analysis_*.png
+sprites/source_for_sprites/sprite_sheet_proof.png
