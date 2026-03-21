@@ -496,19 +496,23 @@ export class Renderer
       const layer = (isFar ? 0 : 1) as 0 | 1;
       const local = isFar ? i : i - PER_LAYER;
 
-      // Evenly spaced across the virtual width with a small jitter (±10%)
+      // Evenly spaced across the virtual width with generous jitter (±20%)
+      // so consecutive clouds never form a regular grid pattern.
       const base   = (local + 0.5) / PER_LAYER;
-      const jitter = (h(i) - 0.5) * 0.20;
+      const jitter = (h(i) - 0.5) * 0.40;
       const skyX   = ((base + jitter) * CLOUD_VIRTUAL_W + CLOUD_VIRTUAL_W) % CLOUD_VIRTUAL_W;
 
-      // Y band: far layer stays in the upper sky, near layer occupies the middle
-      const yMin   = isFar ? 0.04 : 0.26;
-      const yMax   = isFar ? 0.30 : 0.60;
+      // Y bands: keep layers clearly separated so they don't visually stack.
+      // Far = upper sky only; near = mid-sky only; no overlap zone.
+      const yMin   = isFar ? 0.03 : 0.30;
+      const yMax   = isFar ? 0.20 : 0.55;
       const skyY   = yMin + h(i + 100) * (yMax - yMin);
 
-      // Scale: far clouds are smaller (more depth cue)
-      const sMin   = isFar ? 0.18 : 0.34;
-      const sMax   = isFar ? 0.32 : 0.58;
+      // Scale: far layer stays small (depth cue); near layer medium.
+      // Values are fractions of sky height — kept deliberately modest so
+      // clouds accent the sky rather than dominate it.
+      const sMin   = isFar ? 0.07 : 0.13;
+      const sMax   = isFar ? 0.16 : 0.26;
       const scale  = sMin + h(i + 200) * (sMax - sMin);
 
       // Frame selection: spread variety across the 19 available cloud shapes
@@ -557,21 +561,30 @@ export class Renderer
       const dstW = dstH * (CLOUD_CELL_W / CLOUD_CELL_H);
       const dstY = cloud.skyY * skyH;
 
-      // Fade alpha as the cloud's bottom edge approaches the horizon haze band
-      const cloudBottom = dstY + dstH;
-      const fadeStart   = skyH * CLOUD_HORIZON_FADE;
-      ctx.globalAlpha   = cloudBottom > fadeStart
+      // Horizon fade: dissolve cloud bottom into the sky haze
+      const cloudBottom  = dstY + dstH;
+      const fadeStart    = skyH * CLOUD_HORIZON_FADE;
+      const horizonAlpha = cloudBottom > fadeStart
         ? 1 - Math.min(1, (cloudBottom - fadeStart) / (skyH - fadeStart))
         : 1;
 
       const srcRect = { x: cloud.frameIndex * CLOUD_CELL_W, y: 0, w: CLOUD_CELL_W, h: CLOUD_CELL_H };
 
-      // Draw at rawScreenX and the wrapped copy (covers both left and right edges)
-      for (const drawX of [rawScreenX, rawScreenX - virtualPx])
-      {
-        if (drawX < w && drawX + dstW > 0)
-          this.cloudSprites!.draw(ctx, srcRect, drawX, dstY, dstW, dstH);
-      }
+      // Single-draw with exit-animation routing:
+      // When rawScreenX is near the end of the virtual canvas the cloud is
+      // exiting left — route it to a negative drawX so it slides off smoothly
+      // instead of leaving a phantom copy at the left edge.
+      const drawX = rawScreenX >= virtualPx - dstW ? rawScreenX - virtualPx : rawScreenX;
+
+      // Edge fades: 80px soft zone at each screen edge prevents hard cut-offs.
+      const EDGE      = 80;
+      const leftFade  = drawX < 0        ? Math.max(0, 1 + drawX / EDGE)        : 1;
+      const rightFade = drawX > w - EDGE ? Math.max(0, (w - drawX) / EDGE)      : 1;
+
+      ctx.globalAlpha = horizonAlpha * leftFade * rightFade;
+
+      if (drawX < w && drawX + dstW > 0)
+        this.cloudSprites!.draw(ctx, srcRect, drawX, dstY, dstW, dstH);
     }
     ctx.globalAlpha = 1;
   }
