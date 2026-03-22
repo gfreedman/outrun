@@ -5,49 +5,54 @@
  *
  * Architecture
  * ────────────
- * Three engine oscillators (sawtooth) run continuously; GainNodes crossfade
- * between bands based on speed ratio.  Engine is silent at speed 0.
- * One-shots (beep, crash, screech) are spawned as transient nodes.
+ * Three engine oscillators (sawtooth) run through a WaveShaper (distortion)
+ * then a lowpass filter tracking RPM — gives organic V8 growl, not a buzz.
+ * One-shots (beep, crash) are spawned as transient nodes.
  * A rumble oscillator is toggled on/off when the player goes off-road.
- * Background music is a scheduled 4-bar synth loop in OutRun style.
+ * A persistent screech loop (noise + bandpass) fades in/out with corner load.
+ * Background music is a scheduled 4-bar OutRun-style synth loop.
  */
 
 // ── Music pattern constants ──────────────────────────────────────────────────
 
-// BPM and timing — 148 BPM matches the actual OutRun arcade tempo
-const BPM    = 148;
-const BEAT   = 60 / BPM;          // ≈ 0.405 s
-const EIGHTH = BEAT / 2;          // ≈ 0.203 s
-const BAR    = BEAT * 4;          // ≈ 1.622 s
+// BPM and timing — 155 BPM: driving Euro-dance pace that matches OutRun arcade energy
+const BPM      = 155;
+const BEAT     = 60 / BPM;       // ≈ 0.387 s
+const EIGHTH   = BEAT / 2;       // ≈ 0.194 s
+const SIXTEENTH = BEAT / 4;      // ≈ 0.097 s
+const BAR      = BEAT * 4;       // ≈ 1.548 s
 
-// Note frequencies — E major (bright, uplifting OutRun key)
-const E2 = 82.41,  A2 = 110.00, B2 = 123.47;
-const E3 = 164.81, F3s= 185.00, G3s= 207.65, A3 = 220.00, B3 = 246.94, C4s= 277.18;
-const E4 = 329.63, F4s= 369.99, G4s= 415.30, A4 = 440.00, B4 = 493.88;
-const C5s= 554.37, D5s= 622.25, E5 = 659.25;
+// Note frequencies — A major (bright, punchy — classic OutRun key)
+const A2 = 110.00,  B2 = 123.47;
+const C3s = 138.59, D3 = 146.83, E3 = 164.81, F3s = 185.00, G3s = 207.65;
+const A3 = 220.00,  B3 = 246.94, C4s = 277.18, D4 = 293.66, E4 = 329.63;
+const F4s = 369.99, G4s = 415.30, A4 = 440.00, B4 = 493.88;
+const C5s = 554.37, D5 = 587.33, E5 = 659.25, F5s = 739.99, A5 = 880.00;
 
-// 4-bar melody — 8 eighth-notes per bar, bright E major feel
+// 4-bar melody — ascending/descending runs à la Magical Sound Shower
+// Sawtooth through resonant filter = bright FM-like arcade lead
 const MELODY: number[][] = [
-  [E4,  G4s, B4,  G4s, A4,  E4,  F4s, G4s],  // I  — E major, ascending
-  [A4,  G4s, F4s, E4,  F4s, G4s, A4,  B4 ],  // IV — A major, flowing
-  [B4,  A4,  G4s, F4s, E4,  D5s, C5s, B4 ],  // V  — B major, run down
-  [C5s, B4,  A4,  G4s, F4s, E4,  F4s, E4 ],  // resolve to tonic, triumphant
+  [A4,  B4,  C5s, E5,  D5,  C5s, B4,  A4 ],   // I  — run up, glide back
+  [D5,  C5s, B4,  A4,  G4s, F4s, E4,  F4s],   // IV — descent, push back
+  [G4s, A4,  B4,  C5s, D5,  E5,  D5,  C5s],   // V  — climb toward peak
+  [B4,  A4,  G4s, F4s, E4,  C5s, E5,  A4 ],   // I  — big jump, resolve
 ];
 
-// Bass: 4 quarter-notes per bar — driving, punchy
+// Bass: root / root / fifth / root per bar — punchy, bouncing
 const BASS: number[][] = [
-  [E2,  E2,  B2,  E2 ],
-  [A2,  A2,  E2,  A2 ],
-  [B2,  B2,  F3s, B2 ],
-  [C4s, B2,  A2,  E2 ],
+  [A2,  A2,  E3,  A2 ],   // I
+  [D3,  D3,  A2,  D3 ],   // IV
+  [E3,  E3,  B2,  E3 ],   // V
+  [A2,  E3,  C3s, A2 ],   // I resolve
 ];
 
-// Chord pads: 3 notes held for the full bar
-const CHORDS: number[][] = [
-  [E3,  G3s, B3  ],   // E major
-  [A3,  C4s, E4  ],   // A major
-  [B3,  D5s, F4s ],   // B major
-  [C4s, E4,  G4s ],   // C#minor (brief colour before E resolve)
+// 4-note arpeggio chord tones (cycled across 16 sixteenth-notes per bar)
+// This 16th-note shimmer IS the OutRun / YM2151 FM chip signature sound
+const ARPEGGIO: number[][] = [
+  [A3,  C4s, E4,  A4 ],   // I  — A major
+  [D3,  F3s, A3,  D4 ],   // IV — D major
+  [E3,  G3s, B3,  E4 ],   // V  — E major
+  [A3,  E4,  C4s, A3 ],   // I  — A major (mirrored, creates motion)
 ];
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -60,30 +65,31 @@ export class AudioManager
   private initialized  = false;
 
   // ── Engine oscillators ──────────────────────────────────────────────────
-  // Three harmonics: fundamental (f), 2f, 3f — all routed through a shared
-  // lowpass filter that tracks RPM.  Lower base frequency (30-90 Hz) gives
-  // a real motor growl instead of synthesiser buzz.
+  // Three harmonics: fundamental (f), 2f, 3f.
+  // Signal chain: sawtooth oscs → individual gains → WaveShaper (distortion)
+  // → lowpass filter (RPM-tracked) → master engine gain.
+  // Distortion adds harmonic richness; low cutoff ceiling kills the whine.
 
-  private engFundOsc:   OscillatorNode | null = null;  // 1f
-  private eng2ndOsc:    OscillatorNode | null = null;  // 2f
-  private eng3rdOsc:    OscillatorNode | null = null;  // 3f
-  private engFundGain:  GainNode | null = null;
-  private eng2ndGain:   GainNode | null = null;
-  private eng3rdGain:   GainNode | null = null;
-  private engFilter:    BiquadFilterNode | null = null;
-  private engMasterGain: GainNode | null = null;
+  private engFundOsc:    OscillatorNode  | null = null;  // 1f
+  private eng2ndOsc:     OscillatorNode  | null = null;  // 2f
+  private eng3rdOsc:     OscillatorNode  | null = null;  // 3f
+  private engFundGain:   GainNode        | null = null;
+  private eng2ndGain:    GainNode        | null = null;
+  private eng3rdGain:    GainNode        | null = null;
+  private engDistortion: WaveShaperNode  | null = null;
+  private engFilter:     BiquadFilterNode| null = null;
+  private engMasterGain: GainNode        | null = null;
 
-  // ── Rumble oscillator (off-road) ────────────────────────────────────────
+  // ── Off-road rumble ────────────────────────────────────────────────────
 
   private rumbleOsc:   OscillatorNode | null = null;
-  private rumbleGain:  GainNode | null = null;
+  private rumbleGain:  GainNode       | null = null;
 
-  // ── Screech oscillator (drifting) ───────────────────────────────────────
+  // ── Tire screech (persistent loop, gain-controlled) ───────────────────
 
-  private screechSrc:  AudioBufferSourceNode | null = null;
   private screechGain: GainNode | null = null;
 
-  // ── Background music ────────────────────────────────────────────────────
+  // ── Background music ──────────────────────────────────────────────────
 
   private musicGain:    GainNode | null = null;
   private musicPlaying  = false;
@@ -104,6 +110,7 @@ export class AudioManager
 
     this.startEngineOscillators();
     this.startRumbleOscillator();
+    this.startPersistentScreech();
   }
 
   setEnabled(v: boolean): void
@@ -114,26 +121,57 @@ export class AudioManager
 
   // ── Engine ────────────────────────────────────────────────────────────────
 
+  /**
+   * Returns a soft-clipping distortion curve.
+   * `amount` controls saturation intensity (50 = light, 200 = heavy).
+   */
+  private makeDistortionCurve(amount: number): Float32Array
+  {
+    const n    = 256;
+    const curve = new Float32Array(n);
+    const k    = amount;
+    for (let i = 0; i < n; i++)
+    {
+      const x    = (i * 2) / n - 1;
+      curve[i]   = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+  }
+
   private startEngineOscillators(): void
   {
     const ctx = this.ctx!;
 
-    // Shared lowpass filter — cutoff tracks RPM so timbre opens up at speed
+    // Highpass at 20 Hz — removes inaudible DC / sub-bass mud
+    const hipass = ctx.createBiquadFilter();
+    hipass.type            = 'highpass';
+    hipass.frequency.value = 20;
+
+    // Shared lowpass filter — cutoff tracks RPM; ceiling is 650 Hz (no whine)
     const filt = ctx.createBiquadFilter();
     filt.type            = 'lowpass';
-    filt.frequency.value = 200;   // starts dark at idle
-    filt.Q.value         = 1.4;
+    filt.frequency.value = 150;  // very dark at idle
+    filt.Q.value         = 1.6;
     this.engFilter = filt;
+
+    // WaveShaper distortion — organic saturation, adds growl harmonics
+    const shaper = ctx.createWaveShaper();
+    shaper.curve     = this.makeDistortionCurve(120);
+    shaper.oversample = '2x';
+    this.engDistortion = shaper;
 
     // Master engine gain (post-filter)
     const master = ctx.createGain();
     master.gain.value = 0;
     this.engMasterGain = master;
 
+    // Chain: distortion → highpass → filter → master → destination
+    shaper.connect(hipass);
+    hipass.connect(filt);
     filt.connect(master);
     master.connect(this.masterGain!);
 
-    // Build each harmonic: sawtooth → individual gain → shared filter
+    // Build each harmonic: sawtooth → individual gain → distortion input
     const makeHarmonic = (baseFreq: number, initGain: number): [OscillatorNode, GainNode] =>
     {
       const osc  = ctx.createOscillator();
@@ -142,24 +180,23 @@ export class AudioManager
       osc.frequency.value = baseFreq;
       g.gain.value        = initGain;
       osc.connect(g);
-      g.connect(filt);
+      g.connect(shaper);
       osc.start();
       return [osc, g];
     };
 
-    // Fundamental: ~30 Hz idle, rises to ~90 Hz at top speed
-    [this.engFundOsc, this.engFundGain] = makeHarmonic(30, 1.0);
-    // 2nd harmonic: 2× fundamental — body of the motor sound
-    [this.eng2ndOsc,  this.eng2ndGain]  = makeHarmonic(60, 0.6);
-    // 3rd harmonic: 3× fundamental — gives that snarl at high RPM
-    [this.eng3rdOsc,  this.eng3rdGain]  = makeHarmonic(90, 0.3);
+    // Fundamental: 25 Hz idle → 65 Hz at top speed (deep, chest-thumping)
+    [this.engFundOsc, this.engFundGain] = makeHarmonic(25,  1.0);
+    // 2nd harmonic: 2× fundamental — body of the V8 motor
+    [this.eng2ndOsc,  this.eng2ndGain]  = makeHarmonic(50,  0.8);
+    // 3rd harmonic: 3× fundamental — bite and snarl at high RPM
+    [this.eng3rdOsc,  this.eng3rdGain]  = makeHarmonic(75,  0.4);
   }
 
   /**
    * Called each frame with the current speed ratio (0–1).
-   * Engine is fully silent at speed = 0.
-   * Fundamental frequency: 30 Hz (idle) → 90 Hz (max speed)
-   * Filter cutoff: 200 Hz (closed, dark) → 1800 Hz (open, snarling)
+   * Fundamental: 25 Hz (idle) → 65 Hz (redline).
+   * Filter cutoff: 150 Hz → 650 Hz — bright enough to hear, no whine.
    */
   updateEngine(speedRatio: number): void
   {
@@ -170,31 +207,30 @@ export class AudioManager
 
     if (speedRatio < 0.01)
     {
-      // Silent when stopped
       if (this.engMasterGain)
         this.engMasterGain.gain.setTargetAtTime(0, now, T);
       return;
     }
 
-    // Fundamental: 30 Hz at idle, 90 Hz at full speed
-    const fundamental = 30 + speedRatio * 60;
+    // Fundamental: deep idle to growling top-end
+    const fundamental = 25 + speedRatio * 40;   // 25 → 65 Hz
 
-    this.engFundOsc!.frequency.setTargetAtTime(fundamental,       now, T);
-    this.eng2ndOsc! .frequency.setTargetAtTime(fundamental * 2,   now, T);
-    this.eng3rdOsc! .frequency.setTargetAtTime(fundamental * 3,   now, T);
+    this.engFundOsc!.frequency.setTargetAtTime(fundamental,     now, T);
+    this.eng2ndOsc! .frequency.setTargetAtTime(fundamental * 2, now, T);
+    this.eng3rdOsc! .frequency.setTargetAtTime(fundamental * 3, now, T);
 
-    // Filter cutoff opens with speed — motor timbre gets brighter/louder
-    const cutoff = 200 + speedRatio * speedRatio * 1600;
+    // Filter cutoff: opens up with RPM, hard-capped at 650 Hz (no whine)
+    const cutoff = 150 + speedRatio * speedRatio * 500;  // 150 → 650 Hz
     this.engFilter!.frequency.setTargetAtTime(cutoff, now, T * 2);
 
     // Master volume — gentle ramp from quiet idle to solid driving level
-    const vol = 0.04 + speedRatio * 0.22;
+    const vol = 0.05 + speedRatio * 0.25;
     this.engMasterGain!.gain.setTargetAtTime(vol, now, T);
 
-    // Harmonic mix: 3rd harmonic grows at high RPM for that V8 snarl
-    this.engFundGain!.gain.setTargetAtTime(1.0,                   now, T);
-    this.eng2ndGain! .gain.setTargetAtTime(0.55,                  now, T);
-    this.eng3rdGain! .gain.setTargetAtTime(0.25 + speedRatio * 0.45, now, T);
+    // Harmonic mix: emphasise 2nd harmonic (V8 character); 3rd grows at high RPM
+    this.engFundGain!.gain.setTargetAtTime(1.0,                      now, T);
+    this.eng2ndGain! .gain.setTargetAtTime(0.75 + speedRatio * 0.15, now, T);
+    this.eng3rdGain! .gain.setTargetAtTime(0.25 + speedRatio * 0.40, now, T);
   }
 
   /** Immediately cuts engine to silence — call when leaving game. */
@@ -235,43 +271,56 @@ export class AudioManager
     this.rumbleGain!.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
   }
 
-  // ── Screech (drift / sharp curve) ────────────────────────────────────────
+  // ── Tire screech (persistent, gain-controlled) ────────────────────────────
 
-  startScreech(): void
+  /**
+   * Creates a looping noise → bandpass node at startup with gain = 0.
+   * updateScreech() adjusts gain each frame — no node spawning on each call.
+   */
+  private startPersistentScreech(): void
   {
-    if (!this.initialized || !this.ctx || this.screechSrc) return;
-
-    const ctx    = this.ctx;
-    const buf    = this.makeNoiseBuf(0.8);
+    const ctx    = this.ctx!;
+    const buf    = this.makeNoiseBuf(2.0);  // 2 s noise buffer, looped
     const src    = ctx.createBufferSource();
     const filter = ctx.createBiquadFilter();
     const gain   = ctx.createGain();
 
     src.buffer = buf;
     src.loop   = true;
+
+    // Bandpass centred on 1500 Hz with narrow Q — cuts through engine noise
     filter.type            = 'bandpass';
-    filter.frequency.value = 1200;
-    filter.Q.value         = 4;
-    gain.gain.value        = 0.04;
+    filter.frequency.value = 1500;
+    filter.Q.value         = 5;
+
+    gain.gain.value = 0;   // silent until updateScreech raises it
 
     src.connect(filter);
     filter.connect(gain);
     gain.connect(this.masterGain!);
     src.start();
 
-    this.screechSrc  = src;
     this.screechGain = gain;
   }
 
-  stopScreech(): void
+  /**
+   * Call every physics frame with the lateral grip ratio (centForce / availGrip).
+   * ratio < 0.5  → silent
+   * ratio 0.5–1.0 → fade in
+   * ratio ≥ 1.0  → full screech
+   * Pass 0 when off a curve or below speed threshold.
+   */
+  updateScreech(lateralRatio: number): void
   {
-    if (!this.initialized || !this.ctx || !this.screechSrc) return;
-    const now = this.ctx.currentTime;
-    this.screechGain!.gain.setTargetAtTime(0, now, 0.1);
-    const src = this.screechSrc;
-    this.screechSrc  = null;
-    this.screechGain = null;
-    setTimeout(() => src.stop(), 300);
+    if (!this.initialized || !this.ctx || !this.screechGain) return;
+
+    const ONSET    = 0.50;  // ratio at which screech begins
+    const MAX_GAIN = 0.18;  // loudness at full grip saturation
+
+    const t       = Math.max(0, (lateralRatio - ONSET) / (1.0 - ONSET));
+    const target  = Math.min(1, t) * MAX_GAIN;
+
+    this.screechGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.06);
   }
 
   // ── One-shots ─────────────────────────────────────────────────────────────
@@ -343,14 +392,13 @@ export class AudioManager
 
   /**
    * Must be called each frame while music is playing.
-   * Schedules upcoming notes to keep the buffer ahead of playback.
+   * Schedules upcoming bars to keep the buffer ahead of playback.
    */
   tickMusic(): void
   {
     if (!this.initialized || !this.ctx || !this.musicPlaying || !this.musicGain) return;
 
     const now = this.ctx.currentTime;
-    // Keep two bars scheduled ahead
     while (this.musicNextTime < now + BAR * 2)
     {
       this.scheduleMusicBar(this.musicNextTime, this.musicBarIdx % 4);
@@ -364,158 +412,196 @@ export class AudioManager
     const ctx  = this.ctx!;
     const gain = this.musicGain!;
 
-    // ── Chord pad (triangle, soft attack, held for full bar) ───────────────
-    CHORDS[bar].forEach(freq =>
+    // ── Arpeggio (16th notes — the OutRun FM-chip shimmer) ───────────────
+    // Square wave cycled through 4 chord tones × 4 = 16 notes per bar.
+    // This 16th-note shimmer is the signature of the YM2151 FM arcade sound.
+    const arpNotes = ARPEGGIO[bar];
+    for (let i = 0; i < 16; i++)
     {
-      const osc = ctx.createOscillator();
-      const g   = ctx.createGain();
-      osc.type            = 'triangle';
-      osc.frequency.value = freq;
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.14, t + BEAT * 0.3);
-      g.gain.setValueAtTime(0.14, t + BAR - BEAT * 0.3);
-      g.gain.linearRampToValueAtTime(0, t + BAR);
-      osc.connect(g);
-      g.connect(gain);
-      osc.start(t);
-      osc.stop(t + BAR + 0.05);
-    });
+      const freq = arpNotes[i % 4];
+      const et   = t + i * SIXTEENTH;
 
-    // ── Bass (sawtooth, one quarter-note per beat) ─────────────────────────
-    BASS[bar].forEach((freq, beat) =>
-    {
-      const osc = ctx.createOscillator();
-      const g   = ctx.createGain();
-      osc.type            = 'sawtooth';
-      osc.frequency.value = freq;
-      const bt = t + beat * BEAT;
-      g.gain.setValueAtTime(0, bt);
-      g.gain.linearRampToValueAtTime(0.24, bt + 0.012);
-      g.gain.setValueAtTime(0.24, bt + BEAT * 0.65);
-      g.gain.linearRampToValueAtTime(0, bt + BEAT * 0.85);
-
+      const osc  = ctx.createOscillator();
       const filt = ctx.createBiquadFilter();
-      filt.type            = 'lowpass';
-      filt.frequency.value = 700;
-      osc.connect(filt);
-      filt.connect(g);
-      g.connect(gain);
-      osc.start(bt);
-      osc.stop(bt + BEAT + 0.05);
-    });
+      const g    = ctx.createGain();
 
-    // ── Melody (square wave, 8 eighth-notes per bar) ──────────────────────
-    MELODY[bar].forEach((freq, i) =>
-    {
-      const osc = ctx.createOscillator();
-      const g   = ctx.createGain();
       osc.type            = 'square';
       osc.frequency.value = freq;
-      const et = t + i * EIGHTH;
-      g.gain.setValueAtTime(0, et);
-      g.gain.linearRampToValueAtTime(0.11, et + 0.008);
-      g.gain.setValueAtTime(0.11, et + EIGHTH * 0.72);
-      g.gain.linearRampToValueAtTime(0, et + EIGHTH * 0.88);
+      filt.type           = 'bandpass';
+      filt.frequency.value = freq * 2.2;
+      filt.Q.value        = 1.2;
 
-      const filt = ctx.createBiquadFilter();
-      filt.type            = 'bandpass';
-      filt.frequency.value = freq * 1.4;
-      filt.Q.value         = 0.7;
+      g.gain.setValueAtTime(0, et);
+      g.gain.linearRampToValueAtTime(0.07, et + 0.004);
+      g.gain.setValueAtTime(0.07, et + SIXTEENTH * 0.55);
+      g.gain.linearRampToValueAtTime(0, et + SIXTEENTH * 0.80);
+
       osc.connect(filt);
       filt.connect(g);
       g.connect(gain);
       osc.start(et);
-      osc.stop(et + EIGHTH + 0.05);
+      osc.stop(et + SIXTEENTH + 0.015);
+    }
+
+    // ── Melody (sawtooth + resonant filter — bright FM arcade lead) ───────
+    MELODY[bar].forEach((freq, i) =>
+    {
+      const osc  = ctx.createOscillator();
+      const filt = ctx.createBiquadFilter();
+      const g    = ctx.createGain();
+
+      osc.type            = 'sawtooth';
+      osc.frequency.value = freq;
+
+      // Resonant lowpass mimics DX7 "bell" bright attack
+      filt.type           = 'lowpass';
+      filt.frequency.value = freq * 2.8;
+      filt.Q.value        = 5;
+
+      const et = t + i * EIGHTH;
+      g.gain.setValueAtTime(0, et);
+      g.gain.linearRampToValueAtTime(0.15, et + 0.005);   // snappy attack
+      g.gain.setValueAtTime(0.15, et + EIGHTH * 0.60);
+      g.gain.linearRampToValueAtTime(0, et + EIGHTH * 0.82);
+
+      osc.connect(filt);
+      filt.connect(g);
+      g.connect(gain);
+      osc.start(et);
+      osc.stop(et + EIGHTH + 0.02);
     });
 
-    // ── Kick drum (beats 1 and 3) — sine thump + noise ────────────────────
-    [0, 2].forEach(beat =>
+    // ── Bass (sawtooth + tight lowpass — punchy, slap-style) ─────────────
+    BASS[bar].forEach((freq, beat) =>
+    {
+      const osc  = ctx.createOscillator();
+      const filt = ctx.createBiquadFilter();
+      const g    = ctx.createGain();
+
+      osc.type            = 'sawtooth';
+      osc.frequency.value = freq;
+
+      filt.type           = 'lowpass';
+      filt.frequency.value = 480;   // tight — punchy, not muddy
+      filt.Q.value        = 2.5;
+
+      const bt = t + beat * BEAT;
+      g.gain.setValueAtTime(0, bt);
+      g.gain.linearRampToValueAtTime(0.28, bt + 0.008);   // very fast attack
+      g.gain.setValueAtTime(0.28, bt + BEAT * 0.45);
+      g.gain.linearRampToValueAtTime(0, bt + BEAT * 0.70);
+
+      osc.connect(filt);
+      filt.connect(g);
+      g.connect(gain);
+      osc.start(bt);
+      osc.stop(bt + BEAT + 0.02);
+    });
+
+    // ── Kick drum (4-on-the-floor — every beat, Euro/OutRun dance pulse) ──
+    for (let beat = 0; beat < 4; beat++)
     {
       const bt = t + beat * BEAT;
 
-      // Body: pitched sine sweep 120→40 Hz
+      // Body: pitched sine sweep 110→35 Hz
       const osc = ctx.createOscillator();
       const og  = ctx.createGain();
-      osc.frequency.setValueAtTime(120, bt);
-      osc.frequency.exponentialRampToValueAtTime(40, bt + 0.08);
-      og.gain.setValueAtTime(0.30, bt);
-      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.22);
+      osc.frequency.setValueAtTime(110, bt);
+      osc.frequency.exponentialRampToValueAtTime(35, bt + 0.07);
+      og.gain.setValueAtTime(0.32, bt);
+      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.20);
       osc.connect(og);
       og.connect(gain);
       osc.start(bt);
-      osc.stop(bt + 0.25);
+      osc.stop(bt + 0.22);
 
       // Click transient
       const ns  = ctx.createBufferSource();
-      const buf = this.makeNoiseBuf(0.025);
+      ns.buffer = this.makeNoiseBuf(0.02);
       const nf  = ctx.createBiquadFilter();
       const ng  = ctx.createGain();
-      ns.buffer        = buf;
-      nf.type          = 'bandpass';
-      nf.frequency.value = 200;
+      nf.type            = 'bandpass';
+      nf.frequency.value = 180;
       nf.Q.value         = 1;
-      ng.gain.setValueAtTime(0.14, bt);
-      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.025);
+      ng.gain.setValueAtTime(0.12, bt);
+      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.02);
       ns.connect(nf);
       nf.connect(ng);
       ng.connect(gain);
       ns.start(bt);
-      ns.stop(bt + 0.03);
-    });
+      ns.stop(bt + 0.025);
+    }
 
-    // ── Snare (beats 2 and 4) — noise burst + mid sine ────────────────────
+    // ── Snare (beats 2 and 4) — noise burst + body tone ──────────────────
     [1, 3].forEach(beat =>
     {
       const bt = t + beat * BEAT;
 
       const ns  = ctx.createBufferSource();
-      const buf = this.makeNoiseBuf(0.18);
+      ns.buffer = this.makeNoiseBuf(0.15);
       const nf  = ctx.createBiquadFilter();
       const ng  = ctx.createGain();
-      ns.buffer          = buf;
       nf.type            = 'highpass';
       nf.frequency.value = 1800;
-      ng.gain.setValueAtTime(0.18, bt);
-      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.14);
+      ng.gain.setValueAtTime(0.20, bt);
+      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.12);
       ns.connect(nf);
       nf.connect(ng);
       ng.connect(gain);
       ns.start(bt);
-      ns.stop(bt + 0.20);
+      ns.stop(bt + 0.18);
 
       // Snare body tone
       const osc = ctx.createOscillator();
       const og  = ctx.createGain();
-      osc.frequency.value = 210;
-      og.gain.setValueAtTime(0.09, bt);
-      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.08);
+      osc.frequency.value = 220;
+      og.gain.setValueAtTime(0.10, bt);
+      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.07);
       osc.connect(og);
       og.connect(gain);
       osc.start(bt);
-      osc.stop(bt + 0.10);
+      osc.stop(bt + 0.08);
     });
 
-    // ── Hi-hat (every eighth-note) ────────────────────────────────────────
-    for (let i = 0; i < 8; i++)
+    // ── Hi-hat (16th notes — dense pattern drives the OutRun energy) ─────
+    for (let i = 0; i < 16; i++)
     {
-      const et  = t + i * EIGHTH;
+      const et  = t + i * SIXTEENTH;
       const ns  = ctx.createBufferSource();
-      const buf = this.makeNoiseBuf(0.04);
+      ns.buffer = this.makeNoiseBuf(0.03);
       const nf  = ctx.createBiquadFilter();
       const ng  = ctx.createGain();
-      ns.buffer          = buf;
       nf.type            = 'highpass';
-      nf.frequency.value = 8000;
-      // Accented on-beats, quiet off-beats
-      const vol = (i % 2 === 0) ? 0.055 : 0.028;
+      nf.frequency.value = 9000;
+      // On-beat 8ths loud, off-beat 8ths medium, off-beat 16ths quiet
+      const vol = (i % 4 === 0) ? 0.055 : (i % 2 === 0) ? 0.032 : 0.016;
       ng.gain.setValueAtTime(vol, et);
-      ng.gain.exponentialRampToValueAtTime(0.001, et + 0.035);
+      ng.gain.exponentialRampToValueAtTime(0.001, et + 0.025);
       ns.connect(nf);
       nf.connect(ng);
       ng.connect(gain);
       ns.start(et);
-      ns.stop(et + 0.04);
+      ns.stop(et + 0.03);
     }
+
+    // ── Open hat accent (beat 2 "and" and beat 4 "and" — Latin flavour) ──
+    [1.5, 3.5].forEach(pos =>
+    {
+      const et  = t + pos * BEAT;
+      const ns  = ctx.createBufferSource();
+      ns.buffer = this.makeNoiseBuf(0.10);
+      const nf  = ctx.createBiquadFilter();
+      const ng  = ctx.createGain();
+      nf.type            = 'highpass';
+      nf.frequency.value = 7000;
+      ng.gain.setValueAtTime(0.048, et);
+      ng.gain.exponentialRampToValueAtTime(0.001, et + 0.09);
+      ns.connect(nf);
+      nf.connect(ng);
+      ng.connect(gain);
+      ns.start(et);
+      ns.stop(et + 0.11);
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

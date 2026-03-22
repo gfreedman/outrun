@@ -211,7 +211,6 @@ export class Game
   // ── Audio state ────────────────────────────────────────────────────────────
 
   private wasOffRoad   = false;
-  private isDrifting   = false;
 
   // ── Loop ───────────────────────────────────────────────────────────────────
 
@@ -531,7 +530,7 @@ export class Game
   private exitToMenu(): void
   {
     this.audio.silenceEngine();
-    this.audio.stopScreech();
+    this.audio.updateScreech(0);
     this.audio.stopRumble();
     this.audio.stopMusic();
     this.phase = GamePhase.INTRO;
@@ -704,10 +703,17 @@ export class Game
     if (this.hitCooldown > 0) decayRate = Math.min(decayRate, 2.5);
     this.slideVelocity *= Math.exp(-decayRate * dt);
 
-    const newDrifting = Math.abs(this.slideVelocity) > 0.08 && speedRatio > 0.5;
-    if (newDrifting && !this.isDrifting)  this.audio.startScreech();
-    if (!newDrifting && this.isDrifting)  this.audio.stopScreech();
-    this.isDrifting = newDrifting;
+    // Continuous screech: feed grip ratio every frame; AudioManager fades in/out
+    if (speedRatio > 0.4 && Math.abs(playerSegment.curve) > 0)
+    {
+      const centForce  = Math.abs(playerSegment.curve * speedRatio * CENTRIFUGAL);
+      const availGrip  = PLAYER_STEERING * gripFactor;
+      this.audio.updateScreech(centForce / availGrip);
+    }
+    else
+    {
+      this.audio.updateScreech(0);
+    }
 
     const slideCap = this.hitCooldown > 0 ? 0.75 : 0.5;
     this.slideVelocity = Math.max(-slideCap, Math.min(slideCap, this.slideVelocity));
