@@ -315,7 +315,7 @@ export class AudioManager
     if (!this.initialized || !this.ctx || !this.screechGain) return;
 
     const ONSET    = 0.50;  // ratio at which screech begins
-    const MAX_GAIN = 0.18;  // loudness at full grip saturation
+    const MAX_GAIN = 0.32;  // loudness at full grip saturation
 
     const t       = Math.max(0, (lateralRatio - ONSET) / (1.0 - ONSET));
     const target  = Math.min(1, t) * MAX_GAIN;
@@ -344,7 +344,44 @@ export class AudioManager
   playCrashCar(): void
   {
     if (!this.initialized || !this.ctx) return;
-    this.playThud(120, 0.14, 0.35);
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // ── Low thud — body impact ─────────────────────────────────────────────
+    this.playThud(110, 0.18, 0.30);
+
+    // ── Mid scrape — metal on asphalt, 600–1400 Hz bandpass ───────────────
+    const scrapeBuf = this.makeNoiseBuf(0.45);
+    const scrapeSrc = ctx.createBufferSource();
+    scrapeSrc.buffer = scrapeBuf;
+    const scrapeF = ctx.createBiquadFilter();
+    scrapeF.type            = 'bandpass';
+    scrapeF.frequency.value = 950;
+    scrapeF.Q.value         = 0.8;
+    const scrapeG = ctx.createGain();
+    scrapeG.gain.setValueAtTime(0.20, now);
+    scrapeG.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    scrapeSrc.connect(scrapeF);
+    scrapeF.connect(scrapeG);
+    scrapeG.connect(this.masterGain!);
+    scrapeSrc.start(now);
+    scrapeSrc.stop(now + 0.50);
+
+    // ── High scratch — glass / debris, >4 kHz, short burst ────────────────
+    const scratchBuf = this.makeNoiseBuf(0.18);
+    const scratchSrc = ctx.createBufferSource();
+    scratchSrc.buffer = scratchBuf;
+    const scratchF = ctx.createBiquadFilter();
+    scratchF.type            = 'highpass';
+    scratchF.frequency.value = 4200;
+    const scratchG = ctx.createGain();
+    scratchG.gain.setValueAtTime(0.14, now);
+    scratchG.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    scratchSrc.connect(scratchF);
+    scratchF.connect(scratchG);
+    scratchG.connect(this.masterGain!);
+    scratchSrc.start(now);
+    scratchSrc.stop(now + 0.22);
   }
 
   playCrashObject(): void
@@ -353,7 +390,16 @@ export class AudioManager
     this.playThud(200, 0.11, 0.25);
   }
 
-  playBarney(): void { /* requires sounds/barney.mp3 */ }
+  playBarney(): void
+  {
+    if (typeof speechSynthesis === 'undefined') return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance('Oh no!');
+    u.pitch  = 0.75;
+    u.rate   = 0.1;
+    u.volume = 1.0;
+    speechSynthesis.speak(u);
+  }
 
   // ── Background music ─────────────────────────────────────────────────────
 

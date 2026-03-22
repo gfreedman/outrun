@@ -598,13 +598,18 @@ export class Renderer
     }
 
     // Helper: add one trapezoid subpath into the currently open path.
+    // All coordinates are pixel-snapped to eliminate sub-pixel anti-aliasing
+    // seams between adjacent segments.  y2 is extended by 1px toward the
+    // horizon so adjacent segment fills overlap — closing the 1px crack that
+    // canvas anti-aliasing can leave at their shared horizontal boundary.
     const addTrap = (x1: number, y1: number, w1: number,
                      x2: number, y2: number, w2: number): void =>
     {
-      ctx.moveTo(x1 - w1, y1);
-      ctx.lineTo(x1 + w1, y1);
-      ctx.lineTo(x2 + w2, y2);
-      ctx.lineTo(x2 - w2, y2);
+      const r2 = y2 - 1;   // 1px overlap toward horizon — seam-proof
+      ctx.moveTo(Math.round(x1 - w1), y1);
+      ctx.lineTo(Math.round(x1 + w1), y1);
+      ctx.lineTo(Math.round(x2 + w2), r2);
+      ctx.lineTo(Math.round(x2 - w2), r2);
       ctx.closePath();
     };
 
@@ -625,7 +630,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_RED) continue;
+      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_RED || sw1 < 1) continue;
       const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
       addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
       addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
@@ -638,7 +643,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_WHITE) continue;
+      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_WHITE || sw1 < 1) continue;
       const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
       addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
       addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
@@ -651,7 +656,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || !seg.color.lane) continue;
+      if (sy2 >= sy1 || !seg.color.lane || sw1 < 2) continue;
       const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
       const lw2 = sw2 * 0.06, lo2 = sw2 * 0.33;
       addTrap(sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2);
@@ -665,7 +670,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || !seg.color.lane) continue;
+      if (sy2 >= sy1 || !seg.color.lane || sw1 < 4) continue;
       const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
       const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
       const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
@@ -1278,10 +1283,19 @@ export class Renderer
       ctx.fillText('OUT RUN', w / 2, h * 0.22);
     }
 
+    // ── Hero image bounds — all menus are constrained to this region ─────────
+    let imgX = 0, imgW = w;
+    if (heroImage && heroImage.complete && heroImage.naturalWidth > 0)
+    {
+      const scale = Math.min(w / heroImage.naturalWidth, h / heroImage.naturalHeight);
+      imgW = Math.round(heroImage.naturalWidth  * scale);
+      imgX = Math.round((w - imgW) / 2);
+    }
+
     // ── Sub-menus ────────────────────────────────────────────────────────────
     if (subMenu === 'mode')
     {
-      this.drawModeMenu(w, h, selectedMode, btns);
+      this.drawModeMenu(w, h, imgX, imgW, selectedMode, btns);
     }
     else if (subMenu === 'settings')
     {
@@ -1289,92 +1303,78 @@ export class Renderer
     }
     else
     {
-      // ── Main menu ─────────────────────────────────────────────────────────
-      // No scrim — text uses thick stroke outlines for readability over the image.
-      // Layout MUST match bandH/bandTop in tickIntro (game.ts) exactly.
-      const bandH   = Math.round(h * 0.14);
-      const bandTop = Math.round(h * 0.60);
-
-      // GAME MODE and SETTINGS draw in left-aligned bands (indices 0 and 1)
-      const sideItems: Array<{ key: 'mode' | 'settings'; label: string }> = [
-        { key: 'mode',     label: 'GAME MODE' },
-        { key: 'settings', label: 'SETTINGS'  },
-      ];
-
-      const labelX   = Math.round(w * 0.10);
-      const fontSize  = Math.round(h * 0.072);
-      const outlineW  = Math.round(fontSize * 0.18);
+      // ── Main menu — all three buttons share one horizontal row ────────────
+      // START RACE stays centered; GAME MODE sits left, SETTINGS sits right.
+      const startFs = Math.round(imgW * 0.060);
+      const sideFs  = Math.round(imgW * 0.045);
+      const baseY   = Math.round(h * 0.978);   // shared baseline — START RACE anchor
 
       ctx.lineJoin = 'round';
 
-      sideItems.forEach(({ key, label }, i) =>
-      {
-        const btn   = btns?.[key];
-        const by    = bandTop + i * bandH;
-        const textY = by + Math.round(bandH / 2) + Math.round(fontSize * 0.36);
+      // ── Pre-measure all three labels so we can size the background rect ──
+      ctx.font = `bold ${startFs}px Impact, sans-serif`;
+      const smStart = ctx.measureText('START RACE');
+      const sAsc    = smStart.actualBoundingBoxAscent  ?? startFs * 0.78;
+      const sDesc   = smStart.actualBoundingBoxDescent ?? startFs * 0.14;
 
-        // Measure for tight hit rect
+      ctx.font = `bold ${sideFs}px Impact, sans-serif`;
+      const smMode = ctx.measureText('GAME MODE');
+      const smSet  = ctx.measureText('SETTINGS');
+
+      // Side buttons are vertically centred with START RACE by aligning ascenders
+      const sideAsc  = smMode.actualBoundingBoxAscent ?? sideFs * 0.78;
+      const sideDesc = smMode.actualBoundingBoxDescent ?? sideFs * 0.14;
+      // Offset side baselines so their cap-height lines up with START RACE cap-height
+      const sideY    = baseY - sAsc + sideAsc;
+
+      // Centre X positions — all relative to hero image bounds
+      const startCx = Math.round(imgX + imgW * 0.50);
+      const modeCx  = Math.round(imgX + imgW * 0.22);
+      const setCx   = Math.round(imgX + imgW * 0.78);
+
+      // ── Black semi-transparent bar behind all three buttons ───────────────
+      const padV = Math.round(h * 0.022);
+      const rectTop = baseY - sAsc - padV;
+      const rectBot = baseY + sDesc + padV;
+      ctx.fillStyle = 'rgba(0,0,0,0.20)';
+      ctx.fillRect(imgX, rectTop, imgW, rectBot - rectTop);
+
+      // ── Helper: draw a centred label with outline + optional glow ─────────
+      const drawLabel = (
+        label: string, cx: number, by: number,
+        fontSize: number, color: string, btn?: Button,
+      ): void =>
+      {
         ctx.font = `bold ${fontSize}px Impact, sans-serif`;
-        const m   = ctx.measureText(label);
+        const m    = ctx.measureText(label);
+        const lx   = Math.round(cx - m.width / 2);
         const asc  = m.actualBoundingBoxAscent  ?? fontSize * 0.78;
         const desc = m.actualBoundingBoxDescent ?? fontSize * 0.14;
-        btn?.setRect(labelX, textY - asc, m.width, asc + desc);
+        btn?.setRect(lx, by - asc, m.width, asc + desc);
 
-        // ── Glow on hover ──────────────────────────────────────────────────
         ctx.shadowColor = btn?.hovered ? 'rgba(255,160,0,0.9)' : 'transparent';
-        ctx.shadowBlur  = btn?.hovered ? Math.round(fontSize * 0.6) : 0;
+        ctx.shadowBlur  = btn?.hovered ? Math.round(fontSize * 0.65) : 0;
 
-        // ── Main label — always full white ─────────────────────────────────
         ctx.textAlign   = 'left';
-        ctx.lineWidth   = outlineW;
+        ctx.lineWidth   = Math.round(fontSize * 0.18);
         ctx.strokeStyle = 'rgba(0,0,0,0.95)';
-        ctx.strokeText(label, labelX, textY);
-        ctx.fillStyle   = '#FFFFFF';
-        ctx.fillText(label, labelX, textY);
+        ctx.strokeText(label, lx, by);
+        ctx.fillStyle   = color;
+        ctx.fillText(label, lx, by);
 
         ctx.shadowBlur  = 0;
         ctx.shadowColor = 'transparent';
-      });
+      };
 
-      // ── START RACE — centered over the "PRESS START" text in the hero image ──
-      {
-        const btn     = btns?.start;
-        const startFs = Math.round(h * 0.085);
-        const startOW = Math.round(startFs * 0.20);
-        const startY  = Math.round(h * 0.978);
-        const label   = 'START RACE';
-
-        ctx.lineJoin = 'round';
-        ctx.font     = `bold ${startFs}px Impact, sans-serif`;
-        ctx.textAlign = 'left';
-
-        const sm     = ctx.measureText(label);
-        const labelW = sm.width;
-        const blockX = Math.round(w / 2 - labelW / 2);
-        const sAsc   = sm.actualBoundingBoxAscent  ?? startFs * 0.78;
-        const sDesc  = sm.actualBoundingBoxDescent ?? startFs * 0.14;
-
-        btn?.setRect(blockX, startY - sAsc, labelW, sAsc + sDesc);
-
-        // ── Glow on hover, always green ────────────────────────────────────
-        ctx.shadowColor = btn?.hovered ? 'rgba(255,160,0,0.9)' : 'transparent';
-        ctx.shadowBlur  = btn?.hovered ? Math.round(startFs * 0.7) : 0;
-
-        ctx.lineWidth   = startOW;
-        ctx.strokeStyle = 'rgba(0,0,0,0.95)';
-        ctx.strokeText(label, blockX, startY);
-        ctx.fillStyle   = '#00EE44';
-        ctx.fillText(label, blockX, startY);
-
-        ctx.shadowBlur  = 0;
-        ctx.shadowColor = 'transparent';
-      }
+      drawLabel('GAME MODE',  modeCx,  sideY,  sideFs,  '#FFFFFF', btns?.mode);
+      drawLabel('START RACE', startCx, baseY,  startFs, '#00EE44', btns?.start);
+      drawLabel('SETTINGS',   setCx,   sideY,  sideFs,  '#FFFFFF', btns?.settings);
     }
 
     ctx.restore();
   }
 
-  private drawModeMenu(w: number, h: number, selectedMode: string, btns?: { easy: Button; medium: Button; hard: Button }): void
+  private drawModeMenu(w: number, h: number, imgX: number, imgW: number, selectedMode: string, btns?: { easy: Button; medium: Button; hard: Button }): void
   {
     const { ctx } = this;
 
@@ -1397,11 +1397,11 @@ export class Renderer
     ctx.fillStyle = 'rgba(0,0,0,0.80)';
     ctx.fillRect(0, 0, w, h);
 
-    // Thin title above bands
+    // Thin title above bands — centred within hero image
     ctx.font      = `bold ${Math.round(h * 0.040)}px Impact, sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText('SELECT DIFFICULTY', w / 2, bandTop - Math.round(h * 0.04));
+    ctx.fillText('SELECT DIFFICULTY', imgX + imgW / 2, bandTop - Math.round(h * 0.04));
 
     MODES.forEach(({ key, label, accent, stars, desc }, i) =>
     {
@@ -1410,71 +1410,56 @@ export class Renderer
       const by  = bandTop + i * bandH;
       const mid = by + bandH / 2;
 
-      // Register full-width band as hit area (0 extra pad — band IS the visual)
-      btn?.setRect(0, by, w, bandH, 0);
+      // Hit area constrained to hero image width
+      btn?.setRect(imgX, by, imgW, bandH, 0);
 
       // Band background — highlight on hover
       ctx.fillStyle = btn?.hovered ? 'rgba(255,255,255,0.12)' : sel ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0)';
-      ctx.fillRect(0, by, w, bandH);
+      ctx.fillRect(imgX, by, imgW, bandH);
 
       // Left chevron stripe (selected only)
       if (sel)
       {
         ctx.fillStyle = accent;
-        ctx.fillRect(0, by, 8, bandH);
+        ctx.fillRect(imgX, by, 8, bandH);
       }
 
-      // Separator line between bands
+      // Separator line between bands — constrained to hero image width
       if (i > 0)
       {
         ctx.strokeStyle = 'rgba(255,255,255,0.10)';
         ctx.lineWidth   = 1;
         ctx.beginPath();
-        ctx.moveTo(0, by);
-        ctx.lineTo(w, by);
+        ctx.moveTo(imgX, by);
+        ctx.lineTo(imgX + imgW, by);
         ctx.stroke();
       }
 
-      // Mode label — left-aligned with padding
-      const labelX  = Math.round(w * 0.08);
+      // Mode label — left-aligned within hero image
+      const labelX  = Math.round(imgX + imgW * 0.08);
       const fontSize = Math.round(h * 0.090);
       ctx.font      = `bold ${fontSize}px Impact, sans-serif`;
       ctx.textAlign = 'left';
       ctx.fillStyle = sel ? accent : '#444444';
       ctx.fillText(label, labelX, mid + fontSize * 0.35);
 
-      // Difficulty stars — right side
-      const starSize = sel ? Math.round(h * 0.032) : Math.round(h * 0.024);
-      const starGap  = starSize * 1.6;
-      const starX0   = w - Math.round(w * 0.08) - starGap * 2;
-      const starY    = mid;
-      ctx.font      = `bold ${starSize}px Impact, sans-serif`;
-      ctx.textAlign = 'center';
-      for (let d = 0; d < 3; d++)
-      {
-        ctx.fillStyle = d < stars
-          ? (sel ? accent : '#333333')
-          : 'rgba(255,255,255,0.08)';
-        ctx.fillText('★', starX0 + d * starGap, starY + starSize * 0.38);
-      }
-
       // Description — right of label, dimmed
       if (sel)
       {
         ctx.font      = `${Math.round(h * 0.026)}px monospace`;
-        ctx.fillStyle = 'rgba(255,255,255,0.50)';
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
         ctx.textAlign = 'left';
-        ctx.fillText(desc, labelX + Math.round(w * 0.28), mid + fontSize * 0.35);
+        ctx.fillText(desc, labelX + Math.round(imgW * 0.28), mid + fontSize * 0.35);
       }
     });
 
-    // Nav hint below bands
+    // Nav hint below bands — centred within hero image
     ctx.font      = `${Math.round(h * 0.024)}px monospace`;
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     ctx.textAlign = 'center';
     ctx.fillText(
       '↑ ↓ or hover  ·  ENTER or click to confirm  ·  ESC to cancel',
-      w / 2,
+      imgX + imgW / 2,
       bandTop + totalH + Math.round(h * 0.05),
     );
   }
