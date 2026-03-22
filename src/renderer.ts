@@ -43,19 +43,17 @@
 
 import { RoadSegment, SpriteFamily } from './types';
 import { TrafficCar, TrafficType }  from './traffic';
+import { Button }                   from './ui';
 import
 {
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,
   SEGMENT_LENGTH, COLORS,
   PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
   PARALLAX_SKY, DRAW_DISTANCE,
-  CLOUD_VIRTUAL_W, CLOUD_PARALLAX_FAR, CLOUD_PARALLAX_NEAR,
-  CLOUD_DRIFT_RATE, CLOUD_HORIZON_FADE,
 } from './constants';
 import
 {
   SpriteLoader, SpriteSheetMap, SpriteId,
-  CLOUD_CELL_W, CLOUD_CELL_H, CLOUD_FRAME_COUNT,
   carFrameRect, CAR_SPRITE_FRAME_W, CAR_SPRITE_FRAME_H, CAR_SPRITE_CENTER,
   TRAFFIC_CAR_SPECS,
   CAR_PIVOT_OFFSETS,
@@ -116,27 +114,6 @@ const BAR_COLOR_BLUE  = '#8899BB';            // pale steel-blue  (System 16 low
 const BAR_COLOR_GREEN = '#33BB44';            // medium green     (System 16 high speed)
 const BAR_COLOR_PINK  = '#FF44CC';            // pink             (redline cap, last seg)
 const BAR_COLOR_UNLIT = 'rgba(80,80,80,0.5)'; // 50% transparent — background shows through
-
-// ── CloudInstance ─────────────────────────────────────────────────────────────
-
-/**
- * One cloud sprite placed in the scrolling sky.
- * Positions are normalised so they are screen-size-independent and never need
- * to be recalculated on resize — only the draw offset changes each frame.
- */
-interface CloudInstance
-{
-  /** Index into the 19-frame cloud strip (0 = largest cumulus). */
-  frameIndex: number;
-  /** Horizontal position in virtual sky units [0, CLOUD_VIRTUAL_W]. */
-  skyX:       number;
-  /** Vertical position within the sky, normalised [0, 1] (0 = top). */
-  skyY:       number;
-  /** Rendered height as a fraction of total sky height. */
-  scale:      number;
-  /** 0 = far layer (slow, upper sky) | 1 = near layer (faster, mid-sky). */
-  layer:      0 | 1;
-}
 
 // ── ProjectedSeg ──────────────────────────────────────────────────────────────
 
@@ -312,6 +289,7 @@ function drawSegDigit(
 export class Renderer
 {
   private ctx:              CanvasRenderingContext2D;
+
   private carSprites:       SpriteLoader | null;
   private roadSprites:      SpriteLoader | null;
   private billboardSprites: SpriteLoader | null;
@@ -366,19 +344,6 @@ export class Renderer
    */
   private skyOffset = 0;
 
-  /**
-   * Forward-motion cloud drift accumulator, in virtual-width fractions [0, CLOUD_VIRTUAL_W).
-   * Increases with speed regardless of curve — gives the overhead-passing sensation
-   * on straight sections where skyOffset stays near zero.
-   */
-  private cloudDriftX = 0;
-
-  /** Cloud sprite sheet (clouds_1x.png). Null until loaded or if omitted from SpriteSheetMap. */
-  private readonly cloudSprites: SpriteLoader | null;
-
-  /** Pre-computed cloud layout, initialised once in the constructor. */
-  private readonly clouds: CloudInstance[];
-
   /** Sprite sheets keyed by TrafficType — populated from SpriteSheetMap.trafficCars. */
   private readonly trafficCarSheets = new Map<TrafficType, SpriteLoader>();
 
@@ -412,9 +377,6 @@ export class Renderer
     this.shrubSprites     = sprites.shrub     ?? null;
     this.signSprites      = sprites.sign      ?? null;
     this.houseSprites     = sprites.house     ?? null;
-    this.cloudSprites     = sprites.clouds    ?? null;
-    this.clouds           = this.initClouds();
-
     // Pre-allocate the projection pool once.  Every field is set to a dummy
     // value here; they are overwritten before use each frame.
     // Size is DRAW_DISTANCE + 100 — 100 slots of headroom beyond the draw
@@ -465,128 +427,6 @@ export class Renderer
     ctx.fillStyle = this.skyGradient!;
     ctx.fillRect(0, 0, w, horizonY);
 
-    // Clouds drawn with bilinear smoothing — atmospheric elements, not pixel art.
-    // imageSmoothingEnabled is already true at this point (set in constructor,
-    // preserved by ctx.save/restore); renderRoad handles its own toggle.
-    this.renderClouds(w, horizonY);
-  }
-
-  /**
-   * Deterministically places 12 cloud instances across the virtual sky canvas.
-   *
-   * Two depth layers (6 far + 6 near) are evenly spread across CLOUD_VIRTUAL_W
-   * screen-widths with a small positional jitter.  All values are normalised so
-   * they never need recalculating on window resize — only the draw offset changes.
-   *
-   * Uses Math.sin() as a cheap deterministic hash: same layout on every run,
-   * no seed or random state needed.
-   */
-  private initClouds(): CloudInstance[]
-  {
-    const clouds: CloudInstance[] = [];
-    // Cheap deterministic hash — produces a stable pseudo-random value in (0, 1)
-    const h = (n: number): number => Math.abs(Math.sin(n * 127.1 + 311.7));
-
-    const TOTAL = 12;
-    const PER_LAYER = TOTAL / 2;
-
-    for (let i = 0; i < TOTAL; i++)
-    {
-      const isFar = i < PER_LAYER;
-      const layer = (isFar ? 0 : 1) as 0 | 1;
-      const local = isFar ? i : i - PER_LAYER;
-
-      // Evenly spaced across the virtual width with generous jitter (±20%)
-      // so consecutive clouds never form a regular grid pattern.
-      const base   = (local + 0.5) / PER_LAYER;
-      const jitter = (h(i) - 0.5) * 0.40;
-      const skyX   = ((base + jitter) * CLOUD_VIRTUAL_W + CLOUD_VIRTUAL_W) % CLOUD_VIRTUAL_W;
-
-      // Y bands: keep layers clearly separated so they don't visually stack.
-      // Far = upper sky only; near = mid-sky only; no overlap zone.
-      const yMin   = isFar ? 0.03 : 0.30;
-      const yMax   = isFar ? 0.20 : 0.55;
-      const skyY   = yMin + h(i + 100) * (yMax - yMin);
-
-      // Scale: far layer stays small (depth cue); near layer medium.
-      // Values are fractions of sky height — kept deliberately modest so
-      // clouds accent the sky rather than dominate it.
-      const sMin   = isFar ? 0.07 : 0.13;
-      const sMax   = isFar ? 0.16 : 0.26;
-      const scale  = sMin + h(i + 200) * (sMax - sMin);
-
-      // Frame selection: spread variety across the 19 available cloud shapes
-      const frameIndex = (i * 3 + Math.floor(h(i + 300) * CLOUD_FRAME_COUNT)) % CLOUD_FRAME_COUNT;
-
-      clouds.push({ frameIndex, skyX, skyY, scale, layer });
-    }
-    return clouds;
-  }
-
-  /**
-   * Draws all cloud instances onto the sky area.
-   *
-   * Each cloud is positioned in a virtual canvas of CLOUD_VIRTUAL_W × screen widths.
-   * The visible window scrolls via two offsets:
-   *   - cloudDriftX: slow forward motion accumulated from speed (straight-road feel)
-   *   - skyOffset:   curve-induced left/right shift, scaled by per-layer parallax factor
-   *
-   * Clouds that straddle the left or right edge are drawn twice to wrap seamlessly.
-   * Alpha fades to 0 near the horizon so clouds dissolve into the sky haze naturally.
-   *
-   * @param w    - Canvas width in pixels.
-   * @param skyH - Sky height (= horizonY) in pixels.
-   */
-  private renderClouds(w: number, skyH: number): void
-  {
-    if (!this.cloudSprites?.isReady()) return;
-
-    const { ctx }    = this;
-    const virtualPx  = w * CLOUD_VIRTUAL_W;
-    // skyOffset is accumulated as (PARALLAX_SKY × curve × speedPct) per frame,
-    // treated here as a fraction of screen width → multiply by w for pixels.
-    const curvePxBase = this.skyOffset * w;
-    const driftPx     = this.cloudDriftX * w;
-
-    for (const cloud of this.clouds)
-    {
-      const parallaxFactor = cloud.layer === 0 ? CLOUD_PARALLAX_FAR : CLOUD_PARALLAX_NEAR;
-      const totalOffset    = driftPx + curvePxBase * parallaxFactor;
-
-      // Map cloud's virtual-canvas position to a screen X in [0, virtualPx)
-      const cloudPixX  = cloud.skyX * w;
-      const rawScreenX = ((cloudPixX - totalOffset) % virtualPx + virtualPx) % virtualPx;
-
-      const dstH = cloud.scale * skyH;
-      const dstW = dstH * (CLOUD_CELL_W / CLOUD_CELL_H);
-      const dstY = cloud.skyY * skyH;
-
-      // Horizon fade: dissolve cloud bottom into the sky haze
-      const cloudBottom  = dstY + dstH;
-      const fadeStart    = skyH * CLOUD_HORIZON_FADE;
-      const horizonAlpha = cloudBottom > fadeStart
-        ? 1 - Math.min(1, (cloudBottom - fadeStart) / (skyH - fadeStart))
-        : 1;
-
-      const srcRect = { x: cloud.frameIndex * CLOUD_CELL_W, y: 0, w: CLOUD_CELL_W, h: CLOUD_CELL_H };
-
-      // Single-draw with exit-animation routing:
-      // When rawScreenX is near the end of the virtual canvas the cloud is
-      // exiting left — route it to a negative drawX so it slides off smoothly
-      // instead of leaving a phantom copy at the left edge.
-      const drawX = rawScreenX >= virtualPx - dstW ? rawScreenX - virtualPx : rawScreenX;
-
-      // Edge fades: 80px soft zone at each screen edge prevents hard cut-offs.
-      const EDGE      = 80;
-      const leftFade  = drawX < 0        ? Math.max(0, 1 + drawX / EDGE)        : 1;
-      const rightFade = drawX > w - EDGE ? Math.max(0, (w - drawX) / EDGE)      : 1;
-
-      ctx.globalAlpha = horizonAlpha * leftFade * rightFade;
-
-      if (drawX < w && drawX + dstW > 0)
-        this.cloudSprites!.draw(ctx, srcRect, drawX, dstY, dstW, dstH);
-    }
-    ctx.globalAlpha = 1;
   }
 
   // ── Road + roadside sprites ───────────────────────────────────────────────
@@ -642,11 +482,9 @@ export class Renderer
     const baseSegment = segments[startIndex];
     const basePercent = (playerZ % SEGMENT_LENGTH) / SEGMENT_LENGTH;
 
-    // Accumulate sky parallax and cloud drift; both clamped to prevent
-    // unbounded growth over long play sessions.
+    // Accumulate sky parallax offset; clamped to prevent unbounded growth.
     const speedPercent   = speed / PLAYER_MAX_SPEED;
-    this.skyOffset       = (this.skyOffset   + PARALLAX_SKY    * baseSegment.curve * speedPercent) % 10000;
-    this.cloudDriftX     = (this.cloudDriftX + CLOUD_DRIFT_RATE * speedPercent)                    % CLOUD_VIRTUAL_W;
+    this.skyOffset       = (this.skyOffset + PARALLAX_SKY * baseSegment.curve * speedPercent) % 10000;
 
     // ── Pass 1: project front-to-back, determine visibility ───────────────
     //
@@ -891,6 +729,21 @@ export class Renderer
         let rect:  { x: number; y: number; w: number; h: number } | undefined;
         let worldH: number | undefined;
 
+        // ── Gate families: draw procedurally, no sheet needed ───────────
+        if (family === 'gate_start' || family === 'gate_finish')
+        {
+          // Gate world height ≈ 3× a tall palm — imposing but in-scale.
+          const gateWorldH = 2200;
+          const gateWorldW = ROAD_WIDTH * 2.4;   // spans well beyond road edges
+          const gH = Math.round(gateWorldH * sc1 * halfH);
+          const gW = Math.round(gateWorldW * sc1 * halfW);
+          if (gH < 8) continue;
+          const gX = Math.round(sx1 - gW / 2);
+          const gY = Math.round(sy1 - gH);
+          this.drawGate(family === 'gate_finish', gX, gY, gW, gH);
+          continue;
+        }
+
         switch (family)
         {
           case 'billboard': sheet = this.billboardSprites; rect = BILLBOARD_RECTS[id]; worldH = BILLBOARD_WORLD_HEIGHT[id]; break;
@@ -1120,7 +973,7 @@ export class Renderer
    * @param h     - Canvas height in pixels.
    * @param speed - Current speed in world units per second.
    */
-  private renderHUD(w: number, h: number, speed: number): void
+  private renderHUD(w: number, h: number, speed: number, raceTimer = 0, distanceKm = 0, btnQuit?: Button): void
   {
     const { ctx } = this;
 
@@ -1222,6 +1075,52 @@ export class Renderer
 
       ctx.fillRect(L.barX + i * L.barStride, L.barY, L.barSegW, L.barH);
     }
+
+    // ── Timer + distance (shown when race has started) ──────────────────────
+    if (raceTimer > 0 || distanceKm > 0)
+    {
+      const mins    = Math.floor(raceTimer / 60);
+      const secs    = (raceTimer % 60).toFixed(1).padStart(4, '0');
+      const tStr    = `${mins}:${secs}`;
+      const dStr    = `${distanceKm.toFixed(2)} km`;
+
+      const fs      = Math.max(12, Math.round(h * 0.036));
+      const padR    = Math.round(w * 0.015);
+      const lineH   = fs + 4;
+      const ty      = Math.round(h * 0.04);
+
+      // Semi-transparent backing pill
+      const tw = Math.round(fs * 4.8);
+      ctx.fillStyle = 'rgba(0,0,0,0.50)';
+      ctx.fillRect(w - tw - padR - 4, ty - fs, tw + 8, lineH * 2 + 8);
+
+      ctx.font      = `bold ${fs}px Impact, monospace`;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(tStr, w - padR, ty);
+      ctx.font      = `${Math.round(fs * 0.85)}px monospace`;
+      ctx.fillStyle = '#AADDFF';
+      ctx.fillText(dStr, w - padR, ty + lineH);
+
+      // ── Quit button — fixed top-LEFT corner (timer owns top-right) ───────
+      // Hit rect: (0, 0) → (QUIT_BTN_W, QUIT_BTN_H) — see isOverQuitButton().
+      const qfs  = Math.max(11, Math.round(h * 0.028));
+      const qpad = Math.round(h * 0.012);
+      const qStr = '✕  QUIT';
+      ctx.font      = `bold ${qfs}px Impact, sans-serif`;
+      ctx.textAlign = 'left';
+      const qtw = ctx.measureText(qStr).width;
+      const qbw = qtw + qpad * 2 + 4;
+      const qbh = qfs + qpad * 2;
+      btnQuit?.setRect(8, 8, qbw, qbh, 0);
+      ctx.fillStyle = btnQuit?.hovered ? 'rgba(220,0,0,0.92)' : 'rgba(140,0,0,0.82)';
+      ctx.fillRect(8, 8, qbw, qbh);
+      ctx.strokeStyle = '#FF4400';
+      ctx.lineWidth   = 1.5;
+      ctx.strokeRect(8, 8, qbw, qbh);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(qStr, 8 + qpad + 2, 8 + qpad + qfs * 0.82);
+    }
   }
 
   // ── Public entry point ────────────────────────────────────────────────────
@@ -1255,6 +1154,9 @@ export class Renderer
     steerAngle:    number,
     horizonOffset: number = 0,
     trafficCars:   readonly TrafficCar[] = [],
+    raceTimer:     number = 0,
+    distanceKm:    number = 0,
+    btnQuit?:      Button,
   ): void
   {
     const { ctx }  = this;
@@ -1265,7 +1167,565 @@ export class Renderer
     this.renderSky(w, horizonY, stableHorizonY);
     this.renderRoad(segments, segmentCount, playerZ, playerX, speed, drawDistance, w, h, horizonY, trafficCars);
     this.renderCar(w, h, steerAngle);
-    this.renderHUD(w, h, speed);
+    this.renderHUD(w, h, speed, raceTimer, distanceKm, btnQuit);
     ctx.restore();
+  }
+
+  // ── Preloader screen ───────────────────────────────────────────────────────
+
+  renderPreloader(w: number, h: number, progress: number, error?: string): void
+  {
+    const { ctx } = this;
+    ctx.save();
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
+
+    const cx = w / 2;
+    const cy = h / 2;
+
+    if (error)
+    {
+      ctx.fillStyle = '#FF2200';
+      ctx.font      = 'bold 18px Impact, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('FAILED TO LOAD ASSETS', cx, cy - 20);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font      = '14px monospace';
+      ctx.fillText(error, cx, cy + 10);
+    }
+    else
+    {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font      = 'bold 28px Impact, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('LOADING…', cx, cy - 40);
+
+      // Progress bar
+      const bw = Math.min(600, w * 0.7);
+      const bh = 20;
+      const bx = cx - bw / 2;
+      const by = cy - 10;
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth   = 2;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.fillStyle = '#FF6600';
+      ctx.fillRect(bx + 2, by + 2, Math.round((bw - 4) * Math.min(1, progress)), bh - 4);
+    }
+
+    ctx.restore();
+  }
+
+  // ── Intro / menu screen ────────────────────────────────────────────────────
+
+  renderIntro(
+    w: number, h: number,
+    selectedItem:  'start' | 'mode' | 'settings',
+    selectedMode:  string,
+    soundEnabled:  boolean,
+    subMenu:       'mode' | 'settings' | null,
+    pulse:         boolean,
+    heroImage:     HTMLImageElement | null = null,
+    btns?: {
+      mode: Button; settings: Button; start: Button;          // main menu
+      easy: Button; medium: Button; hard: Button;             // mode submenu
+      close: Button; sound: Button; github: Button;           // settings panel
+    },
+  ): void
+  {
+    const { ctx } = this;
+    ctx.save();
+
+    // ── Background ──────────────────────────────────────────────────────────
+    if (heroImage && heroImage.complete && heroImage.naturalWidth > 0)
+    {
+      const iw = heroImage.naturalWidth;
+      const ih = heroImage.naturalHeight;
+      // Contain: fit the entire image inside the canvas, letterbox with black
+      const scale = Math.min(w / iw, h / ih);
+      const dw    = Math.round(iw * scale);
+      const dh    = Math.round(ih * scale);
+      const dx    = Math.round((w - dw) / 2);   // center horizontally
+      const dy    = Math.round((h - dh) / 2);   // center vertically
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(heroImage, dx, dy, dw, dh);
+    }
+    else
+    {
+      // Fallback: sky gradient
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0,    '#0066AA');
+      grad.addColorStop(0.6,  '#72D7EE');
+      grad.addColorStop(1,    '#C8EEFF');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Road strip at bottom
+      ctx.fillStyle = '#888888';
+      ctx.fillRect(0, h * 0.70, w, h * 0.30);
+      ctx.fillStyle = '#CC0000';
+      ctx.fillRect(0, h * 0.70, w, 6);
+
+      // Title (only when no hero image)
+      const titleGrad = ctx.createLinearGradient(0, h * 0.06, 0, h * 0.22);
+      titleGrad.addColorStop(0, '#FFE000');
+      titleGrad.addColorStop(1, '#FF6600');
+      ctx.font      = `bold ${Math.round(h * 0.16)}px Impact, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#000000';
+      ctx.fillText('OUT RUN', w / 2 + 5, h * 0.22 + 5);
+      ctx.fillStyle = titleGrad;
+      ctx.fillText('OUT RUN', w / 2, h * 0.22);
+    }
+
+    // ── Sub-menus ────────────────────────────────────────────────────────────
+    if (subMenu === 'mode')
+    {
+      this.drawModeMenu(w, h, selectedMode, btns);
+    }
+    else if (subMenu === 'settings')
+    {
+      this.drawSettingsPanel(w, h, soundEnabled, btns);
+    }
+    else
+    {
+      // ── Main menu ─────────────────────────────────────────────────────────
+      // No scrim — text uses thick stroke outlines for readability over the image.
+      // Layout MUST match bandH/bandTop in tickIntro (game.ts) exactly.
+      const bandH   = Math.round(h * 0.14);
+      const bandTop = Math.round(h * 0.60);
+
+      // GAME MODE and SETTINGS draw in left-aligned bands (indices 0 and 1)
+      const sideItems: Array<{ key: 'mode' | 'settings'; label: string }> = [
+        { key: 'mode',     label: 'GAME MODE' },
+        { key: 'settings', label: 'SETTINGS'  },
+      ];
+
+      const labelX   = Math.round(w * 0.10);
+      const fontSize  = Math.round(h * 0.072);
+      const outlineW  = Math.round(fontSize * 0.18);
+
+      ctx.lineJoin = 'round';
+
+      sideItems.forEach(({ key, label }, i) =>
+      {
+        const btn   = btns?.[key];
+        const by    = bandTop + i * bandH;
+        const textY = by + Math.round(bandH / 2) + Math.round(fontSize * 0.36);
+
+        // Measure for tight hit rect
+        ctx.font = `bold ${fontSize}px Impact, sans-serif`;
+        const m   = ctx.measureText(label);
+        const asc  = m.actualBoundingBoxAscent  ?? fontSize * 0.78;
+        const desc = m.actualBoundingBoxDescent ?? fontSize * 0.14;
+        btn?.setRect(labelX, textY - asc, m.width, asc + desc);
+
+        // ── Glow on hover ──────────────────────────────────────────────────
+        ctx.shadowColor = btn?.hovered ? 'rgba(255,160,0,0.9)' : 'transparent';
+        ctx.shadowBlur  = btn?.hovered ? Math.round(fontSize * 0.6) : 0;
+
+        // ── Main label — always full white ─────────────────────────────────
+        ctx.textAlign   = 'left';
+        ctx.lineWidth   = outlineW;
+        ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+        ctx.strokeText(label, labelX, textY);
+        ctx.fillStyle   = '#FFFFFF';
+        ctx.fillText(label, labelX, textY);
+
+        ctx.shadowBlur  = 0;
+        ctx.shadowColor = 'transparent';
+      });
+
+      // ── START RACE — centered over the "PRESS START" text in the hero image ──
+      {
+        const btn     = btns?.start;
+        const startFs = Math.round(h * 0.085);
+        const startOW = Math.round(startFs * 0.20);
+        const startY  = Math.round(h * 0.978);
+        const label   = 'START RACE';
+
+        ctx.lineJoin = 'round';
+        ctx.font     = `bold ${startFs}px Impact, sans-serif`;
+        ctx.textAlign = 'left';
+
+        const sm     = ctx.measureText(label);
+        const labelW = sm.width;
+        const blockX = Math.round(w / 2 - labelW / 2);
+        const sAsc   = sm.actualBoundingBoxAscent  ?? startFs * 0.78;
+        const sDesc  = sm.actualBoundingBoxDescent ?? startFs * 0.14;
+
+        btn?.setRect(blockX, startY - sAsc, labelW, sAsc + sDesc);
+
+        // ── Glow on hover, always green ────────────────────────────────────
+        ctx.shadowColor = btn?.hovered ? 'rgba(255,160,0,0.9)' : 'transparent';
+        ctx.shadowBlur  = btn?.hovered ? Math.round(startFs * 0.7) : 0;
+
+        ctx.lineWidth   = startOW;
+        ctx.strokeStyle = 'rgba(0,0,0,0.95)';
+        ctx.strokeText(label, blockX, startY);
+        ctx.fillStyle   = '#00EE44';
+        ctx.fillText(label, blockX, startY);
+
+        ctx.shadowBlur  = 0;
+        ctx.shadowColor = 'transparent';
+      }
+    }
+
+    ctx.restore();
+  }
+
+  private drawModeMenu(w: number, h: number, selectedMode: string, btns?: { easy: Button; medium: Button; hard: Button }): void
+  {
+    const { ctx } = this;
+
+    const MODES = [
+      { key: 'easy',   label: 'EASY',   accent: '#00DD44', stars: 1,
+        desc: 'Few cars  ·  gentle curves  ·  relaxed pace'      },
+      { key: 'medium', label: 'MEDIUM', accent: '#FFB800', stars: 2,
+        desc: 'Classic OutRun experience'                         },
+      { key: 'hard',   label: 'HARD',   accent: '#FF2200', stars: 3,
+        desc: 'Dense traffic  ·  sharp turns  ·  max speed'      },
+    ];
+
+    // ── Layout: three equal full-width bands, vertically centred ─────────────
+    // MUST match modeCardAt() in game.ts exactly.
+    const bandH   = Math.round(h * 0.18);
+    const totalH  = bandH * 3;
+    const bandTop = Math.round((h - totalH) / 2);
+
+    // Dark scrim over entire canvas — hero image dims to silhouette
+    ctx.fillStyle = 'rgba(0,0,0,0.80)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Thin title above bands
+    ctx.font      = `bold ${Math.round(h * 0.040)}px Impact, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('SELECT DIFFICULTY', w / 2, bandTop - Math.round(h * 0.04));
+
+    MODES.forEach(({ key, label, accent, stars, desc }, i) =>
+    {
+      const btn = btns?.[key as 'easy' | 'medium' | 'hard'];
+      const sel = selectedMode === key;
+      const by  = bandTop + i * bandH;
+      const mid = by + bandH / 2;
+
+      // Register full-width band as hit area (0 extra pad — band IS the visual)
+      btn?.setRect(0, by, w, bandH, 0);
+
+      // Band background — highlight on hover
+      ctx.fillStyle = btn?.hovered ? 'rgba(255,255,255,0.12)' : sel ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0)';
+      ctx.fillRect(0, by, w, bandH);
+
+      // Left chevron stripe (selected only)
+      if (sel)
+      {
+        ctx.fillStyle = accent;
+        ctx.fillRect(0, by, 8, bandH);
+      }
+
+      // Separator line between bands
+      if (i > 0)
+      {
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        ctx.lineWidth   = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, by);
+        ctx.lineTo(w, by);
+        ctx.stroke();
+      }
+
+      // Mode label — left-aligned with padding
+      const labelX  = Math.round(w * 0.08);
+      const fontSize = Math.round(h * 0.090);
+      ctx.font      = `bold ${fontSize}px Impact, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = sel ? accent : '#444444';
+      ctx.fillText(label, labelX, mid + fontSize * 0.35);
+
+      // Difficulty stars — right side
+      const starSize = sel ? Math.round(h * 0.032) : Math.round(h * 0.024);
+      const starGap  = starSize * 1.6;
+      const starX0   = w - Math.round(w * 0.08) - starGap * 2;
+      const starY    = mid;
+      ctx.font      = `bold ${starSize}px Impact, sans-serif`;
+      ctx.textAlign = 'center';
+      for (let d = 0; d < 3; d++)
+      {
+        ctx.fillStyle = d < stars
+          ? (sel ? accent : '#333333')
+          : 'rgba(255,255,255,0.08)';
+        ctx.fillText('★', starX0 + d * starGap, starY + starSize * 0.38);
+      }
+
+      // Description — right of label, dimmed
+      if (sel)
+      {
+        ctx.font      = `${Math.round(h * 0.026)}px monospace`;
+        ctx.fillStyle = 'rgba(255,255,255,0.50)';
+        ctx.textAlign = 'left';
+        ctx.fillText(desc, labelX + Math.round(w * 0.28), mid + fontSize * 0.35);
+      }
+    });
+
+    // Nav hint below bands
+    ctx.font      = `${Math.round(h * 0.024)}px monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      '↑ ↓ or hover  ·  ENTER or click to confirm  ·  ESC to cancel',
+      w / 2,
+      bandTop + totalH + Math.round(h * 0.05),
+    );
+  }
+
+  private drawSettingsPanel(w: number, h: number, soundEnabled: boolean, btns?: { close: Button; sound: Button; github: Button }): void
+  {
+    const { ctx } = this;
+
+    // ── Panel geometry ────────────────────────────────────────────────────
+    const px = Math.round(w * 0.18);
+    const py = Math.round(h * 0.16);
+    const pw = Math.round(w * 0.64);
+    const ph = Math.round(h * 0.62);
+    const pad = Math.round(pw * 0.06);
+
+    // Background + border
+    ctx.fillStyle = 'rgba(0,0,8,0.88)';
+    ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = '#FF6600';
+    ctx.lineWidth   = 3;
+    ctx.strokeRect(px, py, pw, ph);
+    // Inner highlight line
+    ctx.strokeStyle = 'rgba(255,102,0,0.20)';
+    ctx.lineWidth   = 1;
+    ctx.strokeRect(px + 4, py + 4, pw - 8, ph - 8);
+
+    // ── Title bar ─────────────────────────────────────────────────────────
+    const titleH = Math.round(h * 0.072);
+    ctx.fillStyle = '#FF6600';
+    ctx.fillRect(px, py, pw, titleH);
+
+    const titleFs = Math.round(h * 0.048);
+    ctx.font      = `bold ${titleFs}px Impact, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000000';
+    ctx.fillText('OPTIONS', px + pw / 2 + 2, py + titleH * 0.72 + 2);
+    ctx.fillStyle = '#FFE000';
+    ctx.fillText('OPTIONS', px + pw / 2, py + titleH * 0.72);
+
+    // ── Close button — top-right of title bar ─────────────────────────────
+    const closeSize = Math.round(titleH * 0.72);
+    const closeX    = px + pw - closeSize - Math.round(titleH * 0.18);
+    const closeY    = py + Math.round(titleH * 0.14);
+    btns?.close.setRect(closeX, closeY, closeSize, closeSize, 0);
+    ctx.fillStyle   = btns?.close.hovered ? 'rgba(0,0,0,0.55)' : 'rgba(255,80,0,0.55)';
+    ctx.fillRect(closeX, closeY, closeSize, closeSize);
+    ctx.font        = `bold ${Math.round(closeSize * 0.75)}px Impact, sans-serif`;
+    ctx.textAlign   = 'center';
+    ctx.fillStyle   = '#FFFFFF';
+    ctx.fillText('✕', closeX + closeSize / 2, closeY + closeSize * 0.78);
+
+    // ── Section: SOUND toggle — top margin matches left/right pad ─────────
+    const rowY   = py + titleH + pad;
+    const labelFs = Math.round(h * 0.040);
+
+    ctx.font      = `bold ${labelFs}px Impact, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#CCCCCC';
+    ctx.fillText('SOUND', px + pad, rowY);
+
+    // Toggle pill  ◀ ON ▶  /  ◀ OFF ▶
+    const pillFs = Math.round(h * 0.032);
+    const pillTxt = soundEnabled ? '◀  ON  ▶' : '◀  OFF  ▶';
+    ctx.font      = `bold ${pillFs}px Impact, monospace`;
+    const pillW   = ctx.measureText(pillTxt).width + 24;
+    const pillH   = pillFs + 14;
+    const pillX   = px + pw - pad - pillW;
+    const pillY   = rowY - labelFs * 0.82;
+    btns?.sound.setRect(pillX, pillY, pillW, pillH, 0);
+    ctx.fillStyle = soundEnabled ? '#003322' : '#220000';
+    ctx.fillRect(pillX, pillY, pillW, pillH);
+    ctx.strokeStyle = soundEnabled ? '#00CC66' : '#882200';
+    ctx.lineWidth   = 2;
+    ctx.strokeRect(pillX, pillY, pillW, pillH);
+    ctx.fillStyle = soundEnabled ? '#00FF88' : '#FF4400';
+    ctx.textAlign = 'center';
+    ctx.fillText(pillTxt, pillX + pillW / 2, pillY + pillFs * 0.88 + 7);
+
+    // Divider
+    const divY = rowY + Math.round(h * 0.034);
+    ctx.strokeStyle = 'rgba(255,102,0,0.30)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(px + pad, divY);
+    ctx.lineTo(px + pw - pad, divY);
+    ctx.stroke();
+
+    // ── Section: ABOUT ────────────────────────────────────────────────────
+    const aboutY  = divY + Math.round(h * 0.038);
+    const aboutFs = Math.round(h * 0.028);
+    const lineGap = Math.round(aboutFs * 1.55);
+
+    ctx.font      = `bold ${aboutFs}px monospace`;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FF6600';
+    ctx.fillText('ABOUT', px + pad, aboutY);
+
+    const aboutLines = [
+      { text: 'Built in TypeScript + HTML5 Canvas.', link: false },
+      { text: 'No game engines. Pure pseudo-3D.',    link: false },
+      { text: '⇒  github.com/gfreedman/outrun',      link: true  },
+    ];
+    ctx.font = `${aboutFs}px monospace`;
+    aboutLines.forEach(({ text, link }, i) =>
+    {
+      const ty = aboutY + lineGap + i * lineGap;
+      const asc = aboutFs * 0.78;
+      if (link)
+      {
+        const tw = ctx.measureText(text).width;
+        btns?.github.setRect(px + pad, ty - asc, tw, asc + aboutFs * 0.14);
+        ctx.fillStyle = btns?.github.hovered ? '#99DDFF' : '#66BBFF';
+        ctx.fillText(text, px + pad, ty);
+        ctx.fillRect(px + pad, ty + 3, tw, 1);
+      }
+      else
+      {
+        ctx.fillStyle = '#888899';
+        ctx.fillText(text, px + pad, ty);
+      }
+    });
+
+    // ── Footer hint ───────────────────────────────────────────────────────
+    ctx.font      = `${Math.round(h * 0.022)}px monospace`;
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.textAlign = 'center';
+    ctx.fillText('ENTER / CLICK to toggle sound  ·  ESC to close', px + pw / 2, py + ph - 14);
+  }
+
+  // ── Countdown overlay ──────────────────────────────────────────────────────
+
+  renderCountdown(w: number, h: number, value: number | 'GO!'): void
+  {
+    const { ctx } = this;
+    const text = value === 'GO!' ? 'GO!' : String(value);
+    const size = Math.round(h * 0.22);
+
+    ctx.save();
+    ctx.font      = `bold ${size}px Impact, sans-serif`;
+    ctx.textAlign = 'center';
+
+    // Thick black outline
+    ctx.lineWidth   = size * 0.08;
+    ctx.strokeStyle = '#000000';
+    ctx.lineJoin    = 'round';
+    ctx.strokeText(text, w / 2, h * 0.52);
+
+    // Bright fill
+    ctx.fillStyle = value === 'GO!' ? '#00FF88' : '#FFFFFF';
+    ctx.fillText(text, w / 2, h * 0.52);
+
+    ctx.restore();
+  }
+
+  // ── Finish overlay ─────────────────────────────────────────────────────────
+
+  renderFinish(w: number, h: number, elapsedSec: number, distanceKm: number): void
+  {
+    const { ctx } = this;
+    ctx.save();
+
+    // Dim the road behind the panel
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 0, w, h);
+
+    const pw = Math.min(500, w * 0.7);
+    const ph = 210;
+    const px = (w - pw) / 2;
+    const py = (h - ph) / 2;
+
+    ctx.fillStyle = 'rgba(0,0,40,0.92)';
+    ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = '#FF6600';
+    ctx.lineWidth   = 3;
+    ctx.strokeRect(px, py, pw, ph);
+
+    const mins = Math.floor(elapsedSec / 60);
+    const secs = (elapsedSec % 60).toFixed(1).padStart(4, '0');
+    const timeStr = `${mins}:${secs}`;
+    const distStr = `${distanceKm.toFixed(2)} km`;
+
+    const lines = [
+      { text: 'RACE COMPLETE',    size: 0.060, color: '#FFE000', bold: true  },
+      { text: `Time:  ${timeStr}`, size: 0.042, color: '#FFFFFF', bold: false },
+      { text: `Dist:  ${distStr}`, size: 0.042, color: '#FFFFFF', bold: false },
+    ];
+
+    lines.forEach(({ text, size, color, bold }, i) =>
+    {
+      ctx.font      = `${bold ? 'bold ' : ''}${Math.round(h * size)}px Impact, monospace`;
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(text, w / 2, py + 52 + i * 52);
+    });
+
+    // Button hints
+    const btnY = py + ph - 20;
+    ctx.font      = `${Math.round(h * 0.034)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFE000';
+    ctx.fillText('ENTER = Play Again', w / 2 - pw / 5, btnY);
+    ctx.fillStyle = '#AAAAFF';
+    ctx.fillText('ESC = Menu', w / 2 + pw / 5, btnY);
+
+    ctx.restore();
+  }
+
+  // ── Procedural gate drawing ────────────────────────────────────────────────
+
+  /**
+   * Draws a start or finish gate spanning the road, centred at (x, y).
+   * Both gates use vertical posts + horizontal beam.
+   * Start = red/white alternating vertical stripes.
+   * Finish = black/white checkerboard.
+   */
+  private drawGate(isFinish: boolean, x: number, y: number, gw: number, gh: number): void
+  {
+    const { ctx } = this;
+    const postW   = Math.max(4, Math.round(gw * 0.04));
+    const beamH   = Math.max(4, Math.round(gh * 0.12));
+    const postH   = gh - beamH;
+
+    // Posts
+    ctx.fillStyle = '#CCCCCC';
+    ctx.fillRect(x,                    y + beamH, postW, postH);
+    ctx.fillRect(x + gw - postW,       y + beamH, postW, postH);
+
+    // Horizontal beam with alternating stripes
+    const stripeCount = Math.max(4, Math.round(gw / beamH));
+    const stripeW     = gw / stripeCount;
+    for (let i = 0; i < stripeCount; i++)
+    {
+      const even = i % 2 === 0;
+      ctx.fillStyle = isFinish
+        ? (even ? '#FFFFFF' : '#222222')
+        : (even ? '#DD0000' : '#FFFFFF');
+      ctx.fillRect(Math.round(x + i * stripeW), y, Math.ceil(stripeW), beamH);
+    }
+    ctx.strokeStyle = '#333333';
+    ctx.lineWidth   = 1;
+    ctx.strokeRect(x, y, gw, beamH);
+
+    // Banner text
+    const label = isFinish ? 'FINISH' : 'START';
+    const fs    = Math.min(beamH * 0.75, 28);
+    ctx.font      = `bold ${Math.round(fs)}px Impact, sans-serif`;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth   = fs * 0.12;
+    ctx.strokeText(label, x + gw / 2, y + beamH * 0.78);
+    ctx.fillText(label,   x + gw / 2, y + beamH * 0.78);
   }
 }

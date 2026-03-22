@@ -14,8 +14,8 @@
  *   curves and hills.
  */
 
-import { RoadSegment, ProjectedPoint, SegmentColor, SpriteFamily, SpriteInstance } from './types';
-import { SEGMENT_LENGTH, COLORS, ROAD_CURVE, ROAD_HILL, COLOR_BAND_PERIOD } from './constants';
+import { RoadSegment, ProjectedPoint, SegmentColor, SpriteFamily, SpriteInstance, GameMode } from './types';
+import { SEGMENT_LENGTH, COLORS, ROAD_CURVE, ROAD_HILL, COLOR_BAND_PERIOD, RACE_CONFIG } from './constants';
 
 // ── Easing functions ──────────────────────────────────────────────────────────
 //
@@ -1192,17 +1192,66 @@ export class Road
    * @param data - Array of SerializedSegment objects from road-data.ts.
    * @returns A fully-initialised Road ready for the game loop.
    */
-  static fromData(data: SerializedSegment[]): Road
+  /**
+   * The segment index where the start gate sprite is placed.
+   * Always 8 segments ahead of the player's spawn position (Z = 0).
+   */
+  static readonly START_GATE_SEGMENT = 8;
+
+  /**
+   * Reconstructs a Road from pre-built serialised data.
+   *
+   * When `mode` is supplied the road data is filtered to match the difficulty:
+   *   EASY  — curve and hill values scaled down (gentler road).
+   *   HARD  — curve and hill values scaled up (more aggressive road).
+   *   MEDIUM — no modification (uses the data as-is).
+   *
+   * A start gate sprite is injected at segment START_GATE_SEGMENT regardless
+   * of mode.  The caller uses `distanceTravelled` to detect finish — no finish
+   * gate segment is needed in the road data.
+   */
+  static fromData(data: SerializedSegment[], mode: GameMode = GameMode.MEDIUM): Road
   {
+    const cfg  = RACE_CONFIG[mode];
     const road = Object.create(Road.prototype) as Road;
-    road._segments = data.map(d => ({
-      index:   d.index,
-      curve:   d.curve,
-      color:   d.color,
-      sprites: d.sprites.length > 0 ? d.sprites : undefined,
-      p1:      makeProjectedPoint(d.p1z, d.p1y),
-      p2:      makeProjectedPoint(d.p2z, d.p2y),
-    }));
+
+    road._segments = data.map(d =>
+    {
+      // Scale curve and hill magnitude per difficulty.
+      let curve = d.curve * cfg.curveScale;
+      // Clamp to the engine's hard limit so the renderer never gets
+      // extreme values that blow up the projection maths.
+      curve = Math.max(-ROAD_CURVE.HARD, Math.min(ROAD_CURVE.HARD, curve));
+
+      // Hill: scale the Y-delta between p1 and p2.
+      const rawDeltaY  = d.p2y - d.p1y;
+      const scaledDy   = rawDeltaY * cfg.hillScale;
+
+      // Rebuild sprites, injecting gate_start at the designated segment.
+      let sprites: SpriteInstance[] | undefined = d.sprites.length > 0
+        ? [...d.sprites]
+        : undefined;
+
+      if (d.index === Road.START_GATE_SEGMENT)
+      {
+        const gateSprite: SpriteInstance = {
+          id:     'gate_start',
+          family: 'gate_start',
+          worldX: 0,    // centred on road
+        };
+        sprites = sprites ? [gateSprite, ...sprites] : [gateSprite];
+      }
+
+      return {
+        index:   d.index,
+        curve,
+        color:   d.color,
+        sprites,
+        p1:      makeProjectedPoint(d.p1z, d.p1y),
+        p2:      makeProjectedPoint(d.p2z, d.p1y + scaledDy),
+      };
+    });
+
     return road;
   }
 

@@ -1,59 +1,22 @@
 /**
  * game.ts
  *
- * The main game loop and player physics simulation.
+ * Main game loop and state machine.
  *
- * Every animation frame this class:
- *   1. Reads player input (arrow keys).
- *   2. Runs physics: throttle, braking, coasting, steering, centrifugal force,
- *      off-road friction.
- *   3. Advances the player's position along the track.
- *   4. Hands everything to the Renderer to draw.
- *
- * ── Coordinate system ──────────────────────────────────────────────────────
- *
- * playerZ (depth):
- *   Increases as the player moves forward.  Wraps modulo trackLength so the
- *   road loops seamlessly.  Unit: world units.
- *
- * playerX (lateral):
- *   0 = road centre.  ±1 = road edges.  ±2 = hard wall (clamped).
- *   |playerX| > 1 means the car is on the grass (off-road).
- *   Normalised so the physics values are independent of road width.
- *
- * ── Physics model overview ─────────────────────────────────────────────────
- *
- * Throttle — three-phase "Alive & Kinetic" curve:
- *   0–15%  speed: smoothstep ramp LOW→MID (tyres finding grip on launch).
- *   15–80% speed: flat-out MID thrust (peak power band).
- *   80–100%speed: MID tapers linearly to 0 (fighting aerodynamic drag).
- *
- * Braking — hydraulic ramp:
- *   Brake force builds quadratically over BRAKE_RAMP seconds, simulating
- *   hydraulic fluid pressurising under a hard pedal press.
- *
- * Coasting — speed-scaled drag:
- *   Deceleration scales from 50% of COAST_RATE at rest to 100% at top speed,
- *   giving a natural aerodynamic-drag feel without being sticky at low speeds.
- *
- * Steering — grip/understeer model:
- *   Lateral authority tapers quadratically with speed (gripFactor), so the car
- *   feels planted and precise at low speed but dangerously loose at 290 km/h.
- *
- * Centrifugal force:
- *   On a curve, the car is pushed outward proportional to curve intensity ×
- *   speed².  The player must actively counter-steer to stay on the road.
- *
- * Off-road:
- *   Grass applies heavy deceleration (greater than ACCEL_MID so the player
- *   can never accelerate on grass).  On return to asphalt, the speed cap
- *   recovers gradually over OFFROAD_RECOVERY_TIME seconds.
+ * GamePhase drives every frame:
+ *   PRELOADING → shows progress bar while sprites load.
+ *   INTRO      → title screen with GAME MODE / SETTINGS / START menu.
+ *   COUNTDOWN  → 3-2-1-GO sequence; road visible but player frozen.
+ *   PLAYING    → full physics race; timer and distance accumulate.
+ *   FINISHED   → race-complete overlay; Enter restarts, Escape goes to menu.
  */
 
 import { Road }         from './road';
 import { ROAD_DATA }   from './road-data';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
+import { AudioManager } from './audio';
+import { Preloader }    from './preloader';
 import { SpriteLoader, TRAFFIC_CAR_SPECS } from './sprites';
 import { checkCollisions, getBlockingRadius, CollisionClass } from './collision';
 import {
@@ -63,6 +26,8 @@ import {
   updateTraffic,
   checkTrafficCollision,
 } from './traffic';
+import { GamePhase, GameMode, GameSettings } from './types';
+import { Button, anyHovered }               from './ui';
 import
 {
   PLAYER_MAX_SPEED,
@@ -96,107 +61,177 @@ import
   TRAFFIC_HIT_COOLDOWN,
   SHAKE_TRAFFIC_DURATION, SHAKE_TRAFFIC_INTENSITY,
   TRAFFIC_HIT_RECOVERY_TIME, TRAFFIC_HIT_RECOVERY_BOOST,
+  RACE_CONFIG, WU_PER_KM,
 } from './constants';
 
-// COLLISION_WINDOW imported from constants — see that file for the asymmetry explanation (L5).
+const STORAGE_KEY = 'outrun_settings';
+
+function loadSettings(): GameSettings
+{
+  try
+  {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw)
+    {
+      const s = JSON.parse(raw) as Partial<GameSettings>;
+      const mode = Object.values(GameMode).includes(s.mode as GameMode)
+        ? s.mode as GameMode
+        : GameMode.MEDIUM;
+      return { mode, soundEnabled: s.soundEnabled !== false };
+    }
+  }
+  catch { /* ignore parse errors */ }
+  return { mode: GameMode.MEDIUM, soundEnabled: true };
+}
+
+function saveSettings(s: GameSettings): void
+{
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
+  catch { /* quota / private-mode */ }
+}
 
 export class Game
 {
-  private road:     Road;
+  private canvas:   HTMLCanvasElement;
   private renderer: Renderer;
   private input:    InputManager;
+  private audio:    AudioManager;
 
-  /** Player depth position in world units.  Advances each frame at current speed. */
-  private playerZ = 0;
+  // ── State machine ──────────────────────────────────────────────────────────
 
-  /**
-   * Player lateral position, normalised.
-   * 0 = centre, ±1 = road edges, |playerX| > 1 = off-road, clamped at ±2.
-   */
-  private playerX = 0;
+  private phase:    GamePhase = GamePhase.PRELOADING;
+  private settings: GameSettings;
 
-  /** Current speed in world units per second. */
-  private speed = 0;
+  // ── Preloader state ────────────────────────────────────────────────────────
 
-  /**
-   * Continuous steering value ramped from -1 (full left) to +1 (full right).
-   * Springs back to 0 when the key is released.  Fed to the renderer for
-   * frame selection on the car sprite.
-   */
-  private steerAngle = 0;
+  private preloader:  Preloader | null = null;
+  private loadError:  string = '';
+  private heroImage:  HTMLImageElement | null = null;
 
-  /**
-   * How long the brake key has been held this press, in seconds.
-   * Drives the quadratic ramp-up of braking force.
-   */
-  private brakeHeld = 0;
+  // ── Road + traffic (initialised on game start, not construction) ───────────
 
-  /** True when the player is on grass (|playerX| > 1). */
-  private offRoad = false;
+  private road:        Road;
+  private trafficCars: TrafficCar[] = [];
 
-  /**
-   * Recovery progress after returning to asphalt, in [0, 1].
-   * 0 = just returned (speed cap still near OFFROAD_MAX).
-   * 1 = fully recovered (no cap).
-   */
-  private offRoadRecovery = 1;
+  // ── Player physics ─────────────────────────────────────────────────────────
 
-  /**
-   * Lateral slide velocity in road-widths per second.
-   * Positive = sliding right, negative = sliding left.
-   * Builds when centrifugal force overwhelms grip; caught with counter-steer.
-   */
-  private slideVelocity = 0;
+  private playerZ          = 0;
+  private playerX          = 0;
+  private speed            = 0;
+  private steerAngle       = 0;
+  private brakeHeld        = 0;
+  private offRoad          = false;
+  private offRoadRecovery  = 1;
+  private slideVelocity    = 0;
+  private jitterY          = 0;
 
-  /**
-   * Vertical horizon pixel offset used to simulate bumpy terrain on grass.
-   * Set to a small random value each frame while off-road; 0 on asphalt.
-   */
-  private jitterY = 0;
+  // ── Effective top speed (varies by mode) ──────────────────────────────────
+
+  private effectiveMaxSpeed = PLAYER_MAX_SPEED;
 
   // ── Collision state ────────────────────────────────────────────────────────
 
-  /** Seconds until the next collision can register. */
-  private hitCooldown = 0;
-
-  /** Seconds of sustained house-grind deceleration remaining. */
-  private grindTimer = 0;
-
-  /** Post-hit speed-recovery boost remaining, in seconds. */
+  private hitCooldown      = 0;
+  private grindTimer       = 0;
   private hitRecoveryTimer = 0;
-
-  /** Current accel multiplier for post-hit recovery (1.0 = no boost). */
   private hitRecoveryBoost = 1.0;
+  private shakeTimer       = 0;
+  private shakeIntensity   = 0;
 
-  /** Camera shake countdown in seconds. */
-  private shakeTimer = 0;
+  // ── Race timers ────────────────────────────────────────────────────────────
 
-  /** Max screen offset in px for current shake event. */
-  private shakeIntensity = 0;
+  private raceTimer         = 0;
+  private distanceTravelled = 0;   // cumulative world units (not looped)
 
-  /** Active traffic cars — updated every frame by updateTraffic(). */
-  private trafficCars: TrafficCar[] = [];
+  // ── Countdown state ────────────────────────────────────────────────────────
 
-  /** Timestamp of the previous frame in milliseconds, used to compute dt. */
+  private countdownValue: number | 'GO!' = 3;
+  private countdownTimer  = 0;
+
+  // ── Intro / menu state ─────────────────────────────────────────────────────
+
+  private menuItem:     'start' | 'mode' | 'settings' = 'start';
+  private menuSubMenu:  'mode' | 'settings' | null = null;
+  private menuSubMode:  GameMode = GameMode.MEDIUM;
+  private menuSubSound  = true;
+  private pulseClock    = 0;
+
+  // ── Mouse state ────────────────────────────────────────────────────────────
+
+  private mouseX     = -1;
+  private mouseY     = -1;
+  private clickX     = -1;   // snapshot of mouseX at click time — never overwritten by onMouseMove
+  private clickY     = -1;
+  private mouseClick = false;
+
+  private onMouseMove = (e: MouseEvent): void =>
+  {
+    const r      = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width  / r.width;
+    const scaleY = this.canvas.height / r.height;
+    this.mouseX  = (e.clientX - r.left) * scaleX;
+    this.mouseY  = (e.clientY - r.top)  * scaleY;
+  };
+
+  private onMouseDown = (e: MouseEvent): void =>
+  {
+    if (e.button !== 0) return;
+    const r      = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width  / r.width;
+    const scaleY = this.canvas.height / r.height;
+    this.mouseX  = (e.clientX - r.left) * scaleX;
+    this.mouseY  = (e.clientY - r.top)  * scaleY;
+    this.clickX  = this.mouseX;
+    this.clickY  = this.mouseY;
+    this.mouseClick = true;
+  };
+
+  // ── UI Buttons ─────────────────────────────────────────────────────────────
+  // Each button's rect is registered by the renderer each frame, then tick()
+  // is called in the game tick to compute fresh hover/click state.
+
+  // Main menu
+  private btnMode     = new Button();
+  private btnSettings = new Button();
+  private btnStart    = new Button();
+
+  // Mode submenu cards
+  private btnEasy   = new Button();
+  private btnMedium = new Button();
+  private btnHard   = new Button();
+
+  // Settings panel
+  private btnClose  = new Button();
+  private btnSound  = new Button();
+  private btnGithub = new Button();
+
+  // In-game
+  private btnQuit   = new Button();
+
+  // ── Audio state ────────────────────────────────────────────────────────────
+
+  private wasOffRoad   = false;
+  private isDrifting   = false;
+
+  // ── Loop ───────────────────────────────────────────────────────────────────
+
   private lastTimestamp = 0;
+  private rafId         = 0;
 
-  /** requestAnimationFrame handle, stored so we can cancel the loop on stop(). */
-  private rafId = 0;
-
-  /** Canvas logical width in CSS pixels.  Set by main.ts on resize. */
   w = 0;
-
-  /** Canvas logical height in CSS pixels.  Set by main.ts on resize. */
   h = 0;
 
-  /**
-   * Creates the Road, Renderer, and InputManager, then loads sprite sheets.
-   *
-   * @param canvas - The HTML canvas element to render into.
-   */
-  constructor(canvas: HTMLCanvasElement)
+  constructor(canvas: HTMLCanvasElement, initialSettings?: GameSettings)
   {
-    this.road     = Road.fromData(ROAD_DATA);
+    this.canvas   = canvas;
+    this.settings = initialSettings ?? loadSettings();
+    this.menuSubMode  = this.settings.mode;
+    this.menuSubSound = this.settings.soundEnabled;
+
+    // Road is built once at construction time (MEDIUM default).
+    // It is rebuilt with the chosen mode when the player hits START.
+    this.road = Road.fromData(ROAD_DATA, GameMode.MEDIUM);
+
     this.renderer = new Renderer(canvas, {
       car:         new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
       trafficCars: Object.fromEntries(
@@ -213,99 +248,395 @@ export class Game
       shrub:     new SpriteLoader('sprites/assets/shrub_sheet.png'),
       sign:      new SpriteLoader('sprites/assets/sign_sheet.png'),
       house:     new SpriteLoader('sprites/assets/house_sheet.png'),
-      clouds:    new SpriteLoader('sprites/assets/clouds_1x.png'),
     });
-    this.input       = new InputManager();
-    this.trafficCars = initTraffic(this.road.count);
+
+    this.input = new InputManager();
+    this.audio = new AudioManager();
+    this.canvas.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('mousedown', this.onMouseDown);
+
+    // Preload all sprite sheet assets.  The browser serves subsequent
+    // SpriteLoader loads from cache, so there is no double-download.
+    const allUrls = [
+      'sprites/assets/cars/player_car_sprites_1x.png',
+      'sprites/assets/palm_sheet.png',
+      'sprites/assets/billboard_sheet.png',
+      'sprites/assets/cactus_sheet.png',
+      'sprites/assets/cookie_sheet.png',
+      'sprites/assets/barney_sheet.png',
+      'sprites/assets/big_sheet.png',
+      'sprites/assets/shrub_sheet.png',
+      'sprites/assets/sign_sheet.png',
+      'sprites/assets/house_sheet.png',
+      ...Object.values(TrafficType).map(t => TRAFFIC_CAR_SPECS[t].assetPath),
+    ];
+
+    const entries = allUrls.map(url =>
+    {
+      const img = new Image();
+      const promise = new Promise<void>((resolve, reject) =>
+      {
+        img.onload  = () => resolve();
+        img.onerror = () => reject();
+      });
+      img.src = url;
+      return { promise, name: url.split('/').pop() ?? url };
+    });
+
+    // Load hero image separately — its resolution determines the intro layout,
+    // but a load failure is non-fatal (we fall back to the gradient background).
+    const heroImg = new Image();
+    const heroPromise = new Promise<void>(resolve =>
+    {
+      heroImg.onload  = () => { this.heroImage = heroImg; resolve(); };
+      heroImg.onerror = () => resolve();   // graceful fallback
+    });
+    heroImg.src = 'sprites/source_for_sprites/hero.jpg';
+    entries.push({ promise: heroPromise, name: 'hero' });
+
+    this.preloader = new Preloader(entries);
+    this.preloader.done.then(result =>
+    {
+      if (!result.ok) { this.loadError = result.error ?? 'unknown'; return; }
+      this.phase = GamePhase.INTRO;
+    });
   }
 
-  /** Kicks off the requestAnimationFrame loop. */
   start(): void
   {
-    // Guard against calling start() twice — a second RAF chain would run the
-    // game at double speed and waste a full CPU core on duplicate frames.
     if (this.rafId !== 0) return;
     this.lastTimestamp = performance.now();
     this.rafId = requestAnimationFrame(this.loop);
   }
 
-  /** Cancels the animation loop (call if you need to pause or teardown). */
   stop(): void
   {
     cancelAnimationFrame(this.rafId);
-    // Reset to 0 so start() can safely restart the loop later.
     this.rafId = 0;
   }
 
-  /**
-   * Updates the canvas logical dimensions atomically.
-   * Call this from the window resize handler instead of setting w/h directly,
-   * so any future per-resize work (e.g. notifying the renderer) can be added here.
-   *
-   * @param w - New canvas CSS-pixel width.
-   * @param h - New canvas CSS-pixel height.
-   */
-  resize(w: number, h: number): void
-  {
-    this.w = w;
-    this.h = h;
-  }
+  resize(w: number, h: number): void { this.w = w; this.h = h; }
 
-  /**
-   * Fully tears down the game: cancels the RAF loop and removes all window
-   * event listeners held by InputManager.  Call this before discarding the
-   * Game instance to prevent the keyboard listeners from keeping the entire
-   * game object graph alive after a hot-reload or SPA navigation.
-   */
   destroy(): void
   {
     this.stop();
     this.input.destroy();
+    this.canvas.removeEventListener('mousemove', this.onMouseMove);
+    this.canvas.removeEventListener('mousedown', this.onMouseDown);
   }
 
-  // ── Main loop ─────────────────────────────────────────────────────────────
+  // ── Main loop ──────────────────────────────────────────────────────────────
 
-  /**
-   * Called by requestAnimationFrame on every display refresh.
-   * Computes dt (time since last frame), runs update(), then draw().
-   * dt is capped at 50 ms to prevent huge jumps if the tab loses focus.
-   */
   private loop = (timestamp: number): void =>
   {
     const dt = Math.min((timestamp - this.lastTimestamp) / 1000, MAX_FRAME_DT);
     this.lastTimestamp = timestamp;
-    this.update(dt);
-    this.draw();
+
+    switch (this.phase)
+    {
+      case GamePhase.PRELOADING: this.tickPreload();        break;
+      case GamePhase.INTRO:      this.tickIntro(dt);        break;
+      case GamePhase.COUNTDOWN:  this.tickCountdown(dt);    break;
+      case GamePhase.PLAYING:    this.tickPlaying(dt);      break;
+      case GamePhase.FINISHED:   this.tickFinished();       break;
+    }
+
     this.rafId = requestAnimationFrame(this.loop);
   };
 
-  // ── Physics update ────────────────────────────────────────────────────────
+  // ── Phase: PRELOADING ──────────────────────────────────────────────────────
 
-  /**
-   * Advances all game state by one time step dt (seconds).
-   *
-   * @param dt - Time elapsed since the previous frame, in seconds.
-   */
+  private tickPreload(): void
+  {
+    const progress = this.preloader?.progress ?? 0;
+    this.renderer.renderPreloader(this.w, this.h, progress, this.loadError || undefined);
+  }
+
+  // ── Phase: INTRO ───────────────────────────────────────────────────────────
+
+  private tickIntro(dt: number): void
+  {
+    this.pulseClock += dt;
+
+    const { input } = this;
+    const MODES = [GameMode.EASY, GameMode.MEDIUM, GameMode.HARD] as const;
+
+    if (this.menuSubMenu === 'mode')
+    {
+      const idx = MODES.indexOf(this.menuSubMode);
+
+      // ── Keyboard navigation (bands are vertical — up/down primary) ─────
+      if (input.wasPressed('ArrowUp')   || input.wasPressed('ArrowLeft'))
+        this.menuSubMode = MODES[Math.max(0, idx - 1)];
+      if (input.wasPressed('ArrowDown') || input.wasPressed('ArrowRight'))
+        this.menuSubMode = MODES[Math.min(MODES.length - 1, idx + 1)];
+
+      if (input.wasPressed('Enter'))  { this.settings.mode = this.menuSubMode; this.menuSubMenu = null; saveSettings(this.settings); }
+      if (input.wasPressed('Escape')) { this.menuSubMenu = null; }
+
+      // ── Buttons ─────────────────────────────────────────────────────────
+      const modeButtons = [this.btnEasy, this.btnMedium, this.btnHard] as const;
+      modeButtons.forEach((btn, i) => btn.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick));
+
+      modeButtons.forEach((btn, i) => { if (btn.hovered) this.menuSubMode = MODES[i]; });
+
+      if (this.mouseClick)
+      {
+        modeButtons.forEach((btn, i) =>
+        {
+          if (btn.clicked)
+          {
+            this.menuSubMode   = MODES[i];
+            this.settings.mode = this.menuSubMode;
+            this.menuSubMenu   = null;
+            saveSettings(this.settings);
+          }
+        });
+        this.mouseClick = false;
+      }
+
+      this.canvas.style.cursor = anyHovered(...modeButtons) ? 'pointer' : 'default';
+    }
+    else if (this.menuSubMenu === 'settings')
+    {
+      // Rects registered by drawSettingsPanel each frame; tick() reads them.
+      this.btnClose .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+      this.btnSound .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+      this.btnGithub.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+
+      this.canvas.style.cursor = anyHovered(this.btnClose, this.btnSound, this.btnGithub) ? 'pointer' : 'default';
+
+      if (input.wasPressed('Enter') || input.wasPressed(' ') || this.btnSound.clicked)
+      {
+        this.settings.soundEnabled = !this.settings.soundEnabled;
+        this.menuSubSound = this.settings.soundEnabled;
+        saveSettings(this.settings);
+      }
+
+      if (this.btnGithub.clicked)
+        window.open('https://github.com/gfreedman/outrun', '_blank', 'noopener');
+
+      // Close on X click, Escape, or click outside panel
+      const { w, h } = this;
+      const px = Math.round(w * 0.18), py = Math.round(h * 0.16);
+      const pw = Math.round(w * 0.64), ph = Math.round(h * 0.62);
+      const inPanel = this.mouseX >= px && this.mouseX <= px + pw
+                   && this.mouseY >= py && this.mouseY <= py + ph;
+      if (input.wasPressed('Escape') || this.btnClose.clicked || (this.mouseClick && !inPanel))
+        this.menuSubMenu = null;
+
+      this.mouseClick = false;
+    }
+    else
+    {
+      const items: Array<'mode' | 'settings' | 'start'> = ['mode', 'settings', 'start'];
+      const idx = items.indexOf(this.menuItem);
+
+      // ── Keyboard nav ────────────────────────────────────────────────────
+      if (input.wasPressed('ArrowUp'))   this.menuItem = items[Math.max(0, idx - 1)];
+      if (input.wasPressed('ArrowDown')) this.menuItem = items[Math.min(items.length - 1, idx + 1)];
+
+      // ── Buttons — rects registered by renderer each frame ────────────────
+      this.btnMode    .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+      this.btnSettings.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+      this.btnStart   .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+
+      this.canvas.style.cursor = anyHovered(this.btnMode, this.btnSettings, this.btnStart) ? 'pointer' : 'default';
+
+      const clickItem: typeof this.menuItem | null =
+        this.btnMode.clicked     ? 'mode'     :
+        this.btnSettings.clicked ? 'settings' :
+        this.btnStart.clicked    ? 'start'     :
+        null;
+
+      if (input.wasPressed('Enter') || input.wasPressed(' ') || (this.mouseClick && clickItem !== null))
+      {
+        if (clickItem !== null) this.menuItem = clickItem;
+        this.mouseClick = false;
+        if (this.menuItem === 'mode')          { this.menuSubMenu = 'mode'; this.menuSubMode = this.settings.mode; }
+        else if (this.menuItem === 'settings') { this.menuSubMenu = 'settings'; }
+        else                                   { this.beginRace(); }
+      }
+      else
+      {
+        this.mouseClick = false;
+      }
+    }
+
+    this.renderer.renderIntro(
+      this.w, this.h,
+      this.menuItem,
+      this.menuSubMenu === 'mode' ? this.menuSubMode : this.settings.mode,
+      this.settings.soundEnabled,
+      this.menuSubMenu,
+      Math.floor(this.pulseClock * 2) % 2 === 0,
+      this.heroImage,
+      {
+        mode: this.btnMode, settings: this.btnSettings, start: this.btnStart,
+        easy: this.btnEasy, medium: this.btnMedium,     hard:  this.btnHard,
+        close: this.btnClose, sound: this.btnSound,     github: this.btnGithub,
+      },
+    );
+  }
+
+
+  private beginRace(): void
+  {
+    // Build road for chosen mode
+    this.road = Road.fromData(ROAD_DATA, this.settings.mode);
+
+    const cfg = RACE_CONFIG[this.settings.mode];
+    this.effectiveMaxSpeed = PLAYER_MAX_SPEED * cfg.maxSpeedRatio;
+    this.trafficCars = initTraffic(this.road.count, cfg.trafficCount);
+
+    // Reset physics
+    this.playerZ = 0;
+    this.playerX = 0;
+    this.speed   = 0;
+    this.steerAngle    = 0;
+    this.brakeHeld     = 0;
+    this.offRoad       = false;
+    this.offRoadRecovery = 1;
+    this.slideVelocity = 0;
+    this.jitterY       = 0;
+    this.hitCooldown   = 0;
+    this.grindTimer    = 0;
+    this.hitRecoveryTimer = 0;
+    this.hitRecoveryBoost = 1.0;
+    this.shakeTimer    = 0;
+    this.shakeIntensity = 0;
+    this.raceTimer     = 0;
+    this.distanceTravelled = 0;
+
+    // Countdown
+    this.countdownValue = 3;
+    this.countdownTimer = 0;
+    this.phase = GamePhase.COUNTDOWN;
+
+    // Init audio on first user interaction
+    this.audio.init();
+    this.audio.setEnabled(this.settings.soundEnabled);
+    this.audio.startMusic();
+
+    // Go fullscreen on the document root, NOT the canvas element.
+    // Requesting fullscreen on the canvas itself causes browsers to apply a UA
+    // stylesheet override (width:100%; height:100%) to the fullscreen element,
+    // which corrupts getBoundingClientRect() and breaks mouse coordinate mapping.
+    // Fullscreening the document root avoids this — our resize() handles sizing.
+    if (document.fullscreenEnabled && !document.fullscreenElement)
+      document.documentElement.requestFullscreen().catch(() => { /* permission denied — stay windowed */ });
+  }
+
+  /** Return to INTRO and exit fullscreen if active. */
+  private exitToMenu(): void
+  {
+    this.audio.silenceEngine();
+    this.audio.stopScreech();
+    this.audio.stopRumble();
+    this.audio.stopMusic();
+    this.phase = GamePhase.INTRO;
+    if (document.fullscreenElement)
+      document.exitFullscreen().catch(() => {});
+  }
+
+  // ── Phase: COUNTDOWN ──────────────────────────────────────────────────────
+
+  private tickCountdown(dt: number): void
+  {
+    this.countdownTimer += dt;
+
+    const prev = this.countdownValue;
+
+    if (this.countdownTimer < 1.0)      this.countdownValue = 3;
+    else if (this.countdownTimer < 2.0) this.countdownValue = 2;
+    else if (this.countdownTimer < 3.0) this.countdownValue = 1;
+    else if (this.countdownTimer < 3.7) this.countdownValue = 'GO!';
+    else
+    {
+      this.phase = GamePhase.PLAYING;
+      return;
+    }
+
+    // Beep on each new number
+    if (this.countdownValue !== prev)
+    {
+      if      (this.countdownValue === 3)    this.audio.playBeep(220, 0.18);
+      else if (this.countdownValue === 2)    this.audio.playBeep(330, 0.18);
+      else if (this.countdownValue === 1)    this.audio.playBeep(440, 0.18);
+      else if (this.countdownValue === 'GO!') this.audio.playBeep(880, 0.40);
+    }
+
+    this.audio.tickMusic();
+
+    // Draw road scene + countdown overlay
+    this.drawRace();
+    this.renderer.renderCountdown(this.w, this.h, this.countdownValue);
+  }
+
+  // ── Phase: PLAYING ─────────────────────────────────────────────────────────
+
+  private tickPlaying(dt: number): void
+  {
+    this.raceTimer += dt;
+    this.audio.tickMusic();
+    this.update(dt);
+    this.drawRace();
+
+    // ── Quit button hover + click ─────────────────────────────────────────
+    this.btnQuit.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+    this.canvas.style.cursor = this.btnQuit.hovered ? 'pointer' : 'default';
+    if (this.mouseClick)
+    {
+      this.mouseClick = false;
+      if (this.btnQuit.clicked) this.exitToMenu();
+    }
+
+    // Finish detection: race length in world units
+    const cfg = RACE_CONFIG[this.settings.mode];
+    const raceWU = cfg.raceLengthKm * WU_PER_KM;
+    if (this.distanceTravelled >= raceWU)
+    {
+      this.phase = GamePhase.FINISHED;
+      this.speed = 0;
+    }
+  }
+
+  // ── Phase: FINISHED ────────────────────────────────────────────────────────
+
+  private tickFinished(): void
+  {
+    // Draw the road scene underneath the overlay
+    this.drawRace();
+
+    const cfg       = RACE_CONFIG[this.settings.mode];
+    const distKm    = this.distanceTravelled / WU_PER_KM;
+    this.renderer.renderFinish(this.w, this.h, this.raceTimer, Math.min(distKm, cfg.raceLengthKm));
+
+    const { input } = this;
+    if (input.wasPressed('Enter'))   { this.beginRace(); }
+    if (input.wasPressed('Escape'))  { this.exitToMenu(); }
+
+    if (this.mouseClick) this.mouseClick = false;
+  }
+
+  // ── Physics update (PLAYING only) ─────────────────────────────────────────
+
   private update(dt: number): void
   {
     const { input } = this;
     const trackLength = this.road.count * SEGMENT_LENGTH;
-    const speedRatio  = this.speed / PLAYER_MAX_SPEED;
+    const maxSpeed    = this.effectiveMaxSpeed;
+    const speedRatio  = this.speed / maxSpeed;
+    const cfg         = RACE_CONFIG[this.settings.mode];
 
-    // ── Throttle / brake — "Alive & Kinetic" three-phase physics ──────────
+    // ── Throttle / brake ───────────────────────────────────────────────────
 
     if (input.isDown('ArrowUp'))
     {
-      // Phase 1 (0–15%): smoothstep ramp LOW→MID — tyres finding grip
-      // Phase 2 (15–80%): flat-out MID thrust
-      // Phase 3 (80–100%): MID tapers linearly to 0 — fighting aero drag
       let accel: number;
-
       if (speedRatio < ACCEL_LOW_BAND)
       {
-        // Smoothstep: S-shaped curve that starts and ends at zero slope.
-        // t goes 0→1 across the low-speed band.
-        const t = speedRatio / ACCEL_LOW_BAND;
+        const t      = speedRatio / ACCEL_LOW_BAND;
         const smooth = t * t * (3 - 2 * t);
         accel = PLAYER_ACCEL_LOW + (PLAYER_ACCEL_MID - PLAYER_ACCEL_LOW) * smooth;
       }
@@ -315,187 +646,134 @@ export class Game
       }
       else
       {
-        // Linear taper from MID down to 0 over the high-speed band
         accel = PLAYER_ACCEL_MID * (1 - speedRatio) / (1 - ACCEL_HIGH_BAND);
       }
 
-      this.speed    += accel * this.hitRecoveryBoost * dt;
-      this.brakeHeld = 0;
+      this.speed     += accel * cfg.accelMultiplier * this.hitRecoveryBoost * dt;
+      this.brakeHeld  = 0;
     }
     else if (input.isDown('ArrowDown'))
     {
-      // Brake builds quadratically over BRAKE_RAMP seconds.
-      // Simulates hydraulic brake fluid pressurising under a hard press.
       this.brakeHeld = Math.min(this.brakeHeld + dt, PLAYER_BRAKE_RAMP);
       const t        = this.brakeHeld / PLAYER_BRAKE_RAMP;
       this.speed    -= PLAYER_BRAKE_MAX * t * t * dt;
     }
     else
     {
-      // Coast: drag scales from 50% of COAST_RATE at rest to 100% at max speed.
-      // Gives natural aerodynamic feel — slow speeds coast gently, high speeds shed speed faster.
       const coastRate = PLAYER_COAST_RATE * (0.5 + 0.5 * speedRatio);
       this.speed     -= coastRate * dt;
-      // Brake ramp decays when the pedal is released
       this.brakeHeld  = Math.max(0, this.brakeHeld - dt * 4);
     }
 
-    this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
+    this.speed = Math.max(0, Math.min(this.speed, maxSpeed));
 
-    // ── Steering — grip / understeer model ────────────────────────────────
-    //
-    // gripFactor: lateral authority drops quadratically with speed.
-    //   At rest: full authority (gripFactor = 1).
-    //   At max speed: 50% authority (gripFactor = 0.5).
-    //   This is correct understeer behaviour — high-speed cornering requires
-    //   earlier commitment and more progressive trail-braking to hold the line.
+    // ── Steering ───────────────────────────────────────────────────────────
 
     const gripFactor = 1 - speedRatio * speedRatio * 0.5;
-
-    // Lateral movement requires forward speed — a stopped car cannot slide sideways.
     if (this.speed > 0)
     {
       if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * gripFactor * dt;
       if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * gripFactor * dt;
     }
-
-    // Hard wall at ±2 — can't go further off-road than one road-width off the edge
     this.playerX = Math.max(-2, Math.min(2, this.playerX));
 
-    // ── Centrifugal force ─────────────────────────────────────────────────
-    //
-    // On a curve, the car is pushed OUTWARD (away from centre of the bend).
-    // Positive curve = right bend → car pushed rightward → playerX increases.
-    // The minus sign here is correct: it converts road-space convention
-    // (positive curve = bend to the right) into screen-space push (rightward = +X).
-    // The faster you go, the stronger the push.  At full speed on a HARD curve:
-    //   push = 6 * 1.0 * 0.35 = 2.1 road-widths/sec — must counter-steer actively.
+    // ── Centrifugal force ──────────────────────────────────────────────────
 
     const playerSegment = this.road.findSegment(this.playerZ);
     this.playerX -= playerSegment.curve * speedRatio * CENTRIFUGAL * dt;
 
-    // ── Drift / oversteer ──────────────────────────────────────────────────
-    //
-    // When centrifugal force exceeds available grip at speed, the rear steps
-    // out and lateral slide velocity (slideVelocity) begins to build.
-    // The car keeps sliding in that direction until:
-    //   (a) the player counter-steers (opposite key to slide direction), or
-    //   (b) natural tyre self-alignment bleeds it away over time.
-    //
-    // slideVelocity > 0 = sliding rightward (curve pushed left too hard).
-    // slideVelocity < 0 = sliding leftward.
+    // ── Drift ──────────────────────────────────────────────────────────────
 
     if (speedRatio > 0.5 && Math.abs(playerSegment.curve) > 0)
     {
-      // Force centrifugal is applying this frame (road-widths/sec²)
-      const centForce    = Math.abs(playerSegment.curve * speedRatio * CENTRIFUGAL);
-      // Grip available to resist lateral force (tapers with speed)
-      const availGrip    = PLAYER_STEERING * gripFactor;
-      // If centrifugal exceeds the onset fraction of grip, slide builds
+      const centForce = Math.abs(playerSegment.curve * speedRatio * CENTRIFUGAL);
+      const availGrip = PLAYER_STEERING * gripFactor;
       if (centForce > availGrip * DRIFT_ONSET)
       {
         const excess   = centForce - availGrip * DRIFT_ONSET;
-        // Centrifugal does playerX -= curve, so positive curve pushes LEFT (-1 direction).
-        // Slide must reinforce the same direction, not fight it.
         const slideDir = playerSegment.curve > 0 ? -1 : 1;
         this.slideVelocity += slideDir * excess * DRIFT_RATE * dt;
       }
     }
-
-    // Apply slide to position
     this.playerX += this.slideVelocity * dt;
 
-    // Decay: counter-steer catches the slide much faster than natural decay.
-    // Math.exp gives frame-rate-independent exponential decay (correct physics).
     const counterSteering =
       (this.slideVelocity >  0.02 && input.isDown('ArrowLeft')) ||
       (this.slideVelocity < -0.02 && input.isDown('ArrowRight'));
-    // During a hit cooldown, slow the natural decay so the bounce travels further.
-    // Counter-steer still catches it — but the player has to actually work for it.
     let decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
     if (this.hitCooldown > 0) decayRate = Math.min(decayRate, 2.5);
     this.slideVelocity *= Math.exp(-decayRate * dt);
 
-    // Raise cap during a collision so the full flick can apply.
+    const newDrifting = Math.abs(this.slideVelocity) > 0.08 && speedRatio > 0.5;
+    if (newDrifting && !this.isDrifting)  this.audio.startScreech();
+    if (!newDrifting && this.isDrifting)  this.audio.stopScreech();
+    this.isDrifting = newDrifting;
+
     const slideCap = this.hitCooldown > 0 ? 0.75 : 0.5;
     this.slideVelocity = Math.max(-slideCap, Math.min(slideCap, this.slideVelocity));
 
-    // ── steerAngle: visual-only, drives car sprite frame selection ─────────
-    //
-    // Ramps toward ±1 while a direction key is held, springs back to 0 on release.
-    // PLAYER_STEER_RATE = 3.0 means it reaches full lock in ~0.33 seconds.
-    // Math.exp gives frame-rate-independent spring-back (correct physics).
+    // ── Steer angle (visual) ───────────────────────────────────────────────
 
     if (input.isDown('ArrowLeft'))        this.steerAngle -= PLAYER_STEER_RATE * dt;
     else if (input.isDown('ArrowRight'))  this.steerAngle += PLAYER_STEER_RATE * dt;
     else                                  this.steerAngle *= Math.exp(-PLAYER_STEER_RATE * 4 * dt);
     this.steerAngle = Math.max(-1, Math.min(1, this.steerAngle));
 
-    // ── Off-road friction ──────────────────────────────────────────────────
-    //
-    // |playerX| > 1 means the car has crossed the road edge onto the grass.
-    // OFFROAD_DECEL (3500) > PLAYER_ACCEL_MID (1550) so the car can NEVER
-    // accelerate on grass — it always decelerates toward zero.
-    //
-    // On return to asphalt, the speed cap recovers over OFFROAD_RECOVERY_TIME
-    // seconds to prevent an instant snap back to top speed.
+    // ── Off-road ───────────────────────────────────────────────────────────
 
     this.offRoad = Math.abs(this.playerX) > 1;
 
     if (this.offRoad)
     {
-      this.speed           -= OFFROAD_DECEL * dt;
-      // If the player is pressing throttle off-road, maintain a minimum crawl
-      // speed (~15 km/h) so the car isn't completely frozen and the speedometer
-      // reads non-zero while steering back to the road.
+      this.speed          -= OFFROAD_DECEL * dt;
       if (input.isDown('ArrowUp'))
-        this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * OFFROAD_CRAWL_RATIO);
-      this.offRoadRecovery  = 0;
-      // Smooth terrain jitter: lerp toward a new random target each frame.
-      // Blending at rate 8 means ~12% progress per frame at 60 fps —
-      // large jumps are dampened over ~6 frames, producing a rolling-wave feel
-      // instead of the frame-rate-speed noise the raw random produced.
-      const jitterTarget = this.speed > 0 ? (Math.random() - 0.5) * 10 : 0;
+        this.speed = Math.max(this.speed, maxSpeed * OFFROAD_CRAWL_RATIO);
+      this.offRoadRecovery = 0;
+      const jitterTarget   = this.speed > 0 ? (Math.random() - 0.5) * 10 : 0;
       this.jitterY += (jitterTarget - this.jitterY) * (1 - Math.exp(-OFFROAD_JITTER_BLEND * dt));
+
+      if (!this.wasOffRoad) this.audio.startRumble();
     }
     else
     {
-      // Gradually restore full speed cap after returning to asphalt
       this.offRoadRecovery = Math.min(1, this.offRoadRecovery + dt / OFFROAD_RECOVERY_TIME);
       if (this.offRoadRecovery < 1)
       {
-        // Blend the cap from OFFROAD_MAX up to PLAYER_MAX_SPEED over recovery time
-        const recoveryMax = PLAYER_MAX_SPEED * (OFFROAD_MAX_RATIO + (1 - OFFROAD_MAX_RATIO) * this.offRoadRecovery);
+        const recoveryMax = maxSpeed * (OFFROAD_MAX_RATIO + (1 - OFFROAD_MAX_RATIO) * this.offRoadRecovery);
         this.speed = Math.min(this.speed, recoveryMax);
       }
-      // Decay smoothly to zero when back on asphalt — avoids an instant snap
-      // from whatever the last grass jitter value was.
       this.jitterY *= Math.exp(-OFFROAD_JITTER_DECAY * dt);
+
+      if (this.wasOffRoad) this.audio.stopRumble();
     }
+    this.wasOffRoad = this.offRoad;
 
-    this.speed = Math.max(0, Math.min(this.speed, PLAYER_MAX_SPEED));
+    this.speed = Math.max(0, Math.min(this.speed, maxSpeed));
 
-    // ── Roadside collision ─────────────────────────────────────────────────
+    // ── Collision ──────────────────────────────────────────────────────────
+
     this.updateCollisions(dt);
 
-    // ── Advance position ───────────────────────────────────────────────────
-    // Modulo wrap keeps playerZ inside [0, trackLength) so the road loops.
-    this.playerZ = ((this.playerZ + this.speed * dt) % trackLength + trackLength) % trackLength;
+    // ── Advance ───────────────────────────────────────────────────────────
 
-    // ── Traffic cars ───────────────────────────────────────────────────────
+    const stepWU      = this.speed * dt;
+    this.playerZ      = ((this.playerZ + stepWU) % trackLength + trackLength) % trackLength;
+    this.distanceTravelled += stepWU;
+
+    // ── Traffic ───────────────────────────────────────────────────────────
+
     updateTraffic(this.trafficCars, this.playerZ, this.road.count, dt);
+
+    // ── Engine audio ──────────────────────────────────────────────────────
+
+    this.audio.updateEngine(speedRatio);
   }
 
-  // ── Collision ─────────────────────────────────────────────────────────────
+  // ── Collision ──────────────────────────────────────────────────────────────
 
-  /**
-   * Prevents the player from moving laterally through solid objects (smack/crunch).
-   * Called every frame regardless of cooldown so objects are always solid walls.
-   */
   private blockSolidObjects(segIdx: number): void
   {
     if (Math.abs(this.playerX) < COLLISION_MIN_OFFSET) return;
-
     for (const offset of COLLISION_WINDOW)
     {
       const idx = ((segIdx + offset) % this.road.count + this.road.count) % this.road.count;
@@ -503,10 +781,8 @@ export class Game
       {
         const radius = getBlockingRadius(sprite.family);
         if (radius === 0) continue;
-
         const spriteXN = sprite.worldX / ROAD_WIDTH;
         const radN     = radius / ROAD_WIDTH;
-
         if (sprite.worldX > 0 && this.playerX >= spriteXN - radN)
           this.playerX = spriteXN - radN;
         else if (sprite.worldX < 0 && this.playerX <= spriteXN + radN)
@@ -515,37 +791,25 @@ export class Game
     }
   }
 
-  /**
-   * Runs collision detection for the current frame and applies physics effects.
-   * Called after playerX and speed are settled for the frame.
-   */
   private updateCollisions(dt: number): void
   {
-    // ── Tick timers ──────────────────────────────────────────────────────
     this.hitCooldown      = Math.max(0, this.hitCooldown      - dt);
     this.grindTimer       = Math.max(0, this.grindTimer       - dt);
     this.hitRecoveryTimer = Math.max(0, this.hitRecoveryTimer - dt);
     this.shakeTimer       = Math.max(0, this.shakeTimer       - dt);
 
-    // Apply grind deceleration (house wall scrape sustained drag)
     if (this.grindTimer > 0) this.speed -= HIT_CRUNCH_GRIND_DECEL * dt;
 
-    // Sustained camera shake overrides the off-road jitter set above
     if (this.shakeTimer > 0)
       this.jitterY = (Math.random() - 0.5) * this.shakeIntensity * 2;
 
-    // Decay post-hit recovery boost when timer expires
     if (this.hitRecoveryTimer <= 0) this.hitRecoveryBoost = 1.0;
 
     const segIdx = this.road.findSegmentIndex(this.playerZ);
-
-    // ── ALWAYS block solid objects (prevents phasing through palms/houses) ─
     this.blockSolidObjects(segIdx);
 
-    // ── Skip new hit effects during cooldown ─────────────────────────────
     if (this.hitCooldown > 0) return;
 
-    // ── Spatial check ────────────────────────────────────────────────────
     const { hit, nearMiss } = checkCollisions(
       this.playerX,
       this.road.segments,
@@ -556,7 +820,6 @@ export class Game
     if (!hit && nearMiss)
       this.playerX += nearMiss.wobbleDir * NEAR_MISS_WOBBLE;
 
-    // ── Traffic collision (runs whenever not in cooldown, no static hit) ──
     if (!hit)
     {
       const trafficHit = checkTrafficCollision(
@@ -569,144 +832,96 @@ export class Game
 
       if (trafficHit)
       {
-        // Capture ratio BEFORE capping speed — faster approach = bigger flick.
-        const preHitRatio   = this.speed / PLAYER_MAX_SPEED;
-
-        // Hard cap — always slam to TRAFFIC_HIT_SPEED_CAP regardless of closing speed.
-        this.speed = Math.min(this.speed, PLAYER_MAX_SPEED * TRAFFIC_HIT_SPEED_CAP);
-
-        const bumpSign      = -trafficHit.bumpDir;
-        const flick         = Math.max(
-          TRAFFIC_HIT_FLICK_BASE,
-          preHitRatio * TRAFFIC_HIT_FLICK_RESTITUTION,
-        );
+        const preHitRatio = this.speed / this.effectiveMaxSpeed;
+        this.speed = Math.min(this.speed, this.effectiveMaxSpeed * TRAFFIC_HIT_SPEED_CAP);
+        const bumpSign = -trafficHit.bumpDir;
+        const flick    = Math.max(TRAFFIC_HIT_FLICK_BASE, preHitRatio * TRAFFIC_HIT_FLICK_RESTITUTION);
         this.slideVelocity  = bumpSign * Math.min(flick, 0.75);
-
         this.shakeTimer       = SHAKE_TRAFFIC_DURATION;
         this.shakeIntensity   = SHAKE_TRAFFIC_INTENSITY;
         this.hitCooldown      = TRAFFIC_HIT_COOLDOWN;
         this.hitRecoveryTimer = TRAFFIC_HIT_RECOVERY_TIME;
         this.hitRecoveryBoost = TRAFFIC_HIT_RECOVERY_BOOST;
-
         if (this.speed > 0)
-          this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * HIT_SPEED_FLOOR);
-
-        // Kick the traffic car away — same direction as player bounced, but mirrored.
-        // bumpDir +1 = car was to the RIGHT → player bounces left, car flies right.
+          this.speed = Math.max(this.speed, this.effectiveMaxSpeed * HIT_SPEED_FLOOR);
         trafficHit.hitCar.hitVelX   = trafficHit.bumpDir * 4500;
         trafficHit.hitCar.spinAngle = 0;
-
         this.playerX = Math.max(-2, Math.min(2, this.playerX));
+        this.audio.playCrashCar();
+
+        if (trafficHit.hitCar.type === TrafficType.Barney)
+          this.audio.playBarney();
       }
       return;
     }
 
-    // ── Compute angle-based flick ─────────────────────────────────────────
-    //
-    // The flick is the lateral velocity imparted at impact — how hard the car
-    // bounces off the obstacle.  It depends on:
-    //   - How fast the player was steering INTO the object (lateral approach)
-    //   - How fast they were going overall (forward speed component)
-    //
-    // bumpDir = +1 if object is RIGHT of player, -1 if LEFT.
-    // The flick must push AWAY from the object (opposite to bumpDir).
-
-    const preHitSpeedRatio = this.speed / PLAYER_MAX_SPEED;
+    const preHitSpeedRatio = this.speed / this.effectiveMaxSpeed;
     const gripFactor       = 1 - preHitSpeedRatio * preHitSpeedRatio * 0.5;
     const bumpSign         = -hit.bumpDir;
-
-    // Lateral velocity component moving toward the object this frame
     const steerApproach = hit.bumpDir * this.steerAngle * PLAYER_STEERING * gripFactor;
     const slideApproach = hit.bumpDir * this.slideVelocity;
     const approach      = Math.max(0, steerApproach + slideApproach);
 
-    // ── Apply collision effects by class ─────────────────────────────────
     switch (hit.cls)
     {
       case CollisionClass.Glance:
       {
-        // Small poke — speed penalty + tiny lateral bump, no dramatic flick
         this.speed   *= HIT_GLANCE_SPEED_MULT;
         this.playerX += bumpSign * HIT_GLANCE_BUMP;
         this.shakeTimer     = SHAKE_GLANCE_DURATION;
         this.shakeIntensity = SHAKE_GLANCE_INTENSITY;
         this.hitCooldown    = HIT_GLANCE_COOLDOWN;
+        this.audio.playCrashObject();
         break;
       }
-
       case CollisionClass.Smack:
       {
-        // Hard whack — speed loss + angle-computed flick off the object.
-        // Restitution 0.55: palm/post is fairly springy.
-        // Base 0.10: even a dead-straight hit at full speed kicks the car.
         this.speed *= HIT_SMACK_SPEED_MULT;
-        this.speed  = Math.min(this.speed, PLAYER_MAX_SPEED * HIT_SMACK_SPEED_CAP);
-
+        this.speed  = Math.min(this.speed, this.effectiveMaxSpeed * HIT_SMACK_SPEED_CAP);
         const flick         = Math.max(0.08, approach * HIT_SMACK_RESTITUTION + preHitSpeedRatio * HIT_SMACK_FLICK_BASE);
         this.slideVelocity  = bumpSign * Math.min(flick, 0.45);
-
         this.shakeTimer       = SHAKE_SMACK_DURATION;
         this.shakeIntensity   = SHAKE_SMACK_INTENSITY;
         this.hitCooldown      = HIT_SMACK_COOLDOWN;
         this.hitRecoveryTimer = HIT_SMACK_RECOVERY_TIME;
         this.hitRecoveryBoost = HIT_SMACK_RECOVERY_BOOST;
+        this.audio.playCrashObject();
         break;
       }
-
       case CollisionClass.Crunch:
       {
-        // Building wall — instant crawl + sustained grind + strong flick.
-        // Restitution 0.30: concrete absorbs a lot of energy.
-        // Base 0.15: heavy base kick even head-on so the car always bounces.
-        this.speed = Math.min(this.speed, PLAYER_MAX_SPEED * HIT_CRUNCH_SPEED_CAP);
+        this.speed = Math.min(this.speed, this.effectiveMaxSpeed * HIT_CRUNCH_SPEED_CAP);
         this.grindTimer = HIT_CRUNCH_GRIND_TIME;
-
         const flick        = Math.max(0.14, approach * HIT_CRUNCH_RESTITUTION + preHitSpeedRatio * HIT_CRUNCH_FLICK_BASE);
         this.slideVelocity = bumpSign * Math.min(flick, 0.45);
-
         this.shakeTimer     = SHAKE_CRUNCH_DURATION;
         this.shakeIntensity = SHAKE_CRUNCH_INTENSITY;
         this.hitCooldown    = HIT_CRUNCH_COOLDOWN;
         this.hitRecoveryTimer = HIT_CRUNCH_RECOVERY_TIME;
         this.hitRecoveryBoost = HIT_CRUNCH_RECOVERY_BOOST;
+        this.audio.playCrashObject();
         break;
       }
-
       case CollisionClass.Ghost:
-        // Ghost sprites never reach here (filtered in checkSegmentCollision),
-        // but the case is required for the exhaustiveness sentinel below.
         break;
-
       default:
       {
-        // Exhaustiveness sentinel: if a new CollisionClass member is added but
-        // not handled above, TypeScript reports a type error here at compile time.
         const _exhaustive: never = hit.cls;
       }
     }
 
-    // ── Speed floor — car never fully stops from a hit (Law 2) ───────────
     if (this.speed > 0)
-      this.speed = Math.max(this.speed, PLAYER_MAX_SPEED * HIT_SPEED_FLOOR);
-
-    // ── Hard wall clamp ───────────────────────────────────────────────────
+      this.speed = Math.max(this.speed, this.effectiveMaxSpeed * HIT_SPEED_FLOOR);
     this.playerX = Math.max(-2, Math.min(2, this.playerX));
   }
 
-  // ── Draw ──────────────────────────────────────────────────────────────────
+  // ── Draw helpers ───────────────────────────────────────────────────────────
 
-  /**
-   * Passes the current game state to the Renderer for a complete frame draw.
-   */
-  private draw(): void
+  private drawRace(): void
   {
     const { renderer, road, w, h } = this;
-
-    // During a slide, the car body counter-steers into the drift —
-    // slide right → car points left (negative steer).  Scale factor 0.5
-    // keeps it subtle: full 1.5 wu/s slide = 0.75 extra steer angle.
-    const driftVisual    = -this.slideVelocity * 0.15;
-    const renderSteer    = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
+    const driftVisual = -this.slideVelocity * 0.15;
+    const renderSteer = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
 
     renderer.render(
       road.segments,
@@ -719,6 +934,9 @@ export class Game
       renderSteer,
       this.jitterY,
       this.trafficCars,
+      this.raceTimer,
+      this.distanceTravelled / WU_PER_KM,
+      this.btnQuit,
     );
   }
 }

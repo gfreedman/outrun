@@ -13,7 +13,11 @@ html, body {
 
 canvas {
   display: block;
-  width: 100vw;
-  height: 100vh;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   image-rendering: pixelated;
+  /* Width and height are set in px by main.ts resize() to match canvas.width/height
+     exactly — no CSS scaling, so mouse coordinates always equal canvas coordinates. */
 }

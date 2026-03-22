@@ -124,16 +124,21 @@ function relativeZ(carWorldZ: number, playerZ: number, trackLength: number): num
 
 // ── Pool management ───────────────────────────────────────────────────────────
 
-/** Creates the initial pool of TRAFFIC_COUNT cars spread evenly ahead. */
-export function initTraffic(segmentCount: number): TrafficCar[]
+/**
+ * Creates the initial traffic pool.
+ * @param segmentCount  - Total road segments (used to compute track wrap length).
+ * @param trafficCount  - Number of cars to spawn.  Defaults to TRAFFIC_COUNT.
+ */
+export function initTraffic(segmentCount: number, trafficCount = TRAFFIC_COUNT): TrafficCar[]
 {
   const trackLength = segmentCount * SEGMENT_LENGTH;
   const cars: TrafficCar[] = [];
+  const count = Math.max(1, trafficCount);
 
-  for (let i = 0; i < TRAFFIC_COUNT; i++)
+  for (let i = 0; i < count; i++)
   {
     // Spread evenly over [20, DRAW_DISTANCE - 10] segments ahead at start.
-    const segOffset = 20 + Math.floor(i * (DRAW_DISTANCE - 30) / TRAFFIC_COUNT);
+    const segOffset = 20 + Math.floor(i * (DRAW_DISTANCE - 30) / count);
     const worldZ    = (segOffset * SEGMENT_LENGTH) % trackLength;
     const worldX    = randomLane();
 

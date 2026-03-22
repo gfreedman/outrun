@@ -6,6 +6,8 @@
  * so this is the one file a designer tweaks to re-tune the feel.
  */
 
+import { GameMode } from './types';
+
 // ── Camera & perspective ──────────────────────────────────────────────────────
 
 /** Height of the camera above the road surface, in world units. */
@@ -463,3 +465,63 @@ export const CLOUD_DRIFT_RATE    = 0.0006;
  * integrating them naturally with the sky gradient.
  */
 export const CLOUD_HORIZON_FADE  = 0.72;
+
+// ── Race configuration ────────────────────────────────────────────────────────
+
+/**
+ * World units per kilometre, derived from the speed calibration constants.
+ * PLAYER_MAX_SPEED wu/s = DISPLAY_MAX_KMH km/h, therefore:
+ *   1 km = PLAYER_MAX_SPEED * 3600 / DISPLAY_MAX_KMH world units.
+ */
+export const WU_PER_KM = PLAYER_MAX_SPEED * 3600 / DISPLAY_MAX_KMH;   // ≈ 132,696
+
+/**
+ * Per-difficulty race parameters.  Used by Game to configure traffic density,
+ * speed cap, race distance, and road curve/hill scaling at mode start.
+ */
+export interface RaceConfig
+{
+  /** Fraction of PLAYER_MAX_SPEED allowed in this mode. */
+  maxSpeedRatio:   number;
+  /** Number of traffic cars on the road simultaneously. */
+  trafficCount:    number;
+  /** Race distance in km — tracked via cumulative distanceTravelled. */
+  raceLengthKm:    number;
+  /** Multiplier applied to each segment's curve value when loading road data. */
+  curveScale:      number;
+  /** Multiplier applied to each segment's hill (Y-delta) when loading road data. */
+  hillScale:       number;
+  /** Multiplier applied to the throttle acceleration constants. */
+  accelMultiplier: number;
+}
+
+export const RACE_CONFIG: Record<GameMode, RaceConfig> =
+{
+  [GameMode.EASY]:
+  {
+    maxSpeedRatio:   0.667,   // ≈ 195 km/h
+    trafficCount:    1,
+    raceLengthKm:    4,
+    curveScale:      0.50,
+    hillScale:       0.50,
+    accelMultiplier: 0.75,
+  },
+  [GameMode.MEDIUM]:
+  {
+    maxSpeedRatio:   1.0,     // 293 km/h — default
+    trafficCount:    3,
+    raceLengthKm:    6,
+    curveScale:      1.00,
+    hillScale:       1.00,
+    accelMultiplier: 1.00,
+  },
+  [GameMode.HARD]:
+  {
+    maxSpeedRatio:   1.222,   // ≈ 358 km/h
+    trafficCount:    8,
+    raceLengthKm:    10,
+    curveScale:      1.30,
+    hillScale:       1.20,
+    accelMultiplier: 1.25,
+  },
+};

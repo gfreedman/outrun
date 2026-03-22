@@ -76,7 +76,9 @@ export type SpriteFamily =
   | 'cactus'
   | 'shrub'
   | 'sign'
-  | 'house';
+  | 'house'
+  | 'gate_start'
+  | 'gate_finish';
 
 /**
  * One roadside object (e.g. a palm tree) attached to a road segment.
@@ -142,11 +144,24 @@ export enum CollisionClass
 
 // ── Game state ────────────────────────────────────────────────────────────────
 
-/**
- * Top-level game phases.
- * Only PLAYING exists for now; MENU and GAME_OVER can be added here later.
- */
 export enum GamePhase
 {
-  PLAYING,
+  PRELOADING,  // Asset loading with progress bar
+  INTRO,       // Title / menu screen
+  COUNTDOWN,   // 3-2-1-GO sequence
+  PLAYING,     // Active race
+  FINISHED,    // Race complete
+}
+
+export enum GameMode
+{
+  EASY   = 'easy',
+  MEDIUM = 'medium',
+  HARD   = 'hard',
+}
+
+export interface GameSettings
+{
+  mode:         GameMode;
+  soundEnabled: boolean;
 }

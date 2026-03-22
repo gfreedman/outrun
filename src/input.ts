@@ -1,43 +1,39 @@
 /**
  * input.ts
  *
- * Tracks which keyboard keys are currently held down.
+ * Tracks which keyboard keys are currently held down, and which were just
+ * pressed this tick (for menu navigation).
  *
- * How it works:
- *   - On keydown: add the key name to a Set.
- *   - On keyup:   remove it from the Set.
- *   - Each frame, game.ts calls isDown() to check the current state.
- *
- * Using a Set means we don't miss simultaneous key presses (e.g. gas + steer).
+ * isDown()    — true while a key is held (driving: throttle, steer, brake).
+ * wasPressed() — true once on the frame a key is first pressed; cleared after
+ *                reading.  Use this for menu Up/Down/Enter/Escape so a held
+ *                key fires only once, not at 60 fps.
  */
 
-/** The four arrow keys the game cares about — used to suppress page scrolling. */
-const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+/** Keys that suppress browser page-scroll. */
+const GAME_KEYS = new Set([
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Enter', 'Escape', ' ',
+]);
 
 export class InputManager
 {
-  /** Set of key names that are currently pressed, e.g. 'ArrowUp'. */
-  private keys: Set<string> = new Set();
+  /** Set of key names that are currently held down. */
+  private keys:        Set<string> = new Set();
 
-  /**
-   * Stored references to the listener functions so destroy() can remove them.
-   * Arrow functions passed directly to addEventListener cannot be removed later
-   * because each call to `() => {}` creates a NEW function object — so you must
-   * keep a reference to the exact same function you added.
-   */
+  /** Keys pressed since the last wasPressed() call for each key. */
+  private justPressed: Set<string> = new Set();
+
   private readonly onKeyDown: (e: KeyboardEvent) => void;
   private readonly onKeyUp:   (e: KeyboardEvent) => void;
 
-  /**
-   * Registers global keyboard listeners on the browser window.
-   * Call destroy() to remove them if you tear down the game.
-   */
   constructor()
   {
     this.onKeyDown = (e: KeyboardEvent) =>
     {
-      // Prevent arrow keys from scrolling the browser window while playing
       if (GAME_KEYS.has(e.key)) e.preventDefault();
+      // Only register a fresh press — not the auto-repeat events from held keys.
+      if (!this.keys.has(e.key)) this.justPressed.add(e.key);
       this.keys.add(e.key);
     };
 
@@ -50,25 +46,30 @@ export class InputManager
     window.addEventListener('keyup',   this.onKeyUp);
   }
 
-  /**
-   * Removes the keyboard listeners and clears all held-key state.
-   * Call this when tearing down the game to prevent memory leaks.
-   */
+  /** Removes listeners and clears state. */
   destroy(): void
   {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup',   this.onKeyUp);
     this.keys.clear();
+    this.justPressed.clear();
   }
 
+  /** Returns true while the given key is held (driving input). */
+  isDown(key: string): boolean { return this.keys.has(key); }
+
   /**
-   * Returns true if the given key is currently held down.
-   *
-   * @param key - The key name to test, e.g. 'ArrowUp', 'ArrowLeft'.
-   * @returns true while the key is held; false otherwise.
+   * Returns true if the key was newly pressed since the last call for that key.
+   * Consuming the press clears it so the next call returns false unless the
+   * key was released and pressed again.
    */
-  isDown(key: string): boolean
+  wasPressed(key: string): boolean
   {
-    return this.keys.has(key);
+    if (this.justPressed.has(key))
+    {
+      this.justPressed.delete(key);
+      return true;
+    }
+    return false;
   }
 }
