@@ -176,9 +176,10 @@ export class Road
   private static readonly MIN_BOARD_GAP = 45;
 
   /** Builds the track layout immediately on construction. */
-  constructor()
+  constructor(variant: 'default' | 'hard' = 'default')
   {
-    this.resetRoad();
+    if (variant === 'hard') this.resetHardRoad();
+    else                    this.resetRoad();
   }
 
   /** Total number of segments in the track. Used for wrap-around maths. */
@@ -338,6 +339,109 @@ export class Road
 
     // ── 12. Finish straight ───────────────────────────────────────────────
     r(1,  78,  1,    0,   0);             // 80 — lap complete. Do it again.
+
+    this.boardLastPlaced = [-999, -999];
+
+    this.plantSigns();
+    this.plantShrubs();
+    this.plantPalms();
+    this.plantBillboards();
+    this.plantCookieBoards();
+    this.plantBarneyBoards();
+    this.plantBigBoards();
+    this.plantCactuses();
+    this.plantHouses();
+  }
+
+  /**
+   * Hard-mode course — a completely different track to EASY/MEDIUM.
+   *
+   * Design pillars:
+   *   • Mega sweepers: 200+ segment curves — you commit for 10+ seconds.
+   *   • Blind crests: hill goes HIGH then drops sharply, mid-corner.
+   *   • Chicanes: rapid left-right-left snaps with minimal transition.
+   *   • Hilly S-curves: elevation changes WHILE the road alternates direction.
+   *   • Almost no breathing room — one challenge feeds directly into the next.
+   *
+   * ~2000 segments before the lap loops.
+   */
+  private resetHardRoad(): void
+  {
+    this._segments = [];
+    this.lastY    = 0;
+
+    const r = (enter: number, hold: number, leave: number, curve: number, hill: number) =>
+      this.addRoad(enter, hold, leave, curve, hill);
+
+    const CE = ROAD_CURVE.EASY;   // 2  — sweeper
+    const CM = ROAD_CURVE.MEDIUM; // 4  — committed corner
+    const CH = ROAD_CURVE.HARD;   // 6  — survival turn
+    const HL = ROAD_HILL.LOW;     // 20
+    const HM = ROAD_HILL.MEDIUM;  // 40
+    const HH = ROAD_HILL.HIGH;    // 60 — blind crest / big drop
+
+    // ── 1. Launch straight ────────────────────────────────────────────────────
+    // Long enough that warning signs for the first curve fit (need ≥96 segs).
+    r(1,  98,  1,    0,   0);     // 100 — build speed, absorb the length ahead
+
+    // ── 2. MEGA SWEEPER LEFT — the opening commitment ──────────────────────
+    // 220 hold segments. You forget you're still in it.
+    r(25, 220, 25,  -CE,  0);     // 270 — vast left bend, flat
+
+    // ── 3. Blind crest MID-SWEEP — road rises then disappears ─────────────
+    // You're still deep in the left when the hill swallows your view.
+    r(10,  70, 10,  -CE, HH);     //  90 — left bend + big climb
+    r( 8,  30,  8,    0,-HH);     //  46 — crest, then sharp drop into flat
+
+    // ── 4. CHICANE 1 — hard right-left-right snap sequence ────────────────
+    r( 8,  15,  8,   CH,  0);     //  31 — snap hard right
+    r( 8,  15,  8,  -CH,  0);     //  31 — snap hard left
+    r( 8,  15,  8,   CH,  0);     //  31 — snap hard right again
+
+    // ── 5. Brief flat ─────────────────────────────────────────────────────
+    r( 5,  20,  5,    0,  0);     //  30
+
+    // ── 6. MEGA SWEEPER RIGHT — climbing all the way ──────────────────────
+    // The corner seems easy at first. The hill just keeps coming.
+    r(25, 180, 25,   CE, HM);     // 230 — vast right bend, going up steadily
+
+    // ── 7. Crest + sharp drop, still in the right bend ────────────────────
+    // You are at max speed. The road drops out from under you.
+    r(10,  50, 10,   CE,-HH);     //  70 — right bend + dramatic downhill
+
+    // ── 8. S-CURVE SEQUENCE 1 — four alternating medium corners ───────────
+    r(15,  60, 15,   CM,  0);     //  90 — medium right
+    r(15,  60, 15,  -CM,  0);     //  90 — medium left
+    r(15,  60, 15,   CM,  0);     //  90 — medium right
+    r(15,  60, 15,  -CM,  0);     //  90 — medium left
+
+    // ── 9. Flat breather ──────────────────────────────────────────────────
+    r( 1,  25,  1,    0,  0);     //  27
+
+    // ── 10. Blind rise into hard left ────────────────────────────────────
+    // The hill is perfectly straight — begs you to hold flat.
+    // The hard left waits at the very top where you have no sight line.
+    r(15,  90, 15,    0, HH);     // 120 — straight up
+    r(10,  50, 10,  -CH,-HH);     //  70 — hard left + dramatic drop together
+
+    // ── 11. CHICANE 2 — four-part alternating, no rest between ────────────
+    r( 6,  14,  6,  -CH,  0);     //  26
+    r( 6,  14,  6,   CH,  0);     //  26
+    r( 6,  14,  6,  -CH,  0);     //  26
+    r( 6,  14,  6,   CH,  0);     //  26
+
+    // ── 12. MEGA SWEEPER RIGHT — long medium corner ───────────────────────
+    r(20, 160, 20,   CM,  0);     // 200 — medium right, extended hold
+
+    // ── 13. HILLY S-CURVES — elevation changes while direction alternates ─
+    // The road tilts, crests, drops, and turns simultaneously.
+    r(12,  50, 12,   CM, HM);     //  74 — medium right + climb
+    r(12,  50, 12,  -CM,-HM);     //  74 — medium left + drop
+    r(12,  50, 12,   CE, HH);     //  74 — easy right + big climb
+    r(12,  50, 12,  -CE,-HH);     //  74 — easy left + big drop
+
+    // ── 14. Final blast to the line ────────────────────────────────────────
+    r(10,  80, 10,    0,  0);     // 100 — flat out
 
     this.boardLastPlaced = [-999, -999];
 

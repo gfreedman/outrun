@@ -12,7 +12,7 @@
  */
 
 import { Road }         from './road';
-import { ROAD_DATA }   from './road-data';
+import { ROAD_DATA, ROAD_DATA_HARD } from './road-data';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { AudioManager } from './audio';
@@ -481,8 +481,9 @@ export class Game
 
   private beginRace(): void
   {
-    // Build road for chosen mode
-    this.road = Road.fromData(ROAD_DATA, this.settings.mode);
+    // Build road for chosen mode — HARD uses its own course layout
+    const roadData = this.settings.mode === GameMode.HARD ? ROAD_DATA_HARD : ROAD_DATA;
+    this.road = Road.fromData(roadData, this.settings.mode);
 
     const cfg = RACE_CONFIG[this.settings.mode];
     this.effectiveMaxSpeed = PLAYER_MAX_SPEED * cfg.maxSpeedRatio;

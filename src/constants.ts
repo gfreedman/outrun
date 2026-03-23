@@ -520,8 +520,8 @@ export const RACE_CONFIG: Record<GameMode, RaceConfig> =
     maxSpeedRatio:   1.222,   // ≈ 358 km/h
     trafficCount:    8,
     raceLengthKm:    10,
-    curveScale:      1.30,
-    hillScale:       1.20,
+    curveScale:      1.00,   // hard course is designed natively — no scaling needed
+    hillScale:       1.00,
     accelMultiplier: 1.25,
   },
 };
