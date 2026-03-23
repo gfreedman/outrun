@@ -593,26 +593,31 @@ export class Renderer
     // maxy occlusion prevents it), so painter order within a batch is irrelevant.
 
     // ── A. Grass ───────────────────────────────────────────────────────────
+    // sy2 may be > sy1 on downhill segments (camera-Y tracking); handle both.
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sy1, sy2, seg } = this.projPool[i];
-      if (sy2 >= sy1) continue;
+      const gTop = Math.min(sy1, sy2);
+      const gBot = Math.max(sy1, sy2);
+      if (gBot <= gTop) continue;
       if (seg.color.grass !== COLORS.SAND_LIGHT)
       {
         ctx.fillStyle = seg.color.grass;
-        ctx.fillRect(0, sy2, w, sy1 - sy2);
+        ctx.fillRect(0, gTop, w, gBot - gTop);
       }
     }
 
     // Helper: add one trapezoid subpath into the currently open path.
     // All coordinates are pixel-snapped to eliminate sub-pixel anti-aliasing
-    // seams between adjacent segments.  y2 is extended by 1px toward the
-    // horizon so adjacent segment fills overlap — closing the 1px crack that
-    // canvas anti-aliasing can leave at their shared horizontal boundary.
+    // seams between adjacent segments.  r2 extends 1px in the direction of
+    // the far edge (toward horizon on uphill, away from horizon on downhill)
+    // so adjacent segment fills overlap, closing the 1px canvas crack.
     const addTrap = (x1: number, y1: number, w1: number,
                      x2: number, y2: number, w2: number): void =>
     {
-      const r2 = y2 - 1;   // 1px overlap toward horizon — seam-proof
+      // y1 > y2 = uphill (far closer to horizon): extend UP (-1)
+      // y1 < y2 = downhill (far below horizon):   extend DOWN (+1)
+      const r2 = y1 > y2 ? y2 - 1 : y2 + 1;
       ctx.moveTo(Math.round(x1 - w1), y1);
       ctx.lineTo(Math.round(x1 + w1), y1);
       ctx.lineTo(Math.round(x2 + w2), r2);
@@ -626,7 +631,6 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2 } = this.projPool[i];
-      if (sy2 >= sy1) continue;
       addTrap(sx1, sy1, sw1, sx2, sy2, sw2);
     }
     ctx.fill();
@@ -637,7 +641,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_RED || sw1 < 1) continue;
+      if (seg.color.rumble !== COLORS.RUMBLE_RED || sw1 < 1) continue;
       const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
       addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
       addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
@@ -650,7 +654,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || seg.color.rumble !== COLORS.RUMBLE_WHITE || sw1 < 1) continue;
+      if (seg.color.rumble !== COLORS.RUMBLE_WHITE || sw1 < 1) continue;
       const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
       addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
       addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
@@ -663,7 +667,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || !seg.color.lane || sw1 < 2) continue;
+      if (!seg.color.lane || sw1 < 2) continue;
       const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
       const lw2 = sw2 * 0.06, lo2 = sw2 * 0.33;
       addTrap(sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2);
@@ -677,7 +681,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (sy2 >= sy1 || !seg.color.lane || sw1 < 4) continue;
+      if (!seg.color.lane || sw1 < 4) continue;
       const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
       const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
       const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
