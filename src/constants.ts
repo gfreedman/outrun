@@ -584,7 +584,7 @@ export const RACE_CONFIG: Record<GameMode, RaceConfig> =
     trafficCount:    4,
     raceLengthKm:    3.20,   // one loop of the hard road
     curveScale:      1.00,   // FULL curves — no softening
-    hillScale:       1.00,   // FULL hills — genuine blind crests
+    hillScale:       1.80,   // 1.8× amplification — hills noticeably rise and drop
     accelMultiplier: 1.00,
   },
   // HARD — Same hard course; boosted speed + max traffic + stronger accel.
@@ -595,7 +595,7 @@ export const RACE_CONFIG: Record<GameMode, RaceConfig> =
     trafficCount:    8,
     raceLengthKm:    3.20,   // one loop of the hard road
     curveScale:      1.00,   // hard course is designed natively — no scaling needed
-    hillScale:       1.00,
+    hillScale:       2.60,   // 2.6× — crests exceed CAMERA_HEIGHT → genuine blind hills
     accelMultiplier: 1.25,
   },
 };
