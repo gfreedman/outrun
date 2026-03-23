@@ -608,20 +608,36 @@ export class Renderer
     }
 
     // Helper: add one trapezoid subpath into the currently open path.
-    // All coordinates are pixel-snapped to eliminate sub-pixel anti-aliasing
-    // seams between adjacent segments.  r2 extends 1px in the direction of
-    // the far edge (toward horizon on uphill, away from horizon on downhill)
-    // so adjacent segment fills overlap, closing the 1px canvas crack.
+    //
+    // WINDING NOTE: canvas nonzero-fill requires all trapezoids to wind in
+    // the same direction.  Uphill (y1 > y2) draws BL→BR→TR→TL = clockwise.
+    // Downhill (y1 < y2) MUST also be clockwise, so it goes TL→BL→BR→TR.
+    // Mixing CW and CCW in one batched path causes winding cancellation at
+    // the 1px seam overlap, leaving an unfilled sand strip on the road.
+    //
+    // r2 extends the far edge 1px toward the next segment so adjacent fills
+    // overlap and close the canvas sub-pixel crack.
     const addTrap = (x1: number, y1: number, w1: number,
                      x2: number, y2: number, w2: number): void =>
     {
-      // y1 > y2 = uphill (far closer to horizon): extend UP (-1)
-      // y1 < y2 = downhill (far below horizon):   extend DOWN (+1)
-      const r2 = y1 > y2 ? y2 - 1 : y2 + 1;
-      ctx.moveTo(Math.round(x1 - w1), y1);
-      ctx.lineTo(Math.round(x1 + w1), y1);
-      ctx.lineTo(Math.round(x2 + w2), r2);
-      ctx.lineTo(Math.round(x2 - w2), r2);
+      if (y1 >= y2)
+      {
+        // Uphill / flat — y1 at bottom, y2 at top.  CW: BL→BR→TR→TL
+        const r2 = y2 - 1;
+        ctx.moveTo(Math.round(x1 - w1), y1);
+        ctx.lineTo(Math.round(x1 + w1), y1);
+        ctx.lineTo(Math.round(x2 + w2), r2);
+        ctx.lineTo(Math.round(x2 - w2), r2);
+      }
+      else
+      {
+        // Downhill — y1 at top, y2 at bottom.  CW in canvas: TL→BL→BR→TR
+        const r2 = y2 + 1;
+        ctx.moveTo(Math.round(x1 - w1), y1);
+        ctx.lineTo(Math.round(x2 - w2), r2);
+        ctx.lineTo(Math.round(x2 + w2), r2);
+        ctx.lineTo(Math.round(x1 + w1), y1);
+      }
       ctx.closePath();
     };
 
