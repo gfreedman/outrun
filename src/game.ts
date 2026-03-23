@@ -159,8 +159,9 @@ export class Game
 
   // ── Finishing cinematic ────────────────────────────────────────────────────
 
-  private finishingTimer = 0;      // seconds elapsed since crossing the line
-  private finishingSlid  = false;  // true once the sideways slide has been triggered
+  private finishingTimer       = 0;   // seconds elapsed since crossing the line
+  private finishingSlid        = false; // true once the sideways slide has been triggered
+  private finishingTravelledWU = 0;   // WU rolled since FINISHING began — hard-capped at stop zone
 
   // ── Countdown state ────────────────────────────────────────────────────────
 
@@ -545,8 +546,9 @@ export class Game
     this.timeUpDecelDone   = false;
     this.barneyBoostTimer  = 0;
     this.barneyKillCount   = 0;
-    this.finishingTimer    = 0;
-    this.finishingSlid     = false;
+    this.finishingTimer       = 0;
+    this.finishingSlid        = false;
+    this.finishingTravelledWU = 0;
 
     // Countdown
     this.countdownValue = 3;
@@ -648,9 +650,10 @@ export class Game
       this.score += SCORE_FINISH_BASE
         + Math.round(this.timeRemaining * SCORE_TIME_BONUS_PER_SEC)
         + this.barneyKillCount * BARNEY_KILL_BONUS;
-      this.phase         = GamePhase.FINISHING;
-      this.finishingTimer = 0;
-      this.finishingSlid  = false;
+      this.phase                = GamePhase.FINISHING;
+      this.finishingTimer       = 0;
+      this.finishingSlid        = false;
+      this.finishingTravelledWU = 0;
       this.audio.updateScreech(0);
       this.audio.playBeep(880, 0.8);
       return;
@@ -691,10 +694,18 @@ export class Game
     // Clamp to road surface so the car stays on the asphalt during the cinematic
     this.playerX        = Math.max(-0.9, Math.min(0.9, this.playerX));
 
-    // ── Advance road with decelerating speed (car rolls through the gate) ──
-    const trackLength = this.road.count * SEGMENT_LENGTH;
-    const stepWU      = this.speed * dt;
-    this.playerZ      = ((this.playerZ + stepWU) % trackLength + trackLength) % trackLength;
+    // ── Advance road — hard stop inside the billboard celebration zone ────
+    // The car is still fast enough to blow through hundreds of segments, so
+    // we cap the total roll-out to 12 segments past the gate.  Once the
+    // budget is spent, playerZ freezes and the car appears stopped inside
+    // the billboard cluster.
+    const trackLength   = this.road.count * SEGMENT_LENGTH;
+    const FINISH_BUDGET = 12 * SEGMENT_LENGTH;              // 2 400 WU
+    const stepWU        = this.speed * dt;
+    const allowed       = Math.max(0, FINISH_BUDGET - this.finishingTravelledWU);
+    const actualStep    = Math.min(stepWU, allowed);
+    this.finishingTravelledWU += actualStep;
+    this.playerZ = ((this.playerZ + actualStep) % trackLength + trackLength) % trackLength;
 
     // ── Audio ─────────────────────────────────────────────────────────────
     this.audio.updateEngine(this.speed / this.effectiveMaxSpeed);
