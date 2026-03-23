@@ -62,6 +62,13 @@ import
   SHAKE_TRAFFIC_DURATION, SHAKE_TRAFFIC_INTENSITY,
   TRAFFIC_HIT_RECOVERY_TIME, TRAFFIC_HIT_RECOVERY_BOOST,
   RACE_CONFIG, WU_PER_KM,
+  RACE_TIME_LIMIT,
+  SCORE_BASE_PER_SEC, SCORE_SPEED_PER_SEC, SCORE_CRASH_PENALTY,
+  SCORE_FINISH_BASE, SCORE_TIME_BONUS_PER_SEC,
+  TIMEUP_DECEL,
+  TIME_PENALTY_HIT,
+  BARNEY_BOOST_MULTIPLIER, BARNEY_BOOST_DURATION, BARNEY_KILL_BONUS,
+  FINISHING_DURATION, FINISHING_DECEL,
 } from './constants';
 
 const STORAGE_KEY = 'outrun_settings';
@@ -138,10 +145,22 @@ export class Game
   private shakeTimer       = 0;
   private shakeIntensity   = 0;
 
-  // ── Race timers ────────────────────────────────────────────────────────────
+  // ── Race timers + scoring ─────────────────────────────────────────────────
 
   private raceTimer         = 0;
   private distanceTravelled = 0;   // cumulative world units (not looped)
+  private finishLineWU      = 0;   // exact WU where car crosses the start/finish gate
+  private timeRemaining     = 0;   // countdown timer (seconds left)
+  private score             = 0;   // accumulated score
+  private stageNameTimer    = 0;   // seconds left to show stage announcement
+  private timeUpDecelDone   = false;  // true once car is stopped after TIME UP
+  private barneyBoostTimer  = 0;   // seconds left of afterburner boost
+  private barneyKillCount   = 0;   // how many Barney cars collected this race
+
+  // ── Finishing cinematic ────────────────────────────────────────────────────
+
+  private finishingTimer = 0;      // seconds elapsed since crossing the line
+  private finishingSlid  = false;  // true once the sideways slide has been triggered
 
   // ── Countdown state ────────────────────────────────────────────────────────
 
@@ -206,7 +225,12 @@ export class Game
   private btnGithub = new Button();
 
   // In-game
-  private btnQuit   = new Button();
+  private btnQuit      = new Button();
+
+  // End screens (TIME UP + GOAL)
+  private btnEndContinue  = new Button();   // TIME UP → back to menu
+  private btnEndPlayAgain = new Button();   // GOAL → play again
+  private btnEndMenu      = new Button();   // GOAL → main menu
 
   // ── Audio state ────────────────────────────────────────────────────────────
 
@@ -337,7 +361,9 @@ export class Game
       case GamePhase.INTRO:      this.tickIntro(dt);        break;
       case GamePhase.COUNTDOWN:  this.tickCountdown(dt);    break;
       case GamePhase.PLAYING:    this.tickPlaying(dt);      break;
-      case GamePhase.FINISHED:   this.tickFinished();       break;
+      case GamePhase.FINISHING:  this.tickFinishing(dt);    break;
+      case GamePhase.GOAL:       this.tickGoal();           break;
+      case GamePhase.TIMEUP:     this.tickTimeUp(dt);       break;
     }
 
     this.rafId = requestAnimationFrame(this.loop);
@@ -481,8 +507,9 @@ export class Game
 
   private beginRace(): void
   {
-    // Build road for chosen mode — HARD uses its own course layout
-    const roadData = this.settings.mode === GameMode.HARD ? ROAD_DATA_HARD : ROAD_DATA;
+    // EASY uses the base Nürburgring course; MEDIUM and HARD use the hard course layout
+    // (MEDIUM applies 75% curve / 80% hill scaling so it sits halfway between modes)
+    const roadData = this.settings.mode === GameMode.EASY ? ROAD_DATA : ROAD_DATA_HARD;
     this.road = Road.fromData(roadData, this.settings.mode);
 
     const cfg = RACE_CONFIG[this.settings.mode];
@@ -505,8 +532,20 @@ export class Game
     this.hitRecoveryBoost = 1.0;
     this.shakeTimer    = 0;
     this.shakeIntensity = 0;
-    this.raceTimer     = 0;
+    this.raceTimer         = 0;
     this.distanceTravelled = 0;
+    // Finish fires exactly as the car crosses the start/finish gate on its return lap.
+    // Gate is at segment START_GATE_SEGMENT; add one extra segment so the car is
+    // visually past it before FINISHING triggers.
+    this.finishLineWU = (this.road.count + Road.START_GATE_SEGMENT + 1) * SEGMENT_LENGTH;
+    this.timeRemaining     = RACE_TIME_LIMIT[this.settings.mode];
+    this.score             = 0;
+    this.stageNameTimer    = 3.5;
+    this.timeUpDecelDone   = false;
+    this.barneyBoostTimer  = 0;
+    this.barneyKillCount   = 0;
+    this.finishingTimer    = 0;
+    this.finishingSlid     = false;
 
     // Countdown
     this.countdownValue = 3;
@@ -577,7 +616,15 @@ export class Game
 
   private tickPlaying(dt: number): void
   {
-    this.raceTimer += dt;
+    this.raceTimer        += dt;
+    this.timeRemaining     = Math.max(0, this.timeRemaining - dt);
+    this.stageNameTimer    = Math.max(0, this.stageNameTimer - dt);
+    this.barneyBoostTimer  = Math.max(0, this.barneyBoostTimer - dt);
+
+    // Score: base rate + speed bonus (pts/sec)
+    const speedRatio = this.speed / this.effectiveMaxSpeed;
+    this.score += Math.round((SCORE_BASE_PER_SEC + SCORE_SPEED_PER_SEC * speedRatio) * dt);
+
     this.audio.tickMusic();
     this.update(dt);
     this.drawRace();
@@ -591,32 +638,147 @@ export class Game
       if (this.btnQuit.clicked) this.exitToMenu();
     }
 
-    // Finish detection: race length in world units
+    // ── Finish detection (checked BEFORE time-up so a simultaneous
+    //    crossing-as-clock-hits-zero gives FINISHING, not TIME UP) ──────
     const cfg = RACE_CONFIG[this.settings.mode];
-    const raceWU = cfg.raceLengthKm * WU_PER_KM;
-    if (this.distanceTravelled >= raceWU)
+    if (this.distanceTravelled >= this.finishLineWU)
     {
-      this.phase = GamePhase.FINISHED;
-      this.speed = 0;
+      // Bank the score now (once); the cinematic runs then GOAL screen shows it
+      this.score += SCORE_FINISH_BASE
+        + Math.round(this.timeRemaining * SCORE_TIME_BONUS_PER_SEC)
+        + this.barneyKillCount * BARNEY_KILL_BONUS;
+      this.phase         = GamePhase.FINISHING;
+      this.finishingTimer = 0;
+      this.finishingSlid  = false;
+      this.audio.updateScreech(0);
+      this.audio.playBeep(880, 0.8);
+      return;
+    }
+
+    // ── Time up ───────────────────────────────────────────────────────────
+    if (this.timeRemaining <= 0)
+    {
+      this.phase = GamePhase.TIMEUP;
     }
   }
 
-  // ── Phase: FINISHED ────────────────────────────────────────────────────────
+  // ── Phase: FINISHING ───────────────────────────────────────────────────────
+  // Player input is gone.  Car decelerates hard while a sideways slide kicks in
+  // immediately — car crosses the finish gate and skids to a stop just past it.
+  // Confetti rains throughout.  After FINISHING_DURATION → GOAL screen.
 
-  private tickFinished(): void
+  private tickFinishing(dt: number): void
   {
-    // Draw the road scene underneath the overlay
+    this.finishingTimer += dt;
+
+    // ── Hard deceleration — stops from max speed in under 1 second ────────
+    this.speed = Math.max(0, this.speed - FINISHING_DECEL * dt);
+
+    // ── Kick sideways slide on the very first frame ───────────────────────
+    if (!this.finishingSlid)
+    {
+      this.finishingSlid = true;
+      const dir          = this.playerX >= 0 ? -1 : 1;
+      this.slideVelocity = dir * 2.8;
+      this.steerAngle    = -dir * 1.0;
+    }
+
+    // Slide decays slowly so the spin stays visible as the car rolls to a stop
+    this.playerX       += this.slideVelocity * dt;
+    this.slideVelocity *= Math.exp(-1.6 * dt);
+    this.steerAngle    *= Math.exp(-1.2 * dt);
+    this.playerX        = Math.max(-1.8, Math.min(1.8, this.playerX));
+
+    // ── Advance road with decelerating speed (car rolls through the gate) ──
+    const trackLength = this.road.count * SEGMENT_LENGTH;
+    const stepWU      = this.speed * dt;
+    this.playerZ      = ((this.playerZ + stepWU) % trackLength + trackLength) % trackLength;
+
+    // ── Audio ─────────────────────────────────────────────────────────────
+    this.audio.updateEngine(this.speed / this.effectiveMaxSpeed);
+    this.audio.updateScreech(0);
+    this.audio.tickMusic();
+
+    // ── Render ────────────────────────────────────────────────────────────
+    const { renderer, road, w, h } = this;
+    const cfg         = RACE_CONFIG[this.settings.mode];
+    const driftVisual = -this.slideVelocity * 0.12;
+    const renderSteer = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
+
+    renderer.render(
+      road.segments, road.count,
+      this.playerZ, this.playerX,
+      DRAW_DISTANCE, w, h,
+      this.speed, renderSteer, 0,
+      [],          // traffic hidden during cinematic
+      this.raceTimer,
+      this.distanceTravelled / WU_PER_KM,
+      cfg.raceLengthKm,
+      this.timeRemaining,
+      this.score,
+      0, 0,
+      undefined,   // no quit button
+    );
+
+    renderer.renderConfetti(w, h, this.finishingTimer);
+
+    if (this.finishingTimer >= FINISHING_DURATION)
+      this.phase = GamePhase.GOAL;
+  }
+
+  // ── Phase: GOAL ────────────────────────────────────────────────────────────
+
+  private tickGoal(): void
+  {
     this.drawRace();
+    this.renderer.renderGoalScreen(
+      this.w, this.h, this.score, this.raceTimer, this.barneyKillCount,
+      this.btnEndPlayAgain, this.btnEndMenu,
+    );
 
-    const cfg       = RACE_CONFIG[this.settings.mode];
-    const distKm    = this.distanceTravelled / WU_PER_KM;
-    this.renderer.renderFinish(this.w, this.h, this.raceTimer, Math.min(distKm, cfg.raceLengthKm));
+    this.btnEndPlayAgain.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+    this.btnEndMenu     .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+    this.canvas.style.cursor = anyHovered(this.btnEndPlayAgain, this.btnEndMenu) ? 'pointer' : 'default';
 
-    const { input } = this;
-    if (input.wasPressed('Enter'))   { this.beginRace(); }
-    if (input.wasPressed('Escape'))  { this.exitToMenu(); }
+    if (this.mouseClick)
+    {
+      this.mouseClick = false;
+      if (this.btnEndPlayAgain.clicked) { this.beginRace(); return; }
+      if (this.btnEndMenu.clicked)      { this.exitToMenu(); return; }
+    }
+    if (this.input.wasPressed('Enter'))  { this.beginRace(); return; }
+    if (this.input.wasPressed('Escape')) { this.exitToMenu(); return; }
+  }
 
-    if (this.mouseClick) this.mouseClick = false;
+  // ── Phase: TIMEUP ──────────────────────────────────────────────────────────
+
+  private tickTimeUp(dt: number): void
+  {
+    // Decelerate to a stop; fade engine with speed
+    if (!this.timeUpDecelDone)
+    {
+      this.speed = Math.max(0, this.speed - TIMEUP_DECEL * dt);
+      if (this.speed === 0) this.timeUpDecelDone = true;
+    }
+    this.audio.updateEngine(this.speed / this.effectiveMaxSpeed);
+    this.audio.updateScreech(0);
+
+    this.audio.tickMusic();
+    this.drawRace();
+    this.renderer.renderTimeUpScreen(this.w, this.h, this.score, this.btnEndContinue);
+
+    this.btnEndContinue.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
+    this.canvas.style.cursor = this.btnEndContinue.hovered ? 'pointer' : 'default';
+
+    if (this.mouseClick)
+    {
+      this.mouseClick = false;
+      if (this.btnEndContinue.clicked) { this.exitToMenu(); return; }
+    }
+    if (this.input.wasPressed('Enter') || this.input.wasPressed('Escape'))
+    {
+      this.exitToMenu();
+    }
   }
 
   // ── Physics update (PLAYING only) ─────────────────────────────────────────
@@ -665,7 +827,16 @@ export class Game
       this.brakeHeld  = Math.max(0, this.brakeHeld - dt * 4);
     }
 
-    this.speed = Math.max(0, Math.min(this.speed, maxSpeed));
+    // ── Barney afterburner boost ───────────────────────────────────────────
+    // Override speed cap: allow 50% above normal max; push toward boost ceiling.
+    if (this.barneyBoostTimer > 0)
+    {
+      const boostMax = maxSpeed * BARNEY_BOOST_MULTIPLIER;
+      this.speed = Math.min(boostMax, this.speed + maxSpeed * 2.0 * dt);
+    }
+
+    this.speed = Math.max(0, Math.min(this.speed,
+      this.barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
 
     // ── Steering ───────────────────────────────────────────────────────────
 
@@ -755,7 +926,8 @@ export class Game
     }
     this.wasOffRoad = this.offRoad;
 
-    this.speed = Math.max(0, Math.min(this.speed, maxSpeed));
+    this.speed = Math.max(0, Math.min(this.speed,
+      this.barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
 
     // ── Collision ──────────────────────────────────────────────────────────
 
@@ -839,25 +1011,55 @@ export class Game
 
       if (trafficHit)
       {
+        const boosting    = this.barneyBoostTimer > 0;
         const preHitRatio = this.speed / this.effectiveMaxSpeed;
-        this.speed = Math.min(this.speed, this.effectiveMaxSpeed * TRAFFIC_HIT_SPEED_CAP);
-        const bumpSign = -trafficHit.bumpDir;
-        const flick    = Math.max(TRAFFIC_HIT_FLICK_BASE, preHitRatio * TRAFFIC_HIT_FLICK_RESTITUTION);
-        this.slideVelocity  = bumpSign * Math.min(flick, 0.75);
-        this.shakeTimer       = SHAKE_TRAFFIC_DURATION;
-        this.shakeIntensity   = SHAKE_TRAFFIC_INTENSITY;
-        this.hitCooldown      = TRAFFIC_HIT_COOLDOWN;
-        this.hitRecoveryTimer = TRAFFIC_HIT_RECOVERY_TIME;
-        this.hitRecoveryBoost = TRAFFIC_HIT_RECOVERY_BOOST;
-        if (this.speed > 0)
-          this.speed = Math.max(this.speed, this.effectiveMaxSpeed * HIT_SPEED_FLOOR);
-        trafficHit.hitCar.hitVelX   = trafficHit.bumpDir * 4500;
-        trafficHit.hitCar.spinAngle = 0;
+
+        if (boosting)
+        {
+          // ── Afterburner: bulldoze through — no speed penalty, no lateral bump ──
+          // Short cooldown (0.15 s) prevents re-detecting the SAME car this frame;
+          // fast enough to chain into the next car immediately after.
+          // Struck car launches harder (proportional to boost speed).
+          this.shakeTimer     = SHAKE_TRAFFIC_DURATION * 0.4;
+          this.shakeIntensity = SHAKE_TRAFFIC_INTENSITY * 0.5;
+          this.hitCooldown    = 0.15;
+          trafficHit.hitCar.hitVelX   = trafficHit.bumpDir * 9000;   // flung hard
+          trafficHit.hitCar.spinAngle = 0;
+          this.audio.playCrashCar();
+        }
+        else
+        {
+          // ── Normal hit: full speed penalty + lateral flick ──────────────────
+          this.speed = Math.min(this.speed, this.effectiveMaxSpeed * TRAFFIC_HIT_SPEED_CAP);
+          const bumpSign = -trafficHit.bumpDir;
+          const flick    = Math.max(TRAFFIC_HIT_FLICK_BASE, preHitRatio * TRAFFIC_HIT_FLICK_RESTITUTION);
+          this.slideVelocity    = bumpSign * Math.min(flick, 0.75);
+          this.shakeTimer       = SHAKE_TRAFFIC_DURATION;
+          this.shakeIntensity   = SHAKE_TRAFFIC_INTENSITY;
+          this.hitCooldown      = TRAFFIC_HIT_COOLDOWN;
+          this.hitRecoveryTimer = TRAFFIC_HIT_RECOVERY_TIME;
+          this.hitRecoveryBoost = TRAFFIC_HIT_RECOVERY_BOOST;
+          if (this.speed > 0)
+            this.speed = Math.max(this.speed, this.effectiveMaxSpeed * HIT_SPEED_FLOOR);
+          trafficHit.hitCar.hitVelX   = trafficHit.bumpDir * 4500;
+          trafficHit.hitCar.spinAngle = 0;
+          this.audio.playCrashCar();
+        }
+
         this.playerX = Math.max(-2, Math.min(2, this.playerX));
-        this.audio.playCrashCar();
 
         if (trafficHit.hitCar.type === TrafficType.Barney)
+        {
+          // Barney kill: start/chain afterburner + kill tally, no penalty ever
+          this.barneyKillCount++;
+          this.barneyBoostTimer = BARNEY_BOOST_DURATION;
           this.audio.playBarney();
+        }
+        else if (!boosting)
+        {
+          // Regular traffic hit outside afterburner: -1 second time penalty
+          this.timeRemaining = Math.max(0, this.timeRemaining - TIME_PENALTY_HIT);
+        }
       }
       return;
     }
@@ -873,6 +1075,7 @@ export class Game
     {
       case CollisionClass.Glance:
       {
+        // Cactus: speed scrub + bump; no time or score penalty
         this.speed   *= HIT_GLANCE_SPEED_MULT;
         this.playerX += bumpSign * HIT_GLANCE_BUMP;
         this.shakeTimer     = SHAKE_GLANCE_DURATION;
@@ -883,6 +1086,7 @@ export class Game
       }
       case CollisionClass.Smack:
       {
+        // Palm / billboard: speed cap + flick; no time or score penalty
         this.speed *= HIT_SMACK_SPEED_MULT;
         this.speed  = Math.min(this.speed, this.effectiveMaxSpeed * HIT_SMACK_SPEED_CAP);
         const flick         = Math.max(0.08, approach * HIT_SMACK_RESTITUTION + preHitSpeedRatio * HIT_SMACK_FLICK_BASE);
@@ -897,6 +1101,7 @@ export class Game
       }
       case CollisionClass.Crunch:
       {
+        // House: grind + slow; no time or score penalty
         this.speed = Math.min(this.speed, this.effectiveMaxSpeed * HIT_CRUNCH_SPEED_CAP);
         this.grindTimer = HIT_CRUNCH_GRIND_TIME;
         const flick        = Math.max(0.14, approach * HIT_CRUNCH_RESTITUTION + preHitSpeedRatio * HIT_CRUNCH_FLICK_BASE);
@@ -929,20 +1134,21 @@ export class Game
     const { renderer, road, w, h } = this;
     const driftVisual = -this.slideVelocity * 0.15;
     const renderSteer = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
+    const cfg         = RACE_CONFIG[this.settings.mode];
 
     renderer.render(
-      road.segments,
-      road.count,
-      this.playerZ,
-      this.playerX,
-      DRAW_DISTANCE,
-      w, h,
-      this.speed,
-      renderSteer,
-      this.jitterY,
+      road.segments, road.count,
+      this.playerZ, this.playerX,
+      DRAW_DISTANCE, w, h,
+      this.speed, renderSteer, this.jitterY,
       this.trafficCars,
       this.raceTimer,
       this.distanceTravelled / WU_PER_KM,
+      this.finishLineWU / WU_PER_KM,   // exact km to gate — matches finish detection
+      this.timeRemaining,
+      this.score,
+      this.stageNameTimer,
+      this.barneyBoostTimer,
       this.btnQuit,
     );
   }

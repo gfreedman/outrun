@@ -164,11 +164,20 @@ export enum ROAD_CURVE  { NONE = 0, EASY = 2, MEDIUM = 4, HARD = 6 }
 
 /**
  * Vertical hill height values, in world units total rise/fall for a section.
- * Compared against CAMERA_HEIGHT (1000), so HIGH (60) is a 6% grade — noticeable
- * at close range but gentle at distance, matching OutRun's rolling hills.
+ * CAMERA_HEIGHT = 1000.  To get a visually dramatic hill, world.y must approach
+ * CAMERA_HEIGHT so the crest converges toward the horizon.
+ *
+ * Projection formula:  sy = halfH + (CAMERA_HEIGHT - world.y) * sc * halfH
+ * A flat road (y=0) sits well below the horizon; y approaching 1000 raises the
+ * segment toward horizon height — the blind-crest effect of the original arcade.
+ *
+ * LOW   = 150 → gentle, rolling shoulder
+ * MEDIUM= 350 → committed hill — you lose sight of the exit
+ * HIGH  = 600 → 60% of CAMERA_HEIGHT — genuine blind crest / big drop
+ *
  * Enum (not const object) so switch statements get exhaustiveness checking (L2).
  */
-export enum ROAD_HILL   { NONE = 0, LOW = 20, MEDIUM = 40, HIGH = 60 }
+export enum ROAD_HILL   { NONE = 0, LOW = 150, MEDIUM = 350, HIGH = 600 }
 
 /**
  * Maximum frame delta-time cap in seconds.
@@ -495,31 +504,96 @@ export interface RaceConfig
   accelMultiplier: number;
 }
 
+/**
+ * Seconds the player has to reach the finish line in each difficulty.
+ * Calibrated so finishing requires sustained near-max-speed driving with
+ * minimal crash time — tight but achievable on a clean run.
+ */
+export const RACE_TIME_LIMIT: Record<GameMode, number> =
+{
+  [GameMode.EASY]:   90,
+  [GameMode.MEDIUM]: 120,
+  [GameMode.HARD]:   120,
+};
+
+// ── Finish-line cinematic (FINISHING phase) ────────────────────────────────────
+
+/** Total duration (seconds) of the finishing cinematic before the GOAL screen. */
+export const FINISHING_DURATION = 2.8;
+
+/**
+ * Deceleration (WU/s²) applied once the player crosses the finish line.
+ * At 13 000 the car stops from max speed in under a second — dramatic but brief.
+ */
+export const FINISHING_DECEL = 13_000;
+
+// ── Scoring ────────────────────────────────────────────────────────────────────
+
+/** Base points awarded per second of driving (regardless of speed). */
+export const SCORE_BASE_PER_SEC       = 100;
+
+/** Additional points per second at maximum speed (0 = stopped, this = max). */
+export const SCORE_SPEED_PER_SEC      = 200;
+
+/** Points deducted on any collision hit (clamped at zero). */
+export const SCORE_CRASH_PENALTY      = 500;
+
+/** Seconds deducted from the race clock on a traffic car hit (not Barney). */
+export const TIME_PENALTY_HIT         = 1;
+
+/** Speed multiplier applied during the Barney afterburner boost. 1.5 = 50% over normal max. */
+export const BARNEY_BOOST_MULTIPLIER  = 1.5;
+
+/** Duration in seconds of the Barney afterburner speed boost. */
+export const BARNEY_BOOST_DURATION    = 3.0;
+
+/** Bonus points awarded per Barney killed, shown on the GOAL end screen. */
+export const BARNEY_KILL_BONUS        = 5_000;
+
+/** Flat bonus awarded the moment the player crosses the finish line. */
+export const SCORE_FINISH_BASE        = 50_000;
+
+/** Extra points per second remaining on the clock at finish. */
+export const SCORE_TIME_BONUS_PER_SEC = 1_000;
+
+// ── TIME UP physics ────────────────────────────────────────────────────────────
+
+/** Deceleration (WU/s²) when time runs out — stops the car quickly. */
+export const TIMEUP_DECEL = 19_800;   // ≈ 3 × OFFROAD_DECEL
+
 export const RACE_CONFIG: Record<GameMode, RaceConfig> =
 {
+  // EASY — Coconut Beach default road; speed capped at ~195 km/h; 1 traffic car.
+  // One complete lap of the default 1225-segment course (≈1.85 km).
+  // Matches the warmup feel of the original OutRun Stage 1.
   [GameMode.EASY]:
   {
     maxSpeedRatio:   0.667,   // ≈ 195 km/h
     trafficCount:    1,
-    raceLengthKm:    4,
-    curveScale:      0.50,
-    hillScale:       0.50,
-    accelMultiplier: 0.75,
-  },
-  [GameMode.MEDIUM]:
-  {
-    maxSpeedRatio:   1.0,     // 293 km/h — default
-    trafficCount:    3,
-    raceLengthKm:    6,
+    raceLengthKm:    1.80,   // one loop of the default road
     curveScale:      1.00,
     hillScale:       1.00,
+    accelMultiplier: 0.75,
+  },
+  // MEDIUM — Hard course at full strength; 293 km/h; 4 traffic cars.
+  // One complete lap of the 2206-segment hard course (≈3.33 km).
+  // "The OG medium mode that was nice" — Nürburgring-style at full spec.
+  [GameMode.MEDIUM]:
+  {
+    maxSpeedRatio:   1.0,     // 293 km/h — authentic Testarossa top speed
+    trafficCount:    4,
+    raceLengthKm:    3.20,   // one loop of the hard road
+    curveScale:      1.00,   // FULL curves — no softening
+    hillScale:       1.00,   // FULL hills — genuine blind crests
     accelMultiplier: 1.00,
   },
+  // HARD — Same hard course; boosted speed + max traffic + stronger accel.
+  // Effectively turns the medium course into a survival exercise.
   [GameMode.HARD]:
   {
     maxSpeedRatio:   1.222,   // ≈ 358 km/h
     trafficCount:    8,
-    raceLengthKm:    10,
+    raceLengthKm:    3.20,   // one loop of the hard road
     curveScale:      1.00,   // hard course is designed natively — no scaling needed
     hillScale:       1.00,
     accelMultiplier: 1.25,

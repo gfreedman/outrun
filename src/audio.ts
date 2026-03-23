@@ -14,45 +14,90 @@
  */
 
 // ── Music pattern constants ──────────────────────────────────────────────────
+//
+// Inspired by Hiroshi Kawaguchi's OutRun OST (Magical Sound Shower / Passing Breeze).
+//
+// Key design decisions vs. the old implementation:
+//   OLD: Scale runs (A B C# E D…) → sounds like Zelda/fantasy.
+//   NEW: Arpeggio leaps + stepwise resolution → OutRun city-pop / boogie character.
+//
+//   OLD: 4 quarter-note bass hits → static and tame.
+//   NEW: 8 eighth-note bass hits, root/fifth bounce → propulsive Caribbean groove.
+//
+//   OLD: No chord stabs → lacks the signature OutRun off-beat punch.
+//   NEW: Staccato triads on the "and" of beats 1 & 3 → instant OutRun recognition.
+//
+//   OLD: Music gain 0.10 (buried under engine).
+//   NEW: Music gain 0.33 (dominant, as in the arcade cabinet).
+//
+//   OLD: 155 BPM — slightly rushed.
+//   NEW: 140 BPM — Magical Sound Shower authentic pace.
 
-// BPM and timing — 155 BPM: driving Euro-dance pace that matches OutRun arcade energy
-const BPM      = 155;
-const BEAT     = 60 / BPM;       // ≈ 0.387 s
-const EIGHTH   = BEAT / 2;       // ≈ 0.194 s
-const SIXTEENTH = BEAT / 4;      // ≈ 0.097 s
-const BAR      = BEAT * 4;       // ≈ 1.548 s
+const BPM       = 140;
+const BEAT      = 60 / BPM;       // ≈ 0.429 s
+const EIGHTH    = BEAT / 2;       // ≈ 0.214 s
+const SIXTEENTH = BEAT / 4;       // ≈ 0.107 s
+const BAR       = BEAT * 4;       // ≈ 1.714 s
 
-// Note frequencies — A major (bright, punchy — classic OutRun key)
-const A2 = 110.00,  B2 = 123.47;
-const C3s = 138.59, D3 = 146.83, E3 = 164.81, F3s = 185.00, G3s = 207.65;
-const A3 = 220.00,  B3 = 246.94, C4s = 277.18, D4 = 293.66, E4 = 329.63;
-const F4s = 369.99, G4s = 415.30, A4 = 440.00, B4 = 493.88;
-const C5s = 554.37, D5 = 587.33, E5 = 659.25, F5s = 739.99, A5 = 880.00;
+// D major — warm, driving, OutRun sunshine palette.
+// Chord cycle: I (D) → IV (G) → V (A) → I (D)
+const D2  =  73.42;
+const G2  =  98.00;
+const A2  = 110.00;
+const B2  = 123.47;
+const D3  = 146.83;
+const E3  = 164.81;
+const F3s = 185.00;
+const G3  = 196.00;
+const A3  = 220.00;
+const B3  = 246.94;
+const C4s = 277.18;
+const D4  = 293.66;
+const E4  = 329.63;
+const F4s = 369.99;
+const G4  = 392.00;
+const A4  = 440.00;
+const B4  = 493.88;
+const C5s = 554.37;
+const D5  = 587.33;
+const E5  = 659.25;
+const F5s = 739.99;
+const A5  = 880.00;
 
-// 4-bar melody — ascending/descending runs à la Magical Sound Shower
-// Sawtooth through resonant filter = bright FM-like arcade lead
+// ── Lead melody (8 eighth notes per bar) ─────────────────────────────────────
+// Arpeggio leaps + stepwise resolution — the OutRun melodic fingerprint.
+// Each bar has a distinct emotional colour: launch / answer / climb / resolve.
 const MELODY: number[][] = [
-  [A4,  B4,  C5s, E5,  D5,  C5s, B4,  A4 ],   // I  — run up, glide back
-  [D5,  C5s, B4,  A4,  G4s, F4s, E4,  F4s],   // IV — descent, push back
-  [G4s, A4,  B4,  C5s, D5,  E5,  D5,  C5s],   // V  — climb toward peak
-  [B4,  A4,  G4s, F4s, E4,  C5s, E5,  A4 ],   // I  — big jump, resolve
+  [D5,  F5s, A5,  F5s, D5,  A4,  F4s, A4 ],  // I   — D: arpeggio launch, bounce back
+  [B4,  D5,  G4,  B4,  D5,  G4,  B4,  D5 ],  // IV  — G: call-and-answer riff
+  [A4,  C5s, E5,  A5,  E5,  C5s, A4,  E4 ],  // V   — A: climbing tension arc
+  [F5s, D5,  A4,  F4s, D4,  F4s, A4,  D5 ],  // I   — D: sweeping resolution
 ];
 
-// Bass: root / root / fifth / root per bar — punchy, bouncing
+// ── Bass (8 eighth notes per bar) ────────────────────────────────────────────
+// Root/fifth bounce on every eighth — the OutRun groove foundation.
 const BASS: number[][] = [
-  [A2,  A2,  E3,  A2 ],   // I
-  [D3,  D3,  A2,  D3 ],   // IV
-  [E3,  E3,  B2,  E3 ],   // V
-  [A2,  E3,  C3s, A2 ],   // I resolve
+  [D2,  D3,  A2,  D3,  D2,  A2,  D3,  A2 ],  // I   — D root/fifth
+  [G2,  G3,  D3,  G2,  G3,  D3,  B2,  G2 ],  // IV  — G with B2 colour note
+  [A2,  A3,  E3,  A2,  A3,  E3,  C4s, A2 ],  // V   — A with C#4 tension
+  [D2,  A2,  D3,  A2,  F3s, D3,  A2,  D2 ],  // I   — D full resolution
 ];
 
-// 4-note arpeggio chord tones (cycled across 16 sixteenth-notes per bar)
-// This 16th-note shimmer IS the OutRun / YM2151 FM chip signature sound
+// ── Chord stabs (triads hit on off-beats) ────────────────────────────────────
+// "And" of beats 1 and 3: the signature OutRun rhythmic punch.
+const STAB_CHORDS: number[][] = [
+  [D4,  F4s, A4 ],  // D major
+  [G3,  B3,  D4 ],  // G major
+  [A3,  C4s, E4 ],  // A major
+  [D4,  F4s, A4 ],  // D resolve
+];
+
+// ── Arpeggio (16th-note YM2151 FM-chip shimmer) ───────────────────────────────
 const ARPEGGIO: number[][] = [
-  [A3,  C4s, E4,  A4 ],   // I  — A major
-  [D3,  F3s, A3,  D4 ],   // IV — D major
-  [E3,  G3s, B3,  E4 ],   // V  — E major
-  [A3,  E4,  C4s, A3 ],   // I  — A major (mirrored, creates motion)
+  [D4,  F4s, A4,  D5 ],  // D major
+  [G3,  B3,  D4,  G4 ],  // G major
+  [A3,  C4s, E4,  A4 ],  // A major
+  [D4,  A4,  F4s, D5 ],  // D (mirrored)
 ];
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -395,8 +440,8 @@ export class AudioManager
     if (typeof speechSynthesis === 'undefined') return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance('Oh no!');
-    u.pitch  = 0.75;
-    u.rate   = 0.1;
+    u.pitch  = 1.4;   // slightly goofy high pitch
+    u.rate   = 0.85;  // slightly slower than normal — exaggerated cartoon delivery
     u.volume = 1.0;
     speechSynthesis.speak(u);
   }
@@ -413,7 +458,7 @@ export class AudioManager
 
     this.musicGain = this.ctx.createGain();
     this.musicGain.gain.setValueAtTime(0, this.ctx.currentTime);
-    this.musicGain.gain.linearRampToValueAtTime(0.10, this.ctx.currentTime + 1.5);
+    this.musicGain.gain.linearRampToValueAtTime(0.33, this.ctx.currentTime + 1.5);
     this.musicGain.connect(this.masterGain!);
 
     this.musicPlaying  = true;
@@ -458,195 +503,192 @@ export class AudioManager
     const ctx  = this.ctx!;
     const gain = this.musicGain!;
 
-    // ── Arpeggio (16th notes — the OutRun FM-chip shimmer) ───────────────
-    // Square wave cycled through 4 chord tones × 4 = 16 notes per bar.
-    // This 16th-note shimmer is the signature of the YM2151 FM arcade sound.
-    const arpNotes = ARPEGGIO[bar];
-    for (let i = 0; i < 16; i++)
-    {
-      const freq = arpNotes[i % 4];
-      const et   = t + i * SIXTEENTH;
-
-      const osc  = ctx.createOscillator();
-      const filt = ctx.createBiquadFilter();
-      const g    = ctx.createGain();
-
-      osc.type            = 'square';
-      osc.frequency.value = freq;
-      filt.type           = 'bandpass';
-      filt.frequency.value = freq * 2.2;
-      filt.Q.value        = 1.2;
-
-      g.gain.setValueAtTime(0, et);
-      g.gain.linearRampToValueAtTime(0.07, et + 0.004);
-      g.gain.setValueAtTime(0.07, et + SIXTEENTH * 0.55);
-      g.gain.linearRampToValueAtTime(0, et + SIXTEENTH * 0.80);
-
-      osc.connect(filt);
-      filt.connect(g);
-      g.connect(gain);
-      osc.start(et);
-      osc.stop(et + SIXTEENTH + 0.015);
-    }
-
-    // ── Melody (sawtooth + resonant filter — bright FM arcade lead) ───────
+    // ── Lead melody (sawtooth + resonant lowpass — bright FM arcade lead) ─
+    // Staccato: 50% duty, very fast attack — punchy not smooth.
+    // Arpeggio leaps give OutRun character vs. the old scale-run approach.
     MELODY[bar].forEach((freq, i) =>
     {
       const osc  = ctx.createOscillator();
       const filt = ctx.createBiquadFilter();
       const g    = ctx.createGain();
 
-      osc.type            = 'sawtooth';
-      osc.frequency.value = freq;
-
-      // Resonant lowpass mimics DX7 "bell" bright attack
-      filt.type           = 'lowpass';
-      filt.frequency.value = freq * 2.8;
-      filt.Q.value        = 5;
+      osc.type             = 'sawtooth';
+      osc.frequency.value  = freq;
+      filt.type            = 'lowpass';
+      filt.frequency.value = freq * 3.0;  // brighter than before
+      filt.Q.value         = 6;
 
       const et = t + i * EIGHTH;
-      g.gain.setValueAtTime(0, et);
-      g.gain.linearRampToValueAtTime(0.15, et + 0.005);   // snappy attack
-      g.gain.setValueAtTime(0.15, et + EIGHTH * 0.60);
-      g.gain.linearRampToValueAtTime(0, et + EIGHTH * 0.82);
+      g.gain.setValueAtTime(0,    et);
+      g.gain.linearRampToValueAtTime(0.22, et + 0.003);  // snappy 3 ms attack
+      g.gain.setValueAtTime(0.22, et + EIGHTH * 0.48);   // hard staccato cut
+      g.gain.linearRampToValueAtTime(0,   et + EIGHTH * 0.68);
 
-      osc.connect(filt);
-      filt.connect(g);
-      g.connect(gain);
-      osc.start(et);
-      osc.stop(et + EIGHTH + 0.02);
+      osc.connect(filt); filt.connect(g); g.connect(gain);
+      osc.start(et); osc.stop(et + EIGHTH + 0.01);
     });
 
-    // ── Bass (sawtooth + tight lowpass — punchy, slap-style) ─────────────
-    BASS[bar].forEach((freq, beat) =>
+    // ── Bass (sawtooth + tight lowpass — 8th-note root/fifth bounce) ──────
+    // 8 eighth notes per bar (not 4 quarter notes) = the OutRun groove feel.
+    BASS[bar].forEach((freq, i) =>
     {
       const osc  = ctx.createOscillator();
       const filt = ctx.createBiquadFilter();
       const g    = ctx.createGain();
 
-      osc.type            = 'sawtooth';
-      osc.frequency.value = freq;
+      osc.type             = 'sawtooth';
+      osc.frequency.value  = freq;
+      filt.type            = 'lowpass';
+      filt.frequency.value = 520;
+      filt.Q.value         = 2.5;
 
-      filt.type           = 'lowpass';
-      filt.frequency.value = 480;   // tight — punchy, not muddy
-      filt.Q.value        = 2.5;
+      const et = t + i * EIGHTH;
+      g.gain.setValueAtTime(0,    et);
+      g.gain.linearRampToValueAtTime(0.38, et + 0.006);  // very fast slap attack
+      g.gain.setValueAtTime(0.38, et + EIGHTH * 0.38);   // staccato
+      g.gain.linearRampToValueAtTime(0,   et + EIGHTH * 0.62);
 
-      const bt = t + beat * BEAT;
-      g.gain.setValueAtTime(0, bt);
-      g.gain.linearRampToValueAtTime(0.28, bt + 0.008);   // very fast attack
-      g.gain.setValueAtTime(0.28, bt + BEAT * 0.45);
-      g.gain.linearRampToValueAtTime(0, bt + BEAT * 0.70);
-
-      osc.connect(filt);
-      filt.connect(g);
-      g.connect(gain);
-      osc.start(bt);
-      osc.stop(bt + BEAT + 0.02);
+      osc.connect(filt); filt.connect(g); g.connect(gain);
+      osc.start(et); osc.stop(et + EIGHTH + 0.01);
     });
 
-    // ── Kick drum (4-on-the-floor — every beat, Euro/OutRun dance pulse) ──
+    // ── Chord stabs (square + bandpass — off-beat OutRun punch) ───────────
+    // "And" of beat 1 (0.5×BEAT) and "and" of beat 3 (2.5×BEAT).
+    // Three simultaneous oscillators = full triad stab.
+    [0.5, 2.5].forEach(pos =>
+    {
+      const et = t + pos * BEAT;
+      STAB_CHORDS[bar].forEach(freq =>
+      {
+        const osc  = ctx.createOscillator();
+        const filt = ctx.createBiquadFilter();
+        const g    = ctx.createGain();
+        osc.type             = 'square';
+        osc.frequency.value  = freq;
+        filt.type            = 'bandpass';
+        filt.frequency.value = freq * 1.8;
+        filt.Q.value         = 0.7;
+        g.gain.setValueAtTime(0,    et);
+        g.gain.linearRampToValueAtTime(0.09, et + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.001, et + 0.11);
+        osc.connect(filt); filt.connect(g); g.connect(gain);
+        osc.start(et); osc.stop(et + 0.13);
+      });
+    });
+
+    // ── Arpeggio (16th-note YM2151 FM-chip shimmer — texture layer) ───────
+    const arpNotes = ARPEGGIO[bar];
+    for (let i = 0; i < 16; i++)
+    {
+      const freq = arpNotes[i % 4];
+      const et   = t + i * SIXTEENTH;
+      const osc  = ctx.createOscillator();
+      const filt = ctx.createBiquadFilter();
+      const g    = ctx.createGain();
+      osc.type             = 'square';
+      osc.frequency.value  = freq;
+      filt.type            = 'bandpass';
+      filt.frequency.value = freq * 2.0;
+      filt.Q.value         = 1.2;
+      g.gain.setValueAtTime(0,     et);
+      g.gain.linearRampToValueAtTime(0.042, et + 0.004);
+      g.gain.setValueAtTime(0.042, et + SIXTEENTH * 0.50);
+      g.gain.linearRampToValueAtTime(0,     et + SIXTEENTH * 0.75);
+      osc.connect(filt); filt.connect(g); g.connect(gain);
+      osc.start(et); osc.stop(et + SIXTEENTH + 0.01);
+    }
+
+    // ── Kick drum (4-on-the-floor — hard, arcade-cabinet thump) ──────────
     for (let beat = 0; beat < 4; beat++)
     {
       const bt = t + beat * BEAT;
-
-      // Body: pitched sine sweep 110→35 Hz
+      // Body: pitched sine 120→38 Hz
       const osc = ctx.createOscillator();
       const og  = ctx.createGain();
-      osc.frequency.setValueAtTime(110, bt);
-      osc.frequency.exponentialRampToValueAtTime(35, bt + 0.07);
-      og.gain.setValueAtTime(0.32, bt);
-      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.20);
-      osc.connect(og);
-      og.connect(gain);
-      osc.start(bt);
-      osc.stop(bt + 0.22);
-
+      osc.frequency.setValueAtTime(120, bt);
+      osc.frequency.exponentialRampToValueAtTime(38, bt + 0.08);
+      og.gain.setValueAtTime(0.50, bt);
+      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.22);
+      osc.connect(og); og.connect(gain);
+      osc.start(bt); osc.stop(bt + 0.25);
       // Click transient
       const ns  = ctx.createBufferSource();
       ns.buffer = this.makeNoiseBuf(0.02);
       const nf  = ctx.createBiquadFilter();
       const ng  = ctx.createGain();
-      nf.type            = 'bandpass';
-      nf.frequency.value = 180;
-      nf.Q.value         = 1;
-      ng.gain.setValueAtTime(0.12, bt);
-      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.02);
-      ns.connect(nf);
-      nf.connect(ng);
-      ng.connect(gain);
-      ns.start(bt);
-      ns.stop(bt + 0.025);
+      nf.type = 'bandpass'; nf.frequency.value = 200; nf.Q.value = 1;
+      ng.gain.setValueAtTime(0.20, bt);
+      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.018);
+      ns.connect(nf); nf.connect(ng); ng.connect(gain);
+      ns.start(bt); ns.stop(bt + 0.025);
     }
 
-    // ── Snare (beats 2 and 4) — noise burst + body tone ──────────────────
+    // ── Snare (beats 2 & 4) — crisp noise burst + pitched body ───────────
     [1, 3].forEach(beat =>
     {
       const bt = t + beat * BEAT;
-
       const ns  = ctx.createBufferSource();
-      ns.buffer = this.makeNoiseBuf(0.15);
+      ns.buffer = this.makeNoiseBuf(0.14);
       const nf  = ctx.createBiquadFilter();
       const ng  = ctx.createGain();
-      nf.type            = 'highpass';
-      nf.frequency.value = 1800;
-      ng.gain.setValueAtTime(0.20, bt);
-      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.12);
-      ns.connect(nf);
-      nf.connect(ng);
-      ng.connect(gain);
-      ns.start(bt);
-      ns.stop(bt + 0.18);
-
+      nf.type = 'highpass'; nf.frequency.value = 2200;
+      ng.gain.setValueAtTime(0.30, bt);
+      ng.gain.exponentialRampToValueAtTime(0.001, bt + 0.10);
+      ns.connect(nf); nf.connect(ng); ng.connect(gain);
+      ns.start(bt); ns.stop(bt + 0.15);
       // Snare body tone
       const osc = ctx.createOscillator();
       const og  = ctx.createGain();
-      osc.frequency.value = 220;
-      og.gain.setValueAtTime(0.10, bt);
-      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.07);
-      osc.connect(og);
-      og.connect(gain);
-      osc.start(bt);
-      osc.stop(bt + 0.08);
+      osc.frequency.value = 250;
+      og.gain.setValueAtTime(0.14, bt);
+      og.gain.exponentialRampToValueAtTime(0.001, bt + 0.06);
+      osc.connect(og); og.connect(gain);
+      osc.start(bt); osc.stop(bt + 0.07);
     });
 
-    // ── Hi-hat (16th notes — dense pattern drives the OutRun energy) ─────
+    // ── Cowbell (beat 2 "and" & beat 4 "and" — OutRun Latin signature) ───
+    // 562 Hz square with fast decay: the unmistakable arcade cowbell hit.
+    [1.5, 3.5].forEach(pos =>
+    {
+      const et  = t + pos * BEAT;
+      const osc = ctx.createOscillator();
+      const g   = ctx.createGain();
+      osc.type = 'square'; osc.frequency.value = 562;
+      g.gain.setValueAtTime(0.13, et);
+      g.gain.exponentialRampToValueAtTime(0.001, et + 0.07);
+      osc.connect(g); g.connect(gain);
+      osc.start(et); osc.stop(et + 0.08);
+    });
+
+    // ── Hi-hat (16th notes — dense pattern, OutRun energy driver) ────────
     for (let i = 0; i < 16; i++)
     {
       const et  = t + i * SIXTEENTH;
       const ns  = ctx.createBufferSource();
-      ns.buffer = this.makeNoiseBuf(0.03);
+      ns.buffer = this.makeNoiseBuf(0.025);
       const nf  = ctx.createBiquadFilter();
       const ng  = ctx.createGain();
-      nf.type            = 'highpass';
-      nf.frequency.value = 9000;
-      // On-beat 8ths loud, off-beat 8ths medium, off-beat 16ths quiet
-      const vol = (i % 4 === 0) ? 0.055 : (i % 2 === 0) ? 0.032 : 0.016;
+      nf.type = 'highpass'; nf.frequency.value = 9500;
+      const vol = (i % 4 === 0) ? 0.070 : (i % 2 === 0) ? 0.040 : 0.018;
       ng.gain.setValueAtTime(vol, et);
-      ng.gain.exponentialRampToValueAtTime(0.001, et + 0.025);
-      ns.connect(nf);
-      nf.connect(ng);
-      ng.connect(gain);
-      ns.start(et);
-      ns.stop(et + 0.03);
+      ng.gain.exponentialRampToValueAtTime(0.001, et + 0.022);
+      ns.connect(nf); nf.connect(ng); ng.connect(gain);
+      ns.start(et); ns.stop(et + 0.028);
     }
 
-    // ── Open hat accent (beat 2 "and" and beat 4 "and" — Latin flavour) ──
-    [1.5, 3.5].forEach(pos =>
+    // ── Open hi-hat accent ("and" of beats 1 & 3 — with chord stabs) ─────
+    [0.5, 2.5].forEach(pos =>
     {
       const et  = t + pos * BEAT;
       const ns  = ctx.createBufferSource();
-      ns.buffer = this.makeNoiseBuf(0.10);
+      ns.buffer = this.makeNoiseBuf(0.11);
       const nf  = ctx.createBiquadFilter();
       const ng  = ctx.createGain();
-      nf.type            = 'highpass';
-      nf.frequency.value = 7000;
-      ng.gain.setValueAtTime(0.048, et);
-      ng.gain.exponentialRampToValueAtTime(0.001, et + 0.09);
-      ns.connect(nf);
-      nf.connect(ng);
-      ng.connect(gain);
-      ns.start(et);
-      ns.stop(et + 0.11);
+      nf.type = 'highpass'; nf.frequency.value = 7000;
+      ng.gain.setValueAtTime(0.044, et);
+      ng.gain.exponentialRampToValueAtTime(0.001, et + 0.10);
+      ns.connect(nf); nf.connect(ng); ng.connect(gain);
+      ns.start(et); ns.stop(et + 0.12);
     });
   }
 

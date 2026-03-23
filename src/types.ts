@@ -150,7 +150,9 @@ export enum GamePhase
   INTRO,       // Title / menu screen
   COUNTDOWN,   // 3-2-1-GO sequence
   PLAYING,     // Active race
-  FINISHED,    // Race complete
+  FINISHING,   // Car crossed finish — cinematic slide to stop + confetti
+  GOAL,        // GOAL! results screen with billboards
+  TIMEUP,      // Clock expired before finish — TIME UP screen
 }
 
 export enum GameMode
