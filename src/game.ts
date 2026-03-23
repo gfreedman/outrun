@@ -733,6 +733,7 @@ export class Game
     this.drawRace();
     this.renderer.renderGoalScreen(
       this.w, this.h, this.score, this.raceTimer, this.barneyKillCount,
+      this.timeRemaining,
       this.btnEndPlayAgain, this.btnEndMenu,
     );
 

@@ -1444,7 +1444,7 @@ export class Renderer
       const padV = Math.round(h * 0.022);
       const rectTop = baseY - sAsc - padV;
       const rectBot = baseY + sDesc + padV;
-      ctx.fillStyle = 'rgba(0,0,0,0.20)';
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
       ctx.fillRect(imgX, rectTop, imgW, rectBot - rectTop);
 
       // ── Helper: draw a centred label with outline + optional glow ─────────
@@ -1751,6 +1751,7 @@ export class Renderer
     w: number, h: number,
     score: number, elapsedSec: number,
     barneyKills: number,
+    timeRemaining: number,
     btnPlayAgain: Button, btnMenu: Button,
   ): void
   {
@@ -1786,20 +1787,23 @@ export class Renderer
     goalGrad.addColorStop(0, '#FFE000');
     goalGrad.addColorStop(1, '#FF8800');
 
+    // > 25 s left = comfortable finish; ≤ 25 s = scraped through
+    const goalText = timeRemaining > 25 ? 'Yay you finished!' : 'ooof too bad';
+
     ctx.font      = `bold ${goalFs}px Impact, sans-serif`;
     ctx.textAlign = 'center';
     ctx.lineJoin  = 'round';
     ctx.lineWidth = goalFs * 0.10;
     ctx.strokeStyle = '#000000';
-    ctx.strokeText('GOAL!', cx, goalY);
+    ctx.strokeText(goalText, cx, goalY);
     ctx.fillStyle = goalGrad;
-    ctx.fillText('GOAL!', cx, goalY);
+    ctx.fillText(goalText, cx, goalY);
 
     // Subtle yellow glow
     ctx.shadowColor = 'rgba(255,220,0,0.60)';
     ctx.shadowBlur  = Math.round(goalFs * 0.5);
     ctx.fillStyle   = goalGrad;
-    ctx.fillText('GOAL!', cx, goalY);
+    ctx.fillText(goalText, cx, goalY);
     ctx.shadowBlur  = 0;
     ctx.shadowColor = 'transparent';
 
