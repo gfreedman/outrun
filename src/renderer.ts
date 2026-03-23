@@ -486,6 +486,13 @@ export class Renderer
     const speedPercent   = speed / PLAYER_MAX_SPEED;
     this.skyOffset       = (this.skyOffset + PARALLAX_SKY * baseSegment.curve * speedPercent) % 10000;
 
+    // Camera Y tracks the road surface so hills produce genuine undulation.
+    // Without this the camera stays fixed at CAMERA_HEIGHT above y=0, making
+    // all hills look flat.  Interpolate between p1 and p2 for sub-segment accuracy.
+    const playerRoadY = baseSegment.p1.world.y +
+      (baseSegment.p2.world.y - baseSegment.p1.world.y) * basePercent;
+    const cameraY = playerRoadY + CAMERA_HEIGHT;
+
     // ── Pass 1: project front-to-back, determine visibility ───────────────
     //
     // `maxy` starts at the horizon (halfH).  Each time we see a segment
@@ -530,9 +537,9 @@ export class Renderer
       const sx1 = Math.round(halfW - projX1 * halfW);
       const sx2 = Math.round(halfW - projX2 * halfW);
 
-      // Vertical projection: world.y shifts segments up (uphill) or down (downhill)
-      const sy1 = Math.round(halfH + (CAMERA_HEIGHT - seg.p1.world.y) * sc1 * halfH);
-      const sy2 = Math.round(halfH + (CAMERA_HEIGHT - seg.p2.world.y) * sc2 * halfH);
+      // Vertical projection: camera tracks road Y so hills produce genuine crests/dips
+      const sy1 = Math.round(halfH + (cameraY - seg.p1.world.y) * sc1 * halfH);
+      const sy2 = Math.round(halfH + (cameraY - seg.p2.world.y) * sc2 * halfH);
 
       const sw1 = ROAD_WIDTH * sc1 * halfW;
       const sw2 = ROAD_WIDTH * sc2 * halfW;
@@ -1780,15 +1787,23 @@ export class Renderer
     ctx.strokeRect(panelX + 4, panelY + 4, panelW - 8, panelH - 8);
 
     // ── "GOAL!" banner ───────────────────────────────────────────────────
-    const goalFs = Math.round(h * 0.105);
-    const goalY  = panelY + Math.round(panelH * 0.26);
+    // > 25 s left = comfortable finish; ≤ 25 s = scraped through
+    const goalText = timeRemaining > 25 ? 'Yay you finished!' : 'ooof too bad';
+
+    // Scale font down until the text fits within 90% of panel width
+    let goalFs = Math.round(h * 0.105);
+    ctx.font   = `bold ${goalFs}px Impact, sans-serif`;
+    while (ctx.measureText(goalText).width > panelW * 0.90 && goalFs > 20)
+    {
+      goalFs--;
+      ctx.font = `bold ${goalFs}px Impact, sans-serif`;
+    }
+
+    const goalY = panelY + Math.round(panelH * 0.26);
 
     const goalGrad = ctx.createLinearGradient(0, goalY - goalFs, 0, goalY);
     goalGrad.addColorStop(0, '#FFE000');
     goalGrad.addColorStop(1, '#FF8800');
-
-    // > 25 s left = comfortable finish; ≤ 25 s = scraped through
-    const goalText = timeRemaining > 25 ? 'Yay you finished!' : 'ooof too bad';
 
     ctx.font      = `bold ${goalFs}px Impact, sans-serif`;
     ctx.textAlign = 'center';

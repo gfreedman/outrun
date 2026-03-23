@@ -511,6 +511,7 @@ export class Game
     // (MEDIUM applies 75% curve / 80% hill scaling so it sits halfway between modes)
     const roadData = this.settings.mode === GameMode.EASY ? ROAD_DATA : ROAD_DATA_HARD;
     this.road = Road.fromData(roadData, this.settings.mode);
+    this.road.injectFinishCelebration();
 
     const cfg = RACE_CONFIG[this.settings.mode];
     this.effectiveMaxSpeed = PLAYER_MAX_SPEED * cfg.maxSpeedRatio;
@@ -687,7 +688,8 @@ export class Game
     this.playerX       += this.slideVelocity * dt;
     this.slideVelocity *= Math.exp(-1.6 * dt);
     this.steerAngle    *= Math.exp(-1.2 * dt);
-    this.playerX        = Math.max(-1.8, Math.min(1.8, this.playerX));
+    // Clamp to road surface so the car stays on the asphalt during the cinematic
+    this.playerX        = Math.max(-0.9, Math.min(0.9, this.playerX));
 
     // ── Advance road with decelerating speed (car rolls through the gate) ──
     const trackLength = this.road.count * SEGMENT_LENGTH;
@@ -815,7 +817,7 @@ export class Game
       this.speed     += accel * cfg.accelMultiplier * this.hitRecoveryBoost * dt;
       this.brakeHeld  = 0;
     }
-    else if (input.isDown('ArrowDown'))
+    else if (input.isDown('ArrowDown') || input.isDown(' '))
     {
       this.brakeHeld = Math.min(this.brakeHeld + dt, PLAYER_BRAKE_RAMP);
       const t        = this.brakeHeld / PLAYER_BRAKE_RAMP;

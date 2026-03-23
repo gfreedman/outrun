@@ -16,6 +16,7 @@
 
 import { RoadSegment, ProjectedPoint, SegmentColor, SpriteFamily, SpriteInstance, GameMode } from './types';
 import { SEGMENT_LENGTH, COLORS, ROAD_CURVE, ROAD_HILL, COLOR_BAND_PERIOD, RACE_CONFIG } from './constants';
+import { SpriteId } from './sprites';
 
 // ── Easing functions ──────────────────────────────────────────────────────────
 //
@@ -1357,6 +1358,72 @@ export class Road
     });
 
     return road;
+  }
+
+  /**
+   * Injects a dense crowd of celebration billboards and palms around the
+   * start/finish gate so the car is surrounded by sprites when it stops.
+   * Called once from beginRace() so it layers on top of the static road data.
+   */
+  injectFinishCelebration(): void
+  {
+    // Segments to decorate — the gate is at START_GATE_SEGMENT; spread ±20 around it
+    const gateIdx   = Road.START_GATE_SEGMENT;
+    const spread    = 20;
+    const startSeg  = Math.max(0, gateIdx - spread);
+    const endSeg    = Math.min(this._segments.length - 1, gateIdx + spread);
+
+    const BILLBOARDS: SpriteId[] = [
+      'BILLBOARD_BEAGLE_PETS', 'BILLBOARD_ADOPT_BEAGLE', 'BILLBOARD_BEAGLE_POWER',
+      'BILLBOARD_FROG_TAVERN', 'BILLBOARD_RED_BOX', 'BILLBOARD_FINE_TOBACCO',
+      'BILLBOARD_WRESTLING', 'BILLBOARD_SMOOTH_TASTE', 'BILLBOARD_ALE_CROAK',
+    ];
+    const BIGS: SpriteId[]  = ['BIG_WRESTLING'];
+    const PALMS: SpriteId[] = [
+      'PALM_T1_STRAIGHT', 'PALM_T10_LARGE', 'PALM_T6_LUXURIANT',
+      'PALM_T2_BENT_LEFT', 'PALM_T2_BENT_RIGHT',
+    ];
+    const COOKIES: SpriteId[] = [
+      'COOKIE_HAPPY_SMOKING', 'COOKIE_PREMIUM_CIGS', 'COOKIE_SMOKIN_NOW',
+    ];
+
+    // Simple seeded-ish pick helper
+    const pick = (arr: SpriteId[], n: number) => arr[n % arr.length];
+
+    for (let idx = startSeg; idx <= endSeg; idx++)
+    {
+      const seg = this._segments[idx];
+      if (!seg) continue;
+
+      const sprites = (seg.sprites ??= []);
+      const rel     = idx - startSeg;  // 0..spread*2
+
+      // Skip gate segment itself so the gate sprite remains clean
+      if (idx === gateIdx) continue;
+
+      // Left side — tight roadside billboard (slightly on road)
+      if (rel % 2 === 0)
+        sprites.push({ id: pick(BILLBOARDS, rel),     family: 'billboard', worldX: -900,  scale: 1 });
+
+      // Right side — tight roadside billboard
+      if (rel % 2 === 1)
+        sprites.push({ id: pick(BILLBOARDS, rel + 3), family: 'billboard', worldX:  900,  scale: 1 });
+
+      // Every 3rd segment: a big board on alternating sides
+      if (rel % 3 === 0)
+        sprites.push({ id: BIGS[0], family: 'big', worldX: rel % 6 === 0 ? -1800 : 1800, scale: 1 });
+
+      // Every 4th segment: palm cluster near the road
+      if (rel % 4 === 0)
+      {
+        sprites.push({ id: pick(PALMS, rel),     family: 'palm', worldX: -1200, scale: 1.2 });
+        sprites.push({ id: pick(PALMS, rel + 1), family: 'palm', worldX:  1200, scale: 1.2 });
+      }
+
+      // Every 5th segment: cookie board straddling the road
+      if (rel % 5 === 0)
+        sprites.push({ id: pick(COOKIES, rel), family: 'cookie', worldX: rel % 10 === 0 ? -600 : 600, scale: 1 });
+    }
   }
 
   /**
