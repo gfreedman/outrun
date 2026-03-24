@@ -1513,11 +1513,11 @@ export class Renderer
       const barH    = Math.round(h * 0.108);
       const barMidY = Math.round(barH * 0.52);
 
-      // Dark strip
-      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      // Dark strip — pure black, no navy tint
+      ctx.fillStyle = 'rgba(0,0,0,0.88)';
       ctx.fillRect(0, 0, w, barH);
       // Gold bottom edge
-      ctx.fillStyle = 'rgba(200,165,0,0.50)';
+      ctx.fillStyle = 'rgba(200,165,0,0.70)';
       ctx.fillRect(0, barH - 2, w, 2);
 
       const badgeH  = Math.round(barH * 0.56);
@@ -1593,7 +1593,7 @@ export class Renderer
       const lapStr = `${lm}'${String(ls).padStart(2,'0')}"${String(lcs).padStart(2,'0')}`;
 
       drawBadge('LAP', S3_BX, '#884400', '#BB6600');
-      drawNum(lapStr, S3_NR, '#FFFFFF', lapNumFs);
+      drawNum(lapStr, S3_NR, '#FFE000', lapNumFs);
 
       // ── Stage progress bar  (bottom-right corner) ───────────────────────
       if (raceLengthKm > 0)
