@@ -473,10 +473,15 @@ export class Renderer
     const cameraZ  = playerZ;
     const totalLen = segmentCount * SEGMENT_LENGTH;
 
-    // Solid grass fill — prevents a bare gap between the horizon and the
-    // farthest visible road segment on flat sections.
-    ctx.fillStyle = COLORS.SAND_LIGHT;
-    ctx.fillRect(0, halfH, w, halfH);
+    // Base fill for the lower half: SAND_LIGHT ensures any pixel the grass
+    // rects fail to cover (e.g. near-horizon segments clamped by halfH) shows
+    // sand rather than grey.  The halfH clamp on grass rects prevents sand
+    // from painting above the horizon; the convergence triangle (below) fills
+    // the road zone at the vanishing point with ROAD_DARK so no sand bleeds
+    // into the road surface there.  Road-batch seams are closed by the CW
+    // winding fix, so SAND_LIGHT base no longer bleeds onto the road surface.
+    ctx.fillStyle = COLORS.ROAD_DARK;
+    ctx.fillRect(0, halfH, w, h - halfH);
 
     const startIndex  = Math.floor(playerZ / SEGMENT_LENGTH) % segmentCount;
     const baseSegment = segments[startIndex];
@@ -559,22 +564,6 @@ export class Renderer
       dx     += seg.curve;
     }
 
-    // ── Horizon cap ───────────────────────────────────────────────────────
-    //
-    // Fills the gap between halfH and the far edge of the farthest visible
-    // segment so the road converges to a point at the horizon rather than
-    // cutting off into flat grass.
-
-    if (this.projCount > 0)
-    {
-      const far = this.projPool[this.projCount - 1];
-      if (far.sy2 > halfH)
-      {
-        ctx.fillStyle = COLORS.SAND_LIGHT;
-        ctx.fillRect(0, halfH, w, far.sy2 - halfH);
-      }
-    }
-
     // ── Pass 2: render back-to-front — six batched colour groups ──────────
     //
     // Instead of one beginPath/fill per trapezoid (~1 000+ API calls/frame),
@@ -594,17 +583,30 @@ export class Renderer
 
     // ── A. Grass ───────────────────────────────────────────────────────────
     // sy2 may be > sy1 on downhill segments (camera-Y tracking); handle both.
+    //
+    // All grass rects are clamped to [halfH, ∞) — never draws above the horizon
+    // into the sky.  The initial ROAD_DARK fill already covers the lower half;
+    // any gap between the farthest segment and the horizon stays grey (the
+    // base fill colour), which is invisible on the road and far less obtrusive
+    // than the sand-coloured lines we are trying to eliminate.  Extending the
+    // farthest grass rect up to halfH used to be done here, but that repainted
+    // the gap with sand and required a separate convergence triangle to undo it.
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const { sy1, sy2, seg } = this.projPool[i];
-      const gTop = Math.min(sy1, sy2);
-      const gBot = Math.max(sy1, sy2);
+      // Each grass rect extends upward to cover any gap left by the farther
+      // adjacent segment.  On flat road this is just a 1px rounding crack;
+      // at hill crests projPool can have multi-pixel holes where occluded
+      // segments were skipped — extending to projPool[i+1].sy1 closes those.
+      // The farthest segment extends all the way to halfH.
+      const coverTo = i === this.projCount - 1
+        ? halfH
+        : Math.min(Math.min(sy1, sy2), this.projPool[i + 1].sy1);
+      const gTop = Math.max(halfH, Math.round(coverTo) - 1);
+      const gBot = Math.round(Math.max(sy1, sy2));
       if (gBot <= gTop) continue;
-      if (seg.color.grass !== COLORS.SAND_LIGHT)
-      {
-        ctx.fillStyle = seg.color.grass;
-        ctx.fillRect(0, gTop, w, gBot - gTop);
-      }
+      ctx.fillStyle = seg.color.grass;
+      ctx.fillRect(0, gTop, w, gBot - gTop);
     }
 
     // Helper: add one trapezoid subpath into the currently open path.
@@ -620,94 +622,219 @@ export class Renderer
     const addTrap = (x1: number, y1: number, w1: number,
                      x2: number, y2: number, w2: number): void =>
     {
-      if (y1 >= y2)
+      const ry1 = Math.round(y1);
+      const ry2 = Math.round(y2);
+      if (ry1 >= ry2)
       {
-        // Uphill / flat — y1 at bottom, y2 at top.  CW: BL→BR→TR→TL
-        const r2 = y2 - 1;
-        ctx.moveTo(Math.round(x1 - w1), y1);
-        ctx.lineTo(Math.round(x1 + w1), y1);
+        // Uphill / flat — ry1 at bottom, ry2 at top.  CW: BL→BR→TR→TL
+        const r2 = ry2 - 1;
+        ctx.moveTo(Math.round(x1 - w1), ry1);
+        ctx.lineTo(Math.round(x1 + w1), ry1);
         ctx.lineTo(Math.round(x2 + w2), r2);
         ctx.lineTo(Math.round(x2 - w2), r2);
       }
       else
       {
-        // Downhill — y1 at top, y2 at bottom.  CW in canvas: TL→BL→BR→TR
-        const r2 = y2 + 1;
-        ctx.moveTo(Math.round(x1 - w1), y1);
+        // Downhill — ry1 at top, ry2 at bottom.  CW in canvas: TL→BL→BR→TR
+        const r2 = ry2 + 1;
+        ctx.moveTo(Math.round(x1 - w1), ry1);
         ctx.lineTo(Math.round(x2 - w2), r2);
         ctx.lineTo(Math.round(x2 + w2), r2);
-        ctx.lineTo(Math.round(x1 + w1), y1);
+        ctx.lineTo(Math.round(x1 + w1), ry1);
       }
       ctx.closePath();
     };
 
-    // ── B. Road surface ────────────────────────────────────────────────────
-    ctx.fillStyle = COLORS.ROAD_DARK;   // ROAD_LIGHT === ROAD_DARK, one uniform grey
+    // ── B. Road surface (continuous polygon) ───────────────────────────────
+    // Instead of one trapezoid subpath per segment (which leaves hairline
+    // seams at shared edges even with 1px overlap), trace the entire road
+    // surface as a single closed polygon: left edge farthest→nearest, then
+    // right edge nearest→farthest.  One fill call, zero inter-segment seams.
+    // Hill-crest projPool gaps are bridged automatically by the straight-line
+    // segments of the polygon — no separate gap-fill pass needed.
+    ctx.fillStyle = COLORS.ROAD_DARK;
     ctx.beginPath();
-    for (let i = this.projCount - 1; i >= 0; i--)
+    if (this.projCount > 0)
     {
-      const { sx1, sy1, sw1, sx2, sy2, sw2 } = this.projPool[i];
-      addTrap(sx1, sy1, sw1, sx2, sy2, sw2);
+      const n = this.projCount;
+      // Left edge: start at top-left of farthest segment, step down to
+      // the near-left of every segment (farthest → nearest).
+      ctx.moveTo(Math.round(this.projPool[n - 1].sx2 - this.projPool[n - 1].sw2),
+                 this.projPool[n - 1].sy2);
+      for (let i = n - 1; i >= 0; i--)
+      {
+        const { sx1, sy1, sw1 } = this.projPool[i];
+        ctx.lineTo(Math.round(sx1 - sw1), sy1);
+      }
+      // Right edge: step up from near-right of nearest to far-right of
+      // every segment (nearest → farthest), closing at top-right.
+      ctx.lineTo(Math.round(this.projPool[0].sx1 + this.projPool[0].sw1),
+                 this.projPool[0].sy1);
+      for (let i = 0; i < n; i++)
+      {
+        const { sx2, sy2, sw2 } = this.projPool[i];
+        ctx.lineTo(Math.round(sx2 + sw2), sy2);
+      }
+      ctx.closePath();
     }
     ctx.fill();
 
-    // ── C. Rumble red ──────────────────────────────────────────────────────
-    ctx.fillStyle = COLORS.RUMBLE_RED;
-    ctx.beginPath();
-    for (let i = this.projCount - 1; i >= 0; i--)
+    // ── Horizon gap fill ───────────────────────────────────────────────────
+    // The road polygon's top edge sits at sy2 of the farthest segment.  On
+    // downhill sections that edge can be below halfH, leaving a gap between
+    // the polygon top and the horizon.  A convergence triangle fills it.
+    if (this.projCount > 0)
     {
-      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (seg.color.rumble !== COLORS.RUMBLE_RED || sw1 < 1) continue;
-      const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
-      addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
-      addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
+      const far  = this.projPool[this.projCount - 1];
+      const topY = Math.min(far.sy1, far.sy2);
+      if (topY > halfH)
+      {
+        const topX = far.sy1 <= far.sy2 ? far.sx1 : far.sx2;
+        const topW = far.sy1 <= far.sy2 ? far.sw1 : far.sw2;
+        ctx.fillStyle = COLORS.ROAD_DARK;
+        ctx.beginPath();
+        addTrap(topX, topY, topW * 1.09, topX, halfH, 0);
+        ctx.fill();
+      }
     }
-    ctx.fill();
 
-    // ── D. Rumble white ────────────────────────────────────────────────────
-    ctx.fillStyle = COLORS.RUMBLE_WHITE;
-    ctx.beginPath();
-    for (let i = this.projCount - 1; i >= 0; i--)
+    // ── C + D. Rumble strips (continuous polygon per colour-run per side) ────
+    // Each contiguous run of the same rumble colour is drawn as one polygon
+    // per side (left / right), exactly like the road-surface polygon.
+    // One fill per run = zero inter-segment seams.
+    //   outer edge: sx ± sw*1.09  (road-edge ± rumble half-width)
+    //   inner edge: sx ± sw*0.91
     {
-      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (seg.color.rumble !== COLORS.RUMBLE_WHITE || sw1 < 1) continue;
-      const rw1 = sw1 * 0.09, rw2 = sw2 * 0.09;
-      addTrap(sx1 - sw1, sy1, rw1, sx2 - sw2, sy2, rw2);
-      addTrap(sx1 + sw1, sy1, rw1, sx2 + sw2, sy2, rw2);
+      let j = 0;
+      while (j < this.projCount)
+      {
+        const runColor = this.projPool[j].seg.color.rumble;
+        const runStart = j;                                   // nearest index
+        while (j < this.projCount &&
+               this.projPool[j].seg.color.rumble === runColor) { j++; }
+        const runEnd = j - 1;                                 // farthest index
+
+        ctx.fillStyle = runColor;
+        ctx.beginPath();
+
+        for (const side of [-1, 1] as const)
+        {
+          // moveTo outer-far of farthest segment in run
+          const far = this.projPool[runEnd];
+          ctx.moveTo(Math.round(far.sx2 + side * far.sw2 * 1.09), far.sy2);
+          // outer near-ends farthest → nearest (going down the screen)
+          for (let i = runEnd; i >= runStart; i--)
+          {
+            const p = this.projPool[i];
+            ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * 1.09), p.sy1);
+          }
+          // cross to inner at near end of nearest
+          const near = this.projPool[runStart];
+          ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * 0.91), near.sy1);
+          // inner far-ends nearest → farthest (going up the screen)
+          for (let i = runStart; i <= runEnd; i++)
+          {
+            const p = this.projPool[i];
+            ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * 0.91), p.sy2);
+          }
+          ctx.closePath();
+        }
+
+        ctx.fill();
+      }
     }
-    ctx.fill();
 
     // ── E. Lane dashes ─────────────────────────────────────────────────────
-    ctx.fillStyle = COLORS.LANE;
-    ctx.beginPath();
-    for (let i = this.projCount - 1; i >= 0; i--)
+    // Continuous polygon per lane-on run.  off=sw*0.33, hw=sw*0.06.
+    // outer fraction = off+hw = 0.39; inner fraction = off-hw = 0.27.
     {
-      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (!seg.color.lane || sw1 < 2) continue;
-      const lw1 = sw1 * 0.06, lo1 = sw1 * 0.33;
-      const lw2 = sw2 * 0.06, lo2 = sw2 * 0.33;
-      addTrap(sx1 - lo1, sy1, lw1, sx2 - lo2, sy2, lw2);
-      addTrap(sx1 + lo1, sy1, lw1, sx2 + lo2, sy2, lw2);
+      let j = 0;
+      while (j < this.projCount)
+      {
+        const hasLane = this.projPool[j].seg.color.lane;
+        const runStart = j;
+        while (j < this.projCount &&
+               this.projPool[j].seg.color.lane === hasLane) { j++; }
+        const runEnd = j - 1;
+
+        if (!hasLane) continue;
+
+        ctx.fillStyle = COLORS.LANE;
+        ctx.beginPath();
+
+        for (const side of [-1, 1] as const)
+        {
+          const far = this.projPool[runEnd];
+          ctx.moveTo(Math.round(far.sx2  + side * far.sw2  * 0.39), far.sy2);
+          for (let i = runEnd; i >= runStart; i--)
+          {
+            const p = this.projPool[i];
+            ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * 0.39), p.sy1);
+          }
+          const near = this.projPool[runStart];
+          ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * 0.27), near.sy1);
+          for (let i = runStart; i <= runEnd; i++)
+          {
+            const p = this.projPool[i];
+            ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * 0.27), p.sy2);
+          }
+          ctx.closePath();
+        }
+
+        ctx.fill();
+      }
     }
-    ctx.fill();
 
     // ── F. Edge track marks (white) ────────────────────────────────────────
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    for (let i = this.projCount - 1; i >= 0; i--)
+    // Four stripes per lane-on run (outer+inner × left+right).
+    // Each stripe: center at sx ± cFrac*sw, half-width hwFrac*sw.
+    // outer boundary = cFrac+hwFrac, inner boundary = cFrac-hwFrac.
     {
-      const { sx1, sy1, sw1, sx2, sy2, sw2, seg } = this.projPool[i];
-      if (!seg.color.lane || sw1 < 4) continue;
-      const etW1 = sw1 * 0.045, etO1 = sw1 * 0.915;
-      const enW1 = sw1 * 0.020, enO1 = sw1 * 0.790;
-      const etW2 = sw2 * 0.045, etO2 = sw2 * 0.915;
-      const enW2 = sw2 * 0.020, enO2 = sw2 * 0.790;
-      addTrap(sx1 - etO1, sy1, etW1, sx2 - etO2, sy2, etW2);
-      addTrap(sx1 - enO1, sy1, enW1, sx2 - enO2, sy2, enW2);
-      addTrap(sx1 + etO1, sy1, etW1, sx2 + etO2, sy2, etW2);
-      addTrap(sx1 + enO1, sy1, enW1, sx2 + enO2, sy2, enW2);
+      let j = 0;
+      while (j < this.projCount)
+      {
+        const hasLane = this.projPool[j].seg.color.lane;
+        const runStart = j;
+        while (j < this.projCount &&
+               this.projPool[j].seg.color.lane === hasLane) { j++; }
+        const runEnd = j - 1;
+
+        if (!hasLane) continue;
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+
+        const stripes = [
+          [-1, 0.915, 0.045],   // left outer
+          [-1, 0.790, 0.020],   // left inner
+          [+1, 0.915, 0.045],   // right outer
+          [+1, 0.790, 0.020],   // right inner
+        ] as const;
+
+        for (const [side, cFrac, hwFrac] of stripes)
+        {
+          const oFrac = cFrac + hwFrac;   // outer boundary fraction
+          const iFrac = cFrac - hwFrac;   // inner boundary fraction
+          const far = this.projPool[runEnd];
+          ctx.moveTo(Math.round(far.sx2  + side * far.sw2  * oFrac), far.sy2);
+          for (let i = runEnd; i >= runStart; i--)
+          {
+            const p = this.projPool[i];
+            ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * oFrac), p.sy1);
+          }
+          const near = this.projPool[runStart];
+          ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * iFrac), near.sy1);
+          for (let i = runStart; i <= runEnd; i++)
+          {
+            const p = this.projPool[i];
+            ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * iFrac), p.sy2);
+          }
+          ctx.closePath();
+        }
+
+        ctx.fill();
+      }
     }
-    ctx.fill();
 
     // ── Pass 3: roadside sprites ───────────────────────────────────────────
     //
