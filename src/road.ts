@@ -1421,8 +1421,8 @@ export class Road
       (seg.sprites ??= []).push({
         id:     pick(BARNEYS, rel),
         family: 'barney',
-        worldX: side * 2100,
-        scale:  1,
+        worldX: side * 1700,
+        scale:  2.0,
       });
     }
 
