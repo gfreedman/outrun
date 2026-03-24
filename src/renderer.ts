@@ -107,16 +107,16 @@ const SEG_DIGIT = [
 const BAR_SEGS = 20;
 
 /**
- * Speed bar colour zones — sourced from the original OutRun (1986) Sega
- * System 16 hardware palette as faithfully as RGB hex allows:
- *   Steel-blue zone (~80%): pale desaturated cyan-blue — low to mid speed
- *   Green zone      (~20%): medium green               — high speed
+ * Speed bar colour zones — warm OutRun dashboard palette:
+ *   Orange zone (~80%): low to mid revs
+ *   Yellow zone (~20%): high revs, tach climbing toward redline
+ *   Red cap  (last 1): redline — matches the speed digit colour
  */
-const BAR_BLUE_END    = Math.round(BAR_SEGS * 0.80);  // = 16  (steel-blue → green)
-const BAR_LAST        = BAR_SEGS - 1;                  // = 19  (pink redline cap)
-const BAR_COLOR_BLUE  = '#8899BB';            // pale steel-blue  (System 16 low–mid)
-const BAR_COLOR_GREEN = '#33BB44';            // medium green     (System 16 high speed)
-const BAR_COLOR_PINK  = '#FF44CC';            // pink             (redline cap, last seg)
+const BAR_WARM_END    = Math.round(BAR_SEGS * 0.80);  // = 16  (orange → yellow)
+const BAR_LAST        = BAR_SEGS - 1;                  // = 19  (red redline cap)
+const BAR_COLOR_LOW   = '#FF6600';            // orange           (low–mid revs, warm dashboard feel)
+const BAR_COLOR_HIGH  = '#FFCC00';            // yellow           (high revs, tach climbing)
+const BAR_COLOR_RED   = '#FF2200';            // red              (redline cap — matches speed digits)
 const BAR_COLOR_UNLIT = 'rgba(80,80,80,0.5)'; // 50% transparent — background shows through
 
 // ── ProjectedSeg ──────────────────────────────────────────────────────────────
@@ -1490,9 +1490,9 @@ export class Renderer
     {
       let color: string;
       if (i >= filled)           color = BAR_COLOR_UNLIT;
-      else if (i === BAR_LAST)   color = BAR_COLOR_PINK;
-      else if (i < BAR_BLUE_END) color = BAR_COLOR_BLUE;
-      else                       color = BAR_COLOR_GREEN;
+      else if (i === BAR_LAST)    color = BAR_COLOR_RED;
+      else if (i < BAR_WARM_END)  color = BAR_COLOR_LOW;
+      else                        color = BAR_COLOR_HIGH;
       if (color !== lastColor) { ctx.fillStyle = color; lastColor = color; }
       ctx.fillRect(L.barX + i * L.barStride, L.barY, L.barSegW, L.barH);
     }
@@ -1578,11 +1578,11 @@ export class Renderer
       const timeColor = lowTime ? (flashOn ? '#FF2200' : '#FFFFFF') : '#FFE000';
       const timeStr   = String(Math.ceil(timeRemaining));
 
-      drawBadge('TIME', S1_BX, '#993311', '#CC6633');
+      drawBadge('TIME', S1_BX, '#AA3300', '#EE5500');
       drawNum(timeStr, S1_NR, timeColor);
 
       // ── 2. SCORE  (centre, S2) ──────────────────────────────────────────
-      drawBadge('SCORE', S2_BX, '#882266', '#CC44AA');
+      drawBadge('SCORE', S2_BX, '#995500', '#CC7700');
       drawNum(String(score).padStart(7, '0'), S2_NR, '#FFE000');
 
       // ── 3. LAP  (right, S3) ─────────────────────────────────────────────
@@ -1592,7 +1592,7 @@ export class Renderer
       const lcs = Math.floor((raceTimer % 1) * 100);
       const lapStr = `${lm}'${String(ls).padStart(2,'0')}"${String(lcs).padStart(2,'0')}`;
 
-      drawBadge('LAP', S3_BX, '#115566', '#2299BB');
+      drawBadge('LAP', S3_BX, '#884400', '#BB6600');
       drawNum(lapStr, S3_NR, '#FFFFFF', lapNumFs);
 
       // ── Stage progress bar  (bottom-right corner) ───────────────────────
