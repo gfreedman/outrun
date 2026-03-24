@@ -750,7 +750,9 @@ export class Road
     ];
 
     // Sparse — only one side at a time, long gaps between appearances.
-    const gap = [rInt(40, 80), rInt(50, 90)];
+    // Start with a large forced gap so no cookies appear while Barney's ads
+    // are dominating the opening stretch (first ~150 segments).
+    const gap = [150, 165];
 
     for (let i = 0; i < this._segments.length; i++)
     {
@@ -795,7 +797,10 @@ export class Road
       'BARNEY_OUTRUN_PALETTE',
     ];
 
-    const gap = [rInt(60, 120), rInt(70, 130)];
+    // Start with a tiny gap so the first Barney board hits within 10 segments —
+    // the player sees it before they've even shifted up through first gear.
+    // Stagger the two sides so boards appear alternating L then R.
+    const gap = [5, 20];
 
     for (let i = 0; i < this._segments.length; i++)
     {
@@ -807,14 +812,20 @@ export class Road
       gap[0] = Math.max(0, gap[0] - 1);
       gap[1] = Math.max(0, gap[1] - 1);
 
+      // First 120 segments: high appearance rate — Barney is EVERYWHERE at the
+      // start of the race so the player gets the hint to target his car.
+      // Beyond 120: back to the normal sparse cadence.
+      const prob      = i < 120 ? 0.70 : 0.25;
+      const afterGap  = i < 120 ? rInt(18, 35) : rInt(70, 140);
+
       for (let s = 0; s < 2; s++)
       {
         if (gap[s] > 0) continue;
-        if (rand() >= 0.25) { gap[s] = rInt(30, 60); continue; }
+        if (rand() >= prob) { gap[s] = rInt(15, 30); continue; }
         const sign   = s === 1 ? +1 : -1;
         const worldX = sign * rInt(2000, 2500);
         plant(seg, pick(POOL), worldX);
-        gap[s] = rInt(70, 140);   // very long gap — genuinely rare
+        gap[s] = afterGap;
       }
     }
   }
