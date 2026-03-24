@@ -1395,8 +1395,8 @@ export class Road
       'PALM_T1_STRAIGHT', 'PALM_T10_LARGE', 'PALM_T6_LUXURIANT',
       'PALM_T2_BENT_LEFT', 'PALM_T2_BENT_RIGHT',
     ];
-    const COOKIES: SpriteId[] = [
-      'COOKIE_HAPPY_SMOKING', 'COOKIE_PREMIUM_CIGS', 'COOKIE_SMOKIN_NOW',
+    const BARNEYS: SpriteId[] = [
+      'BARNEY_METAL_TILLETIRE', 'BARNEY_OUTRUN_PALETTE',
     ];
 
     // Simple seeded-ish pick helper
@@ -1432,9 +1432,9 @@ export class Road
         sprites.push({ id: pick(PALMS, rel + 1), family: 'palm', worldX:  1200, scale: 1.2 });
       }
 
-      // Every 5th segment: cookie board straddling the road
+      // Every 5th segment: Barney board — seeds the "hit his car" idea
       if (rel % 5 === 0)
-        sprites.push({ id: pick(COOKIES, rel), family: 'cookie', worldX: rel % 10 === 0 ? -600 : 600, scale: 1 });
+        sprites.push({ id: pick(BARNEYS, rel), family: 'barney', worldX: rel % 10 === 0 ? -2200 : 2200, scale: 1 });
     }
   }
 
