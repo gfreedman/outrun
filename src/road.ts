@@ -1402,6 +1402,30 @@ export class Road
     // Simple seeded-ish pick helper
     const pick = (arr: SpriteId[], n: number) => arr[n % arr.length];
 
+    // Barney boards: placed at 3 specific distances per side so they're
+    // unmissable but not wall-to-wall.  worldX ±2100 puts them just outside
+    // the road edge, large and readable.
+    const barneySlots = [
+      { rel: 4,  side: -1 },
+      { rel: 8,  side: +1 },
+      { rel: 14, side: -1 },
+      { rel: 20, side: +1 },
+      { rel: 28, side: -1 },
+      { rel: 34, side: +1 },
+    ];
+    for (const { rel, side } of barneySlots)
+    {
+      const idx = startSeg + rel;
+      const seg = this._segments[idx];
+      if (!seg || idx === gateIdx) continue;
+      (seg.sprites ??= []).push({
+        id:     pick(BARNEYS, rel),
+        family: 'barney',
+        worldX: side * 2100,
+        scale:  1,
+      });
+    }
+
     for (let idx = startSeg; idx <= endSeg; idx++)
     {
       const seg = this._segments[idx];
@@ -1413,28 +1437,12 @@ export class Road
       // Skip gate segment itself so the gate sprite remains clean
       if (idx === gateIdx) continue;
 
-      // Left side — tight roadside billboard (slightly on road)
-      if (rel % 2 === 0)
-        sprites.push({ id: pick(BILLBOARDS, rel),     family: 'billboard', worldX: -900,  scale: 1 });
-
-      // Right side — tight roadside billboard
-      if (rel % 2 === 1)
-        sprites.push({ id: pick(BILLBOARDS, rel + 3), family: 'billboard', worldX:  900,  scale: 1 });
-
-      // Every 3rd segment: a big board on alternating sides
-      if (rel % 3 === 0)
-        sprites.push({ id: BIGS[0], family: 'big', worldX: rel % 6 === 0 ? -1800 : 1800, scale: 1 });
-
       // Every 4th segment: palm cluster near the road
       if (rel % 4 === 0)
       {
         sprites.push({ id: pick(PALMS, rel),     family: 'palm', worldX: -1200, scale: 1.2 });
         sprites.push({ id: pick(PALMS, rel + 1), family: 'palm', worldX:  1200, scale: 1.2 });
       }
-
-      // Every 5th segment: Barney board — seeds the "hit his car" idea
-      if (rel % 5 === 0)
-        sprites.push({ id: pick(BARNEYS, rel), family: 'barney', worldX: rel % 10 === 0 ? -2200 : 2200, scale: 1 });
     }
   }
 
