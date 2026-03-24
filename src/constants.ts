@@ -376,6 +376,14 @@ export const TRAFFIC_HITBOX_X          = 400;
  */
 export const TRAFFIC_HITBOX_SEGS       = 5;
 
+/**
+ * How many segments behind the player a traffic car is allowed to trail before
+ * it is recycled to the far horizon.  A non-zero trail window means cars that
+ * were recently passed can catch up when the player slows down, instead of
+ * immediately teleporting ahead.
+ */
+export const TRAFFIC_TRAIL_SEGS        = 25;
+
 /** Speed cap (fraction of PLAYER_MAX_SPEED) immediately after a traffic hit. */
 export const TRAFFIC_HIT_SPEED_CAP     = 0.20;
 

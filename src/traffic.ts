@@ -21,7 +21,7 @@ import {
   TRAFFIC_COUNT,
   TRAFFIC_SPEED_MIN, TRAFFIC_SPEED_MAX,
   TRAFFIC_LANE_TIMER_MIN, TRAFFIC_LANE_TIMER_MAX, TRAFFIC_WEAVE_RATE,
-  TRAFFIC_HITBOX_X, TRAFFIC_HITBOX_SEGS,
+  TRAFFIC_HITBOX_X, TRAFFIC_HITBOX_SEGS, TRAFFIC_TRAIL_SEGS,
 } from './constants';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -200,13 +200,16 @@ export function updateTraffic(
       car.worldX  = Math.abs(dx) <= step ? car.targetX : car.worldX + Math.sign(dx) * step;
     }
 
-    // ── Recycle if behind or too far ahead ────────────────────────────
+    // ── Recycle if too far behind or too far ahead ────────────────────
     //
-    // relZ is the signed distance ahead of the player (shortest arc around loop).
-    // If negative, the car is behind the player — respawn it ahead.
-    const relZ = relativeZ(car.worldZ, playerZ, trackLength);
+    // relZ is the signed distance ahead of the player (shortest arc).
+    // Cars are allowed to trail TRAFFIC_TRAIL_SEGS behind the player so that
+    // a slowing player can be caught up by recently-passed traffic.  Only
+    // recycle once the trailing gap exceeds that window.
+    const relZ      = relativeZ(car.worldZ, playerZ, trackLength);
+    const trailLimit = -(TRAFFIC_TRAIL_SEGS * SEGMENT_LENGTH);
 
-    if (relZ < 0 || relZ > maxAhead)
+    if (relZ < trailLimit || relZ > maxAhead)
     {
       // Always spawn at the far horizon so cars are never seen popping in.
       // Jitter ±5 segs so cars don't all materialise at the exact same depth.

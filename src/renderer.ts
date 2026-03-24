@@ -790,6 +790,13 @@ export class Renderer
   private readonly trafficCarSheets = new Map<TrafficType, SpriteLoader>();
 
   /**
+   * Pre-allocated source rect reused by every traffic car draw call.
+   * Avoids one heap allocation per visible car per frame (≈3 × 60 = 180/s).
+   * x and y are always 0; w and h are overwritten before each use.
+   */
+  private readonly trafficRect = { x: 0, y: 0, w: 0, h: 0 };
+
+  /**
    * Creates a Renderer attached to the given canvas and pre-allocates all
    * per-frame reusable buffers so the render loop makes zero heap allocations.
    *
@@ -1205,32 +1212,71 @@ export class Renderer
         }
       }
 
-      // ── Traffic vehicles at this segment depth ──────────────────────────
-      if (trafficCars.length > 0)
+    }
+
+    // Restore smoothing — traffic cars and the player car are continuously
+    // scaled and benefit from bilinear filtering (L6).
+    ctx.imageSmoothingEnabled = true;
+
+    // ── Pass 4: Traffic vehicles ───────────────────────────────────────────
+    //
+    // WHY a dedicated pass instead of inline in the sprite loop (Pass 3)?
+    //
+    //   The sprite loop's per-segment iteration matched each traffic car by
+    //   segment index:
+    //     Math.floor(car.worldZ / SEGMENT_LENGTH) % segmentCount === seg.index
+    //   When a car's worldZ crossed a segment boundary, the old segment's loop
+    //   iteration had already executed and the new segment's hadn't yet — the
+    //   car was invisible for exactly one frame.  At 60 fps this produced a
+    //   one-frame flicker/ghost that was very noticeable.
+    //
+    //   By iterating projPool far→near in a separate pass, each car is matched
+    //   to its segment exactly once per frame regardless of where in the segment
+    //   it sits.  projPool is already in near→far order (index 0 = nearest), so
+    //   iterating in reverse gives the correct painter's-algorithm draw order.
+    //
+    //   Road centre (sx1) and perspective scale (sc1) come from the projPool
+    //   entry rather than from the sprite loop's current sx1, which also
+    //   eliminates the one-segment horizontal jitter on curved road sections.
+    //
+    // PERFORMANCE NOTES
+    //   • trafficRect is pre-allocated — no heap allocation per draw call.
+    //   • imageSmoothingEnabled is set once above, not toggled per car.
+    //   • Inner-loop work: projCount(≤150) × trafficCount(3) = ≤450 integer
+    //     comparisons — trivially cheap.
+
+    if (trafficCars.length > 0)
+    {
+      // Pre-compute each car's segment index once — avoids repeating the
+      // floor/modulo inside the double loop.
+      const nCars = trafficCars.length;
+      const carSegIdxs: number[] = new Array(nCars);
+      for (let c = 0; c < nCars; c++)
+        carSegIdxs[c] = Math.floor(trafficCars[c].worldZ / SEGMENT_LENGTH) % segmentCount;
+
+      // Iterate projPool from farthest slot (projCount−1) to nearest (0).
+      // This gives correct painter-order occlusion: far cars are drawn first,
+      // near cars are drawn on top.
+      for (let slot = this.projCount - 1; slot >= 0; slot--)
       {
-        const trafficSegIdx = seg.index;
+        const p      = this.projPool[slot];
+        const segIdx = p.seg.index;
 
-        for (const car of trafficCars)
+        for (let c = 0; c < nCars; c++)
         {
-          if (Math.floor(car.worldZ / SEGMENT_LENGTH) % segmentCount !== trafficSegIdx)
-            continue;
+          if (carSegIdxs[c] !== segIdx) continue;
 
-          // Pick sheet + dimensions by vehicle type — O(1) map lookup, no allocation.
-          const spec  = TRAFFIC_CAR_SPECS[car.type];
+          const car  = trafficCars[c];
+          const spec = TRAFFIC_CAR_SPECS[car.type];
           const sheet = this.trafficCarSheets.get(car.type);
           if (!sheet?.isReady()) continue;
 
           const { frameW, frameH, worldH } = spec;
-          const rect = { x: 0, y: 0, w: frameW, h: frameH };
 
-          // Direct perspective projection from the car's actual world depth.
-          let carRelZ = car.worldZ - cameraZ;
-          if (carRelZ > totalLen / 2) carRelZ -= totalLen;
-          if (carRelZ <= 0) continue;
-
-          const scCar   = CAMERA_DEPTH / carRelZ;
-          const syCar   = halfH + CAMERA_HEIGHT * scCar * halfH;
-          const carScrX = sx1 + car.worldX * scCar * halfW;
+          // Use projPool's perspective scale and road-centre X directly —
+          // no re-projection from worldZ needed.
+          const scCar   = p.sc1;
+          const carScrX = p.sx1 + car.worldX * scCar * halfW;
           if (carScrX < -500 || carScrX > w + 500) continue;
 
           const sprH = worldH * scCar * halfH;
@@ -1240,26 +1286,29 @@ export class Renderer
           const drawW = Math.round(sprW);
           const drawH = Math.round(sprH);
           const drawX = Math.round(carScrX - sprW / 2);
-          const drawY = Math.round(syCar - sprH);
+          const drawY = Math.round(p.sy1 - sprH);
 
-          ctx.imageSmoothingEnabled = true;
+          // Reuse the class-level pre-allocated rect object.
+          const tr = this.trafficRect;
+          tr.w = frameW;
+          tr.h = frameH;
+
           if (car.spinAngle !== 0)
           {
             ctx.save();
             ctx.translate(drawX + drawW / 2, drawY + drawH / 2);
             ctx.rotate(car.spinAngle);
             ctx.translate(-(drawX + drawW / 2), -(drawY + drawH / 2));
+            sheet.draw(ctx, tr, drawX, drawY, drawW, drawH);
+            ctx.restore();
           }
-          sheet.draw(ctx, rect, drawX, drawY, drawW, drawH);
-          if (car.spinAngle !== 0) ctx.restore();
-          ctx.imageSmoothingEnabled = false;
+          else
+          {
+            sheet.draw(ctx, tr, drawX, drawY, drawW, drawH);
+          }
         }
       }
     }
-
-    // Restore smoothing for the car sprite, which is continuously scaled
-    // and benefits from bilinear filtering (L6).
-    ctx.imageSmoothingEnabled = true;
   }
 
   // ── Player car ────────────────────────────────────────────────────────────
