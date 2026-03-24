@@ -797,10 +797,11 @@ export class Road
       'BARNEY_OUTRUN_PALETTE',
     ];
 
-    // Start with a tiny gap so the first Barney board hits within 10 segments —
-    // the player sees it before they've even shifted up through first gear.
-    // Stagger the two sides so boards appear alternating L then R.
-    const gap = [5, 20];
+    // First board at segment ~15 (left) and ~28 (right) — close enough to hit
+    // immediately, but past the perspective dead-zone where nearby sprites fall
+    // off-screen before the cull check can save them.  Regular billboards use
+    // the same ~15–30 seg minimum for the same reason.
+    const gap = [15, 28];
 
     for (let i = 0; i < this._segments.length; i++)
     {
