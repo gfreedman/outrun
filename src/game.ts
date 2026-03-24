@@ -654,6 +654,7 @@ export class Game
       this.finishingTimer       = 0;
       this.finishingSlid        = false;
       this.finishingTravelledWU = 0;
+      this.slideVelocity        = 0;   // cancel any racing drift so the car centers cleanly
       this.audio.updateScreech(0);
       this.audio.playBeep(880, 0.8);
       return;
@@ -678,21 +679,12 @@ export class Game
     // ── Hard deceleration — stops from max speed in under 1 second ────────
     this.speed = Math.max(0, this.speed - FINISHING_DECEL * dt);
 
-    // ── Kick sideways slide on the very first frame ───────────────────────
-    if (!this.finishingSlid)
-    {
-      this.finishingSlid = true;
-      const dir          = this.playerX >= 0 ? -1 : 1;
-      this.slideVelocity = dir * 2.8;
-      this.steerAngle    = -dir * 1.0;
-    }
-
-    // Slide decays slowly so the spin stays visible as the car rolls to a stop
-    this.playerX       += this.slideVelocity * dt;
-    this.slideVelocity *= Math.exp(-1.6 * dt);
-    this.steerAngle    *= Math.exp(-1.2 * dt);
-    // Clamp to road surface so the car stays on the asphalt during the cinematic
-    this.playerX        = Math.max(-0.9, Math.min(0.9, this.playerX));
+    // ── Steer to centre — car smoothly pulls to the middle of the road ────
+    // Exponential decay drives playerX toward 0 at ~2.5 road-widths/sec,
+    // so regardless of where the player crossed the line the car is centred
+    // well before the GOAL screen appears.
+    this.playerX    *= Math.exp(-2.5 * dt);
+    this.steerAngle *= Math.exp(-1.2 * dt);
 
     // ── Advance road — hard stop inside the billboard celebration zone ────
     // The car is still fast enough to blow through hundreds of segments, so
