@@ -430,6 +430,60 @@ export const COLORS =
   LANE:         '#CCCCCC',
 } as const;
 
+// ── Road marking width fractions ─────────────────────────────────────────────
+//
+// All fractions are multiplied by the road half-width (sw) at each segment.
+// Values > 1.0 reach OUTSIDE the road edge; values < 1.0 sit INSIDE the road.
+
+/**
+ * Outer edge of the kerb rumble strip, as a fraction of road half-width sw.
+ * 1.09 places the outer kerb boundary just beyond the road edge — the kerb
+ * overlaps the verge slightly, matching the original OutRun kerb geometry.
+ */
+export const RUMBLE_OUTER_FRAC = 1.09;
+
+/**
+ * Inner edge of the kerb rumble strip, as a fraction of road half-width sw.
+ * 0.91 places the inner kerb boundary just inside the road edge.
+ */
+export const RUMBLE_INNER_FRAC = 0.91;
+
+/**
+ * Outer edge of the lane-centre dash, as a fraction of road half-width sw.
+ * Derived from: centre offset 0.33 + half-dash-width 0.06 = 0.39.
+ */
+export const LANE_OUTER_FRAC = 0.39;
+
+/**
+ * Inner edge of the lane-centre dash, as a fraction of road half-width sw.
+ * Derived from: centre offset 0.33 − half-dash-width 0.06 = 0.27.
+ */
+export const LANE_INNER_FRAC = 0.27;
+
+/**
+ * Outer boundary of the OUTER edge track stripe, as a fraction of sw.
+ * = cFrac (0.915) + hwFrac (0.045) = 0.960.
+ */
+export const MARK_ET_OUTER_FRAC = 0.960;
+
+/**
+ * Inner boundary of the OUTER edge track stripe, as a fraction of sw.
+ * = cFrac (0.915) − hwFrac (0.045) = 0.870.
+ */
+export const MARK_ET_INNER_FRAC = 0.870;
+
+/**
+ * Outer boundary of the INNER edge track stripe, as a fraction of sw.
+ * = cFrac (0.790) + hwFrac (0.020) = 0.810.
+ */
+export const MARK_EN_OUTER_FRAC = 0.810;
+
+/**
+ * Inner boundary of the INNER edge track stripe, as a fraction of sw.
+ * = cFrac (0.790) − hwFrac (0.020) = 0.770.
+ */
+export const MARK_EN_INNER_FRAC = 0.770;
+
 // ── Road colour banding ───────────────────────────────────────────────────────
 
 /**

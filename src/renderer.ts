@@ -22,7 +22,7 @@
  * ── Two-pass road rendering ─────────────────────────────────────────────────
  *
  *   Pass 1 (front-to-back): project each segment, track the horizon ceiling
- *     `maxy`.  Segments whose near edge projects above the ceiling are hidden
+ *     `horizonCeiling`.  Segments whose near edge projects above the ceiling are hidden
  *     behind a hill crest and skipped.
  *
  *   Pass 2 (back-to-front): draw only the visible segments so sprites and
@@ -50,6 +50,10 @@ import
   SEGMENT_LENGTH, COLORS,
   PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
   PARALLAX_SKY, DRAW_DISTANCE,
+  RUMBLE_OUTER_FRAC, RUMBLE_INNER_FRAC,
+  LANE_OUTER_FRAC, LANE_INNER_FRAC,
+  MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC,
+  MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC,
 } from './constants';
 import
 {
@@ -127,12 +131,61 @@ const BAR_COLOR_UNLIT = 'rgba(80,80,80,0.5)'; // 50% transparent — background 
  * sc1 is stored here so Pass 2 can use it directly for sprite scaling
  * instead of re-deriving it from sw1 (which would require a division).
  */
-interface ProjectedSeg
+export interface ProjectedSeg
 {
   seg: RoadSegment;
   sc1: number;
   sx1: number; sy1: number; sw1: number;
   sx2: number; sy2: number; sw2: number;
+}
+
+// ── ColorRun ──────────────────────────────────────────────────────────────────
+
+/**
+ * A contiguous run of road segments that all share the same colour for a given
+ * visual property (e.g., rumble strip colour or lane dash presence).
+ *
+ * Building runs lets us draw one polygon per run instead of one per segment,
+ * eliminating hairline anti-aliasing seams at every segment boundary.
+ *
+ * Example: segments [RED, RED, RED, WHITE, WHITE] →
+ *   [ { color:'RED',   startIdx:0, endIdx:2 },
+ *     { color:'WHITE', startIdx:3, endIdx:4 } ]
+ */
+export interface ColorRun
+{
+  color:    string;
+  startIdx: number;   // index into projPool (nearest end of run)
+  endIdx:   number;   // index into projPool (farthest end of run)
+}
+
+/**
+ * Splits projPool[0..count-1] into contiguous same-colour runs.
+ *
+ * @param projPool  - Pre-allocated projection pool (only [0..count-1] are valid).
+ * @param count     - Number of valid entries in projPool.
+ * @param getColor  - Callback that returns the colour string for a segment.
+ *                    The function is called once per segment.
+ * @returns         Array of ColorRun objects, one per contiguous colour group.
+ */
+export function buildColorRuns(
+  projPool: readonly ProjectedSeg[],
+  count:    number,
+  getColor: (seg: RoadSegment) => string,
+): ColorRun[]
+{
+  if (count === 0) return [];
+
+  const runs: ColorRun[] = [];
+  let j = 0;
+  while (j < count)
+  {
+    const color    = getColor(projPool[j].seg);
+    const runStart = j;
+    while (j < count && getColor(projPool[j].seg) === color) { j++; }
+    runs.push({ color, startIdx: runStart, endIdx: j - 1 });
+  }
+  return runs;
 }
 
 // ── HudLayout ─────────────────────────────────────────────────────────────────
@@ -228,6 +281,395 @@ function drawTrapezoid(
   ctx.lineTo(x2 - w2, y2);
   ctx.closePath();
   ctx.fill();
+}
+
+// ── Module-level render-pass functions ────────────────────────────────────────
+//
+// These are extracted from the renderRoad method so they can be unit-tested
+// independently without spinning up a full Renderer instance.
+// Each function operates on the pre-populated projPool.
+
+/**
+ * Adds one trapezoid subpath into the currently open canvas path.
+ *
+ * ── What is a trapezoid in road rendering? ────────────────────────────────────
+ *
+ * Each road segment covers a narrow band of depth in the world.  When projected
+ * to screen space, the near edge (closer to the camera) appears wider and lower
+ * on screen, while the far edge appears narrower and higher.  The resulting
+ * four-sided shape — wide at the bottom, narrow at the top — is a trapezoid:
+ *
+ *           x2-w2 ┌─────┐ x2+w2      ← far  (top) edge
+ *                /       \
+ *               /         \
+ *        x1-w1 └───────────┘ x1+w1   ← near (bottom) edge
+ *
+ * ── Winding direction ─────────────────────────────────────────────────────────
+ *
+ * The ORDER in which the four corners are listed is called "winding direction".
+ * Canvas `fill()` uses the nonzero-winding-rule: it counts +1 for CW and -1 for
+ * CCW crossings.  If two shapes in the same path wind in opposite directions and
+ * they overlap, their shared edge scores 0 → transparent "gap".
+ *
+ * We need ALL trapezoids in a batch to wind the SAME direction (both CW).
+ *
+ * IMPORTANT: canvas Y-axis points DOWN (Y=0 is the top of the screen, larger
+ * Y = lower on screen).  This INVERTS what you'd draw on paper.
+ *
+ *   Uphill / flat  (ry1 >= ry2 — near edge is AT OR BELOW far edge):
+ *     BL → BR → TR → TL   (clockwise on screen)
+ *
+ *        TL  (x2-w2, ry2)  ──────  TR  (x2+w2, ry2)
+ *            ↑                        ↑
+ *        BL  (x1-w1, ry1)  ──────  BR  (x1+w1, ry1)
+ *             start here  →  →  →  ↓  ↑  ←  ←  ←
+ *
+ *   Downhill (ry1 < ry2 — near edge is ABOVE far edge):
+ *     TL → BL → BR → TR   (also clockwise on screen because Y is flipped)
+ *
+ * ── Why 1px extension? ────────────────────────────────────────────────────────
+ *
+ * Adjacent trapezoids share a horizontal edge.  Canvas sub-pixel rounding can
+ * leave a 1px transparent crack between them.  Extending the far edge by 1px
+ * toward the next segment (ry2-1 for uphill, ry2+1 for downhill) overlaps the
+ * seam and closes the crack with no visible double-painting.
+ *
+ * @param ctx - Canvas 2D context (must have an open path — call beginPath first).
+ * @param x1  - Screen X of near edge centre.
+ * @param y1  - Screen Y of near edge.
+ * @param w1  - Half-width of near edge in pixels.
+ * @param x2  - Screen X of far edge centre.
+ * @param y2  - Screen Y of far edge.
+ * @param w2  - Half-width of far edge in pixels.
+ */
+export function addTrap(
+  ctx: CanvasRenderingContext2D,
+  x1: number, y1: number, w1: number,
+  x2: number, y2: number, w2: number,
+): void
+{
+  const ry1 = Math.round(y1);
+  const ry2 = Math.round(y2);
+  if (ry1 >= ry2)
+  {
+    // Uphill / flat — ry1 at bottom, ry2 at top.  CW: BL→BR→TR→TL
+    const r2 = ry2 - 1;
+    ctx.moveTo(Math.round(x1 - w1), ry1);
+    ctx.lineTo(Math.round(x1 + w1), ry1);
+    ctx.lineTo(Math.round(x2 + w2), r2);
+    ctx.lineTo(Math.round(x2 - w2), r2);
+  }
+  else
+  {
+    // Downhill — ry1 at top, ry2 at bottom.  CW in canvas: TL→BL→BR→TR
+    const r2 = ry2 + 1;
+    ctx.moveTo(Math.round(x1 - w1), ry1);
+    ctx.lineTo(Math.round(x2 - w2), r2);
+    ctx.lineTo(Math.round(x2 + w2), r2);
+    ctx.lineTo(Math.round(x1 + w1), ry1);
+  }
+  ctx.closePath();
+}
+
+/**
+ * Draws the grass verge fillRects for all visible segments (Pass A).
+ *
+ * Each rect covers from the near edge of the segment to the near edge of the
+ * next farther segment, closing any 1px rounding cracks.  The farthest segment
+ * extends all the way to halfH (the horizon).
+ *
+ * The `coverTo` logic has two cases:
+ *   - Farthest segment (i === count-1): cover all the way to halfH so no gap
+ *     remains between the last visible segment and the horizon line.
+ *   - All other segments: cover to the min of this segment's near Y and the
+ *     next farther segment's near Y, minus 1px to close sub-pixel cracks.
+ *
+ * @param ctx     - Canvas 2D context.
+ * @param pool    - Pre-populated projection pool.
+ * @param count   - Number of valid entries.
+ * @param halfH   - Horizon screen Y (grass rects are clamped above this).
+ * @param canvasW - Full canvas width (grass fills edge-to-edge).
+ */
+export function drawGrass(
+  ctx:     CanvasRenderingContext2D,
+  pool:    readonly ProjectedSeg[],
+  count:   number,
+  halfH:   number,
+  canvasW: number,
+): void
+{
+  for (let i = count - 1; i >= 0; i--)
+  {
+    const { sy1, sy2, seg } = pool[i];
+    const coverTo = i === count - 1
+      ? halfH
+      : Math.min(Math.min(sy1, sy2), pool[i + 1].sy1);
+    const gTop = Math.max(halfH, Math.round(coverTo) - 1);
+    const gBot = Math.round(Math.max(sy1, sy2));
+    if (gBot <= gTop) continue;
+    ctx.fillStyle = seg.color.grass;
+    ctx.fillRect(0, gTop, canvasW, gBot - gTop);
+  }
+}
+
+/**
+ * Draws the road surface as one continuous closed polygon (Pass B).
+ *
+ * ── Why not one subpath per segment? ─────────────────────────────────────────
+ *
+ * The old approach drew each segment as a separate trapezoid subpath (beginPath
+ * … fill).  Even with a 1px overlap between adjacent trapezoids, canvas still
+ * anti-aliases every path edge independently.  Two adjacent subpaths each blur
+ * their shared edge, producing a half-alpha "phantom line" (visible seam) at
+ * every segment boundary when the road colour differs even slightly from the
+ * background.
+ *
+ * ── How the single polygon fixes it ──────────────────────────────────────────
+ *
+ * Instead of drawing N separate trapezoids, we trace the OUTLINE of the entire
+ * road surface as one closed polygon.  There are no internal shared edges —
+ * only the outer boundary (left edge + right edge) exists in the path.  Canvas
+ * anti-aliases only those outer edges, so no seams appear between segments.
+ *
+ * Traversal direction:
+ *
+ *   FAR   [farthest seg far-left]  ──► ... ──► [farthest seg near-left]
+ *                                                              │ (down)
+ *   NEAR                        [nearest near-left]  ◄────────┘
+ *                                        │
+ *                               [nearest near-right]
+ *                                        │ (up)
+ *   FAR   [farthest far-right]  ◄────────┘ ... ◄── closePath ─┘
+ *
+ * Left edge traversal: moveTo far-left of farthest segment, lineTo near-left
+ * of each segment from farthest to nearest.
+ * Right edge traversal: lineTo near-right of nearest, then lineTo far-right
+ * of each segment from nearest to farthest, then closePath.
+ *
+ * @param ctx   - Canvas 2D context.
+ * @param pool  - Pre-populated projection pool.
+ * @param count - Number of valid entries.
+ */
+export function drawRoadSurface(
+  ctx:   CanvasRenderingContext2D,
+  pool:  readonly ProjectedSeg[],
+  count: number,
+): void
+{
+  ctx.beginPath();
+  if (count > 0)
+  {
+    const n = count;
+    // Left edge: start at top-left of farthest segment, step down to
+    // the near-left of every segment (farthest → nearest).
+    ctx.moveTo(Math.round(pool[n - 1].sx2 - pool[n - 1].sw2),
+               pool[n - 1].sy2);
+    for (let i = n - 1; i >= 0; i--)
+    {
+      const { sx1, sy1, sw1 } = pool[i];
+      ctx.lineTo(Math.round(sx1 - sw1), sy1);
+    }
+    // Right edge: step up from near-right of nearest to far-right of
+    // every segment (nearest → farthest), closing at top-right.
+    ctx.lineTo(Math.round(pool[0].sx1 + pool[0].sw1),
+               pool[0].sy1);
+    for (let i = 0; i < n; i++)
+    {
+      const { sx2, sy2, sw2 } = pool[i];
+      ctx.lineTo(Math.round(sx2 + sw2), sy2);
+    }
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+/**
+ * Draws rumble strips (kerb bands) as continuous polygons per colour-run
+ * (Passes C + D).
+ *
+ * Each contiguous run of segments sharing the same rumble colour is drawn as
+ * one polygon per side (left AND right in a single batched path).  One fill
+ * per run = zero inter-segment seams.
+ *
+ * Kerb fractions (as multiples of road half-width sw):
+ *   outer edge: sw * 1.09  (just outside the road edge)
+ *   inner edge: sw * 0.91  (just inside the road edge)
+ *
+ * @param ctx   - Canvas 2D context.
+ * @param pool  - Pre-populated projection pool.
+ * @param count - Number of valid entries.
+ */
+export function drawRumble(
+  ctx:   CanvasRenderingContext2D,
+  pool:  readonly ProjectedSeg[],
+  count: number,
+): void
+{
+  let j = 0;
+  while (j < count)
+  {
+    const runColor = pool[j].seg.color.rumble;
+    const runStart = j;
+    while (j < count && pool[j].seg.color.rumble === runColor) { j++; }
+    const runEnd = j - 1;
+
+    ctx.fillStyle = runColor;
+    ctx.beginPath();
+
+    for (const side of [-1, 1] as const)
+    {
+      // moveTo outer-far of farthest segment in run
+      const far = pool[runEnd];
+      ctx.moveTo(Math.round(far.sx2 + side * far.sw2 * RUMBLE_OUTER_FRAC), far.sy2);
+      // outer near-ends farthest → nearest (going down the screen)
+      for (let i = runEnd; i >= runStart; i--)
+      {
+        const p = pool[i];
+        ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * RUMBLE_OUTER_FRAC), p.sy1);
+      }
+      // cross to inner at near end of nearest
+      const near = pool[runStart];
+      ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * RUMBLE_INNER_FRAC), near.sy1);
+      // inner far-ends nearest → farthest (going up the screen)
+      for (let i = runStart; i <= runEnd; i++)
+      {
+        const p = pool[i];
+        ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * RUMBLE_INNER_FRAC), p.sy2);
+      }
+      ctx.closePath();
+    }
+
+    ctx.fill();
+  }
+}
+
+/**
+ * Draws lane-centre dashes as continuous polygons per lane-on run (Pass E).
+ *
+ * Only segments where `seg.color.lane` is a non-empty string get a dash.
+ * Contiguous lane-on segments are batched into one polygon per side to avoid
+ * seams.  Lane-off runs are skipped entirely (0 fill calls).
+ *
+ * Lane dash fractions (as multiples of road half-width sw):
+ *   outer fraction = 0.39  (centre offset 0.33 + half-width 0.06)
+ *   inner fraction = 0.27  (centre offset 0.33 − half-width 0.06)
+ *
+ * @param ctx   - Canvas 2D context.
+ * @param pool  - Pre-populated projection pool.
+ * @param count - Number of valid entries.
+ */
+export function drawLaneDashes(
+  ctx:   CanvasRenderingContext2D,
+  pool:  readonly ProjectedSeg[],
+  count: number,
+): void
+{
+  let j = 0;
+  while (j < count)
+  {
+    const hasLane = pool[j].seg.color.lane;
+    const runStart = j;
+    while (j < count && pool[j].seg.color.lane === hasLane) { j++; }
+    const runEnd = j - 1;
+
+    if (!hasLane) continue;
+
+    ctx.fillStyle = COLORS.LANE;
+    ctx.beginPath();
+
+    for (const side of [-1, 1] as const)
+    {
+      const far = pool[runEnd];
+      ctx.moveTo(Math.round(far.sx2  + side * far.sw2  * LANE_OUTER_FRAC), far.sy2);
+      for (let i = runEnd; i >= runStart; i--)
+      {
+        const p = pool[i];
+        ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * LANE_OUTER_FRAC), p.sy1);
+      }
+      const near = pool[runStart];
+      ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * LANE_INNER_FRAC), near.sy1);
+      for (let i = runStart; i <= runEnd; i++)
+      {
+        const p = pool[i];
+        ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * LANE_INNER_FRAC), p.sy2);
+      }
+      ctx.closePath();
+    }
+
+    ctx.fill();
+  }
+}
+
+/**
+ * Draws edge track marks (white stripes) as continuous polygons per lane-on
+ * run (Pass F).
+ *
+ * Four stripes per run — outer+inner × left+right — all in a single batched
+ * path (one fill call).  4 closePaths per lane-on run.
+ *
+ * Stripe geometry (centre at sx ± cFrac*sw, half-width hwFrac*sw):
+ *   outer boundary = (cFrac+hwFrac)*sw
+ *   inner boundary = (cFrac-hwFrac)*sw
+ *
+ *   Stripe          side  outerFrac            innerFrac
+ *   left outer      -1    MARK_ET_OUTER_FRAC   MARK_ET_INNER_FRAC
+ *   left inner      -1    MARK_EN_OUTER_FRAC   MARK_EN_INNER_FRAC
+ *   right outer     +1    MARK_ET_OUTER_FRAC   MARK_ET_INNER_FRAC
+ *   right inner     +1    MARK_EN_OUTER_FRAC   MARK_EN_INNER_FRAC
+ *
+ * @param ctx   - Canvas 2D context.
+ * @param pool  - Pre-populated projection pool.
+ * @param count - Number of valid entries.
+ */
+export function drawEdgeMarks(
+  ctx:   CanvasRenderingContext2D,
+  pool:  readonly ProjectedSeg[],
+  count: number,
+): void
+{
+  let j = 0;
+  while (j < count)
+  {
+    const hasLane = pool[j].seg.color.lane;
+    const runStart = j;
+    while (j < count && pool[j].seg.color.lane === hasLane) { j++; }
+    const runEnd = j - 1;
+
+    if (!hasLane) continue;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+
+    // Each entry: [side, outerFrac, innerFrac]
+    // Fractions are named constants from constants.ts for designer-friendliness.
+    const stripes: [number, number, number][] = [
+      [-1, MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC],   // left outer
+      [-1, MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC],   // left inner
+      [+1, MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC],   // right outer
+      [+1, MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC],   // right inner
+    ];
+
+    for (const [side, oFrac, iFrac] of stripes)
+    {
+      const far = pool[runEnd];
+      ctx.moveTo(Math.round(far.sx2  + side * far.sw2  * oFrac), far.sy2);
+      for (let i = runEnd; i >= runStart; i--)
+      {
+        const p = pool[i];
+        ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * oFrac), p.sy1);
+      }
+      const near = pool[runStart];
+      ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * iFrac), near.sy1);
+      for (let i = runStart; i <= runEnd; i++)
+      {
+        const p = pool[i];
+        ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * iFrac), p.sy2);
+      }
+      ctx.closePath();
+    }
+
+    ctx.fill();
+  }
 }
 
 // ── Helper: drawSegDigit ──────────────────────────────────────────────────────
@@ -436,7 +878,7 @@ export class Renderer
    *
    * Pass 1 — front-to-back projection:
    *   Walk from the nearest segment outward.  Project each segment to screen
-   *   space.  Use `maxy` to skip segments hidden behind hill crests.
+   *   space.  Use `horizonCeiling` to skip segments hidden behind hill crests.
    *   Store visible segments in the pre-allocated projPool.
    *
    * Pass 2 — back-to-front rendering (painter's algorithm):
@@ -500,13 +942,41 @@ export class Renderer
 
     // ── Pass 1: project front-to-back, determine visibility ───────────────
     //
-    // `maxy` starts at the horizon (halfH).  Each time we see a segment
-    // whose far edge is higher on screen (smaller Y) than maxy, we tighten
-    // the ceiling.  Any segment whose near edge is above that ceiling is
-    // hidden behind a hill and excluded from projPool.
+    // WHY front-to-back?
+    //   We need to know which segments are hidden before we draw anything.
+    //   Walking near→far lets us track the "horizon ceiling" efficiently.
+    //
+    // ── What is `horizonCeiling`? (the horizon ceiling) ─────────────────────────────
+    //
+    // Canvas Y=0 is the TOP of the screen; larger Y = lower on screen.
+    // The horizon sits at halfH (the vertical midpoint).
+    //
+    // `horizonCeiling` is the HIGHEST screen-Y we have seen so far for any segment's
+    // far (upper) edge.  Because "higher on screen" = SMALLER Y value, a
+    // smaller horizonCeiling means the ceiling has risen.
+    //
+    // Imagine driving toward a hill:
+    //
+    //   horizon       Y = halfH  ───────────────────────────────── horizonCeiling starts here
+    //   hill crest    Y = 200    ─────────────  ← horizonCeiling tightens to 200
+    //   slope below   Y = 350    ─────────────────────────── invisible (sy2 > horizonCeiling? no)
+    //
+    // More precisely: after recording a segment, horizonCeiling = min(horizonCeiling, sy2).
+    // Any later segment whose near edge (sy1) is ABOVE horizonCeiling (sy1 < horizonCeiling)
+    // is behind the crest — completely hidden — and is skipped.
+    //
+    // ── Why a pre-allocated pool? ──────────────────────────────────────────
+    //
+    // At 60 fps with 200 draw-distance segments, a naive implementation would
+    // allocate ~200 new objects per frame → ~12,000 heap allocs per second.
+    // Modern garbage collectors pause for 1–5 ms when collecting — at 60 fps
+    // that's an entire frame budget.  Pre-allocating once in the constructor
+    // and overwriting the same slots each frame avoids all GC pressure.
+    // We reset `projCount` to 0 (not the array itself) so the objects stay
+    // allocated and only the valid-entry count changes.
 
     this.projCount = 0;   // reuse the pool — reset the counter, not the array
-    let maxy   = halfH;
+    let horizonCeiling   = halfH;
     let dx     = -(baseSegment.curve * basePercent);
     let curveX = 0;
 
@@ -549,7 +1019,7 @@ export class Renderer
       const sw1 = ROAD_WIDTH * sc1 * halfW;
       const sw2 = ROAD_WIDTH * sc2 * halfW;
 
-      if (sy1 >= maxy)
+      if (sy1 >= horizonCeiling)
       {
         // Write directly into the pre-allocated slot — no heap allocation
         const slot = this.projPool[this.projCount++];
@@ -557,7 +1027,7 @@ export class Renderer
         slot.sc1 = sc1;   // stored so Pass 2 sprites don't need to re-derive it
         slot.sx1 = sx1; slot.sy1 = sy1; slot.sw1 = sw1;
         slot.sx2 = sx2; slot.sy2 = sy2; slot.sw2 = sw2;
-        maxy = Math.min(maxy, sy2);
+        horizonCeiling = Math.min(horizonCeiling, sy2);
       }
 
       curveX += dx;
@@ -579,105 +1049,14 @@ export class Renderer
     //   F. Edge track marks — one batch (white, on lane segments only)
     //
     // The trapezoids within each batch don't overlap in screen space (Pass 1
-    // maxy occlusion prevents it), so painter order within a batch is irrelevant.
+    // horizonCeiling occlusion prevents it), so painter order within a batch is irrelevant.
 
     // ── A. Grass ───────────────────────────────────────────────────────────
-    // sy2 may be > sy1 on downhill segments (camera-Y tracking); handle both.
-    //
-    // All grass rects are clamped to [halfH, ∞) — never draws above the horizon
-    // into the sky.  The initial ROAD_DARK fill already covers the lower half;
-    // any gap between the farthest segment and the horizon stays grey (the
-    // base fill colour), which is invisible on the road and far less obtrusive
-    // than the sand-coloured lines we are trying to eliminate.  Extending the
-    // farthest grass rect up to halfH used to be done here, but that repainted
-    // the gap with sand and required a separate convergence triangle to undo it.
-    for (let i = this.projCount - 1; i >= 0; i--)
-    {
-      const { sy1, sy2, seg } = this.projPool[i];
-      // Each grass rect extends upward to cover any gap left by the farther
-      // adjacent segment.  On flat road this is just a 1px rounding crack;
-      // at hill crests projPool can have multi-pixel holes where occluded
-      // segments were skipped — extending to projPool[i+1].sy1 closes those.
-      // The farthest segment extends all the way to halfH.
-      const coverTo = i === this.projCount - 1
-        ? halfH
-        : Math.min(Math.min(sy1, sy2), this.projPool[i + 1].sy1);
-      const gTop = Math.max(halfH, Math.round(coverTo) - 1);
-      const gBot = Math.round(Math.max(sy1, sy2));
-      if (gBot <= gTop) continue;
-      ctx.fillStyle = seg.color.grass;
-      ctx.fillRect(0, gTop, w, gBot - gTop);
-    }
-
-    // Helper: add one trapezoid subpath into the currently open path.
-    //
-    // WINDING NOTE: canvas nonzero-fill requires all trapezoids to wind in
-    // the same direction.  Uphill (y1 > y2) draws BL→BR→TR→TL = clockwise.
-    // Downhill (y1 < y2) MUST also be clockwise, so it goes TL→BL→BR→TR.
-    // Mixing CW and CCW in one batched path causes winding cancellation at
-    // the 1px seam overlap, leaving an unfilled sand strip on the road.
-    //
-    // r2 extends the far edge 1px toward the next segment so adjacent fills
-    // overlap and close the canvas sub-pixel crack.
-    const addTrap = (x1: number, y1: number, w1: number,
-                     x2: number, y2: number, w2: number): void =>
-    {
-      const ry1 = Math.round(y1);
-      const ry2 = Math.round(y2);
-      if (ry1 >= ry2)
-      {
-        // Uphill / flat — ry1 at bottom, ry2 at top.  CW: BL→BR→TR→TL
-        const r2 = ry2 - 1;
-        ctx.moveTo(Math.round(x1 - w1), ry1);
-        ctx.lineTo(Math.round(x1 + w1), ry1);
-        ctx.lineTo(Math.round(x2 + w2), r2);
-        ctx.lineTo(Math.round(x2 - w2), r2);
-      }
-      else
-      {
-        // Downhill — ry1 at top, ry2 at bottom.  CW in canvas: TL→BL→BR→TR
-        const r2 = ry2 + 1;
-        ctx.moveTo(Math.round(x1 - w1), ry1);
-        ctx.lineTo(Math.round(x2 - w2), r2);
-        ctx.lineTo(Math.round(x2 + w2), r2);
-        ctx.lineTo(Math.round(x1 + w1), ry1);
-      }
-      ctx.closePath();
-    };
+    drawGrass(ctx, this.projPool, this.projCount, halfH, w);
 
     // ── B. Road surface (continuous polygon) ───────────────────────────────
-    // Instead of one trapezoid subpath per segment (which leaves hairline
-    // seams at shared edges even with 1px overlap), trace the entire road
-    // surface as a single closed polygon: left edge farthest→nearest, then
-    // right edge nearest→farthest.  One fill call, zero inter-segment seams.
-    // Hill-crest projPool gaps are bridged automatically by the straight-line
-    // segments of the polygon — no separate gap-fill pass needed.
     ctx.fillStyle = COLORS.ROAD_DARK;
-    ctx.beginPath();
-    if (this.projCount > 0)
-    {
-      const n = this.projCount;
-      // Left edge: start at top-left of farthest segment, step down to
-      // the near-left of every segment (farthest → nearest).
-      ctx.moveTo(Math.round(this.projPool[n - 1].sx2 - this.projPool[n - 1].sw2),
-                 this.projPool[n - 1].sy2);
-      for (let i = n - 1; i >= 0; i--)
-      {
-        const { sx1, sy1, sw1 } = this.projPool[i];
-        ctx.lineTo(Math.round(sx1 - sw1), sy1);
-      }
-      // Right edge: step up from near-right of nearest to far-right of
-      // every segment (nearest → farthest), closing at top-right.
-      ctx.lineTo(Math.round(this.projPool[0].sx1 + this.projPool[0].sw1),
-                 this.projPool[0].sy1);
-      for (let i = 0; i < n; i++)
-      {
-        const { sx2, sy2, sw2 } = this.projPool[i];
-        ctx.lineTo(Math.round(sx2 + sw2), sy2);
-      }
-      ctx.closePath();
-    }
-    ctx.fill();
+    drawRoadSurface(ctx, this.projPool, this.projCount);
 
     // ── Horizon gap fill ───────────────────────────────────────────────────
     // The road polygon's top edge sits at sy2 of the farthest segment.  On
@@ -693,148 +1072,19 @@ export class Renderer
         const topW = far.sy1 <= far.sy2 ? far.sw1 : far.sw2;
         ctx.fillStyle = COLORS.ROAD_DARK;
         ctx.beginPath();
-        addTrap(topX, topY, topW * 1.09, topX, halfH, 0);
+        addTrap(ctx, topX, topY, topW * RUMBLE_OUTER_FRAC, topX, halfH, 0);
         ctx.fill();
       }
     }
 
-    // ── C + D. Rumble strips (continuous polygon per colour-run per side) ────
-    // Each contiguous run of the same rumble colour is drawn as one polygon
-    // per side (left / right), exactly like the road-surface polygon.
-    // One fill per run = zero inter-segment seams.
-    //   outer edge: sx ± sw*1.09  (road-edge ± rumble half-width)
-    //   inner edge: sx ± sw*0.91
-    {
-      let j = 0;
-      while (j < this.projCount)
-      {
-        const runColor = this.projPool[j].seg.color.rumble;
-        const runStart = j;                                   // nearest index
-        while (j < this.projCount &&
-               this.projPool[j].seg.color.rumble === runColor) { j++; }
-        const runEnd = j - 1;                                 // farthest index
-
-        ctx.fillStyle = runColor;
-        ctx.beginPath();
-
-        for (const side of [-1, 1] as const)
-        {
-          // moveTo outer-far of farthest segment in run
-          const far = this.projPool[runEnd];
-          ctx.moveTo(Math.round(far.sx2 + side * far.sw2 * 1.09), far.sy2);
-          // outer near-ends farthest → nearest (going down the screen)
-          for (let i = runEnd; i >= runStart; i--)
-          {
-            const p = this.projPool[i];
-            ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * 1.09), p.sy1);
-          }
-          // cross to inner at near end of nearest
-          const near = this.projPool[runStart];
-          ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * 0.91), near.sy1);
-          // inner far-ends nearest → farthest (going up the screen)
-          for (let i = runStart; i <= runEnd; i++)
-          {
-            const p = this.projPool[i];
-            ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * 0.91), p.sy2);
-          }
-          ctx.closePath();
-        }
-
-        ctx.fill();
-      }
-    }
+    // ── C + D. Rumble strips ───────────────────────────────────────────────
+    drawRumble(ctx, this.projPool, this.projCount);
 
     // ── E. Lane dashes ─────────────────────────────────────────────────────
-    // Continuous polygon per lane-on run.  off=sw*0.33, hw=sw*0.06.
-    // outer fraction = off+hw = 0.39; inner fraction = off-hw = 0.27.
-    {
-      let j = 0;
-      while (j < this.projCount)
-      {
-        const hasLane = this.projPool[j].seg.color.lane;
-        const runStart = j;
-        while (j < this.projCount &&
-               this.projPool[j].seg.color.lane === hasLane) { j++; }
-        const runEnd = j - 1;
+    drawLaneDashes(ctx, this.projPool, this.projCount);
 
-        if (!hasLane) continue;
-
-        ctx.fillStyle = COLORS.LANE;
-        ctx.beginPath();
-
-        for (const side of [-1, 1] as const)
-        {
-          const far = this.projPool[runEnd];
-          ctx.moveTo(Math.round(far.sx2  + side * far.sw2  * 0.39), far.sy2);
-          for (let i = runEnd; i >= runStart; i--)
-          {
-            const p = this.projPool[i];
-            ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * 0.39), p.sy1);
-          }
-          const near = this.projPool[runStart];
-          ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * 0.27), near.sy1);
-          for (let i = runStart; i <= runEnd; i++)
-          {
-            const p = this.projPool[i];
-            ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * 0.27), p.sy2);
-          }
-          ctx.closePath();
-        }
-
-        ctx.fill();
-      }
-    }
-
-    // ── F. Edge track marks (white) ────────────────────────────────────────
-    // Four stripes per lane-on run (outer+inner × left+right).
-    // Each stripe: center at sx ± cFrac*sw, half-width hwFrac*sw.
-    // outer boundary = cFrac+hwFrac, inner boundary = cFrac-hwFrac.
-    {
-      let j = 0;
-      while (j < this.projCount)
-      {
-        const hasLane = this.projPool[j].seg.color.lane;
-        const runStart = j;
-        while (j < this.projCount &&
-               this.projPool[j].seg.color.lane === hasLane) { j++; }
-        const runEnd = j - 1;
-
-        if (!hasLane) continue;
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.beginPath();
-
-        const stripes = [
-          [-1, 0.915, 0.045],   // left outer
-          [-1, 0.790, 0.020],   // left inner
-          [+1, 0.915, 0.045],   // right outer
-          [+1, 0.790, 0.020],   // right inner
-        ] as const;
-
-        for (const [side, cFrac, hwFrac] of stripes)
-        {
-          const oFrac = cFrac + hwFrac;   // outer boundary fraction
-          const iFrac = cFrac - hwFrac;   // inner boundary fraction
-          const far = this.projPool[runEnd];
-          ctx.moveTo(Math.round(far.sx2  + side * far.sw2  * oFrac), far.sy2);
-          for (let i = runEnd; i >= runStart; i--)
-          {
-            const p = this.projPool[i];
-            ctx.lineTo(Math.round(p.sx1 + side * p.sw1 * oFrac), p.sy1);
-          }
-          const near = this.projPool[runStart];
-          ctx.lineTo(Math.round(near.sx1 + side * near.sw1 * iFrac), near.sy1);
-          for (let i = runStart; i <= runEnd; i++)
-          {
-            const p = this.projPool[i];
-            ctx.lineTo(Math.round(p.sx2 + side * p.sw2 * iFrac), p.sy2);
-          }
-          ctx.closePath();
-        }
-
-        ctx.fill();
-      }
-    }
+    // ── F. Edge track marks ────────────────────────────────────────────────
+    drawEdgeMarks(ctx, this.projPool, this.projCount);
 
     // ── Pass 3: roadside sprites ───────────────────────────────────────────
     //

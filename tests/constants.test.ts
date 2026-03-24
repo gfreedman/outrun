@@ -25,6 +25,10 @@ import
   DRIFT_ONSET, DRIFT_RATE, DRIFT_DECAY, DRIFT_CATCH,
   COLOR_BAND_PERIOD,
   ACCEL_LOW_BAND, ACCEL_HIGH_BAND,
+  RUMBLE_OUTER_FRAC, RUMBLE_INNER_FRAC,
+  LANE_OUTER_FRAC, LANE_INNER_FRAC,
+  MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC,
+  MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC,
 } from '../src/constants';
 
 // ── Physics invariants ────────────────────────────────────────────────────────
@@ -176,6 +180,85 @@ describe('Physics invariants', () =>
     expect(ACCEL_LOW_BAND).toBeGreaterThan(0);
     expect(ACCEL_HIGH_BAND).toBeGreaterThan(ACCEL_LOW_BAND);
     expect(ACCEL_HIGH_BAND).toBeLessThan(1);
+  });
+
+});
+
+// ── Road marking fraction constants ───────────────────────────────────────────
+//
+// These fractions are multiplied by the road half-width (sw) at each segment.
+// The relationships between them are load-bearing: incorrect values would
+// produce visually wrong kerb widths or overlapping stripes without a compile
+// or runtime error — only these tests catch the mistake.
+
+describe('Road marking fraction constants', () =>
+{
+
+  /**
+   * RUMBLE_INNER_FRAC < 1.0: the inner kerb edge must sit INSIDE the road.
+   * A value >= 1.0 would place the inner kerb at or beyond the road edge,
+   * making the kerb invisible (hidden by the road surface polygon).
+   */
+  it('RUMBLE_INNER_FRAC < 1.0 — kerb inner edge is inside the road', () =>
+  {
+    expect(RUMBLE_INNER_FRAC).toBeLessThan(1.0);
+  });
+
+  /**
+   * RUMBLE_OUTER_FRAC > 1.0: the outer kerb edge must reach OUTSIDE the road.
+   * A value <= 1.0 would make the kerb invisible against the road surface.
+   */
+  it('RUMBLE_OUTER_FRAC > 1.0 — kerb outer edge is outside the road', () =>
+  {
+    expect(RUMBLE_OUTER_FRAC).toBeGreaterThan(1.0);
+  });
+
+  /**
+   * LANE_OUTER_FRAC < 1.0: lane dashes sit inside the road boundary.
+   * A value >= 1.0 would draw the dash on the verge, not the asphalt.
+   */
+  it('LANE_OUTER_FRAC < 1.0 — lane dash is inside the road', () =>
+  {
+    expect(LANE_OUTER_FRAC).toBeLessThan(1.0);
+  });
+
+  /**
+   * LANE_INNER_FRAC > 0 && < LANE_OUTER_FRAC: the dash has positive width and
+   * inner < outer (normal orientation).  If LANE_INNER_FRAC >= LANE_OUTER_FRAC
+   * the dash would have zero or negative width and be invisible.
+   */
+  it('LANE_INNER_FRAC > 0 && < LANE_OUTER_FRAC — dash has positive width', () =>
+  {
+    expect(LANE_INNER_FRAC).toBeGreaterThan(0);
+    expect(LANE_INNER_FRAC).toBeLessThan(LANE_OUTER_FRAC);
+  });
+
+  /**
+   * MARK_ET_INNER_FRAC < MARK_ET_OUTER_FRAC: the outer track stripe has positive
+   * width.  Reversing these would make the stripe zero-width and invisible.
+   */
+  it('MARK_ET_INNER_FRAC < MARK_ET_OUTER_FRAC — outer track stripe has positive width', () =>
+  {
+    expect(MARK_ET_INNER_FRAC).toBeLessThan(MARK_ET_OUTER_FRAC);
+  });
+
+  /**
+   * MARK_EN_INNER_FRAC < MARK_EN_OUTER_FRAC: the inner track stripe has positive
+   * width.  Same reasoning as above.
+   */
+  it('MARK_EN_INNER_FRAC < MARK_EN_OUTER_FRAC — inner track stripe has positive width', () =>
+  {
+    expect(MARK_EN_INNER_FRAC).toBeLessThan(MARK_EN_OUTER_FRAC);
+  });
+
+  /**
+   * MARK_EN_OUTER_FRAC < MARK_ET_INNER_FRAC: the inner stripe must be closer to
+   * the road centre than the outer stripe.  If this is violated the two stripes
+   * would overlap or swap positions, destroying the intended track-mark geometry.
+   */
+  it('MARK_EN_OUTER_FRAC < MARK_ET_INNER_FRAC — inner mark is further from edge than outer', () =>
+  {
+    expect(MARK_EN_OUTER_FRAC).toBeLessThan(MARK_ET_INNER_FRAC);
   });
 
 });
