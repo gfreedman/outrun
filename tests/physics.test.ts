@@ -342,20 +342,31 @@ describe('advancePhysics — playerZ advance', () =>
   });
 });
 
-// ── advancePhysics — grind decel ────────────────────────────────────────────
+// ── advancePhysics — grind timer passthrough ─────────────────────────────────
+//
+// grind decel (HIT_CRUNCH_GRIND_DECEL) is intentionally NOT applied inside
+// advancePhysics — it lives in game.ts updateCollisions() which owns the timer
+// countdown.  Applying it here would double the deceleration each frame because
+// capturePhysicsState() passes the pre-decrement grindTimer value.
 
-describe('advancePhysics — grind decel', () =>
+describe('advancePhysics — grind timer passthrough', () =>
 {
-  it('grindTimer > 0: speed decreases by HIT_CRUNCH_GRIND_DECEL * dt each tick', () =>
+  it('grindTimer is passed through unchanged (decel lives in updateCollisions)', () =>
   {
     const st = makeState({ speed: 5000, grindTimer: 1.0 });
     const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
-    // Speed should decrease due to both coast AND grind decel
-    // The grind decel alone is HIT_CRUNCH_GRIND_DECEL * DT
-    // Speed decreases more than just coast
+    // grindTimer must come out exactly as it went in — advancePhysics does NOT tick it
+    expect(state.grindTimer).toBe(1.0);
+  });
+
+  it('speed with grindTimer > 0 is NOT less than speed with grindTimer = 0 (decel not applied here)', () =>
+  {
+    const stGrind   = makeState({ speed: 5000, grindTimer: 1.0 });
     const stNoGrind = makeState({ speed: 5000, grindTimer: 0 });
-    const { state: noGrind } = advancePhysics(stNoGrind, NO_INPUT, DT, makeCfg());
-    expect(state.speed).toBeLessThan(noGrind.speed);
+    const { state: withGrind }    = advancePhysics(stGrind,   NO_INPUT, DT, makeCfg());
+    const { state: withoutGrind } = advancePhysics(stNoGrind, NO_INPUT, DT, makeCfg());
+    // Both paths see identical coast decel — grindTimer has no effect here
+    expect(withGrind.speed).toBeCloseTo(withoutGrind.speed, 1);
   });
 });
 

@@ -24,7 +24,7 @@ import {
   HIT_SMACK_SPEED_MULT, HIT_SMACK_SPEED_CAP,
   HIT_SMACK_COOLDOWN, HIT_SMACK_RECOVERY_BOOST, HIT_SMACK_RECOVERY_TIME,
   HIT_SMACK_RESTITUTION, HIT_SMACK_FLICK_BASE,
-  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_DECEL, HIT_CRUNCH_GRIND_TIME,
+  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_TIME,
   HIT_CRUNCH_COOLDOWN,
   HIT_CRUNCH_RECOVERY_BOOST, HIT_CRUNCH_RECOVERY_TIME,
   HIT_CRUNCH_RESTITUTION, HIT_CRUNCH_FLICK_BASE,
@@ -248,11 +248,11 @@ export function advancePhysics(
   speed = Math.max(0, Math.min(speed,
     barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
 
-  // ── Grind decel ──────────────────────────────────────────────────────
-
-  if (grindTimer > 0) speed -= HIT_CRUNCH_GRIND_DECEL * dt;
-
   // ── Advance ──────────────────────────────────────────────────────────
+  // Note: grind decel (HIT_CRUNCH_GRIND_DECEL) is applied by updateCollisions()
+  // in game.ts, which owns the grindTimer countdown.  Do NOT apply it here —
+  // advancePhysics receives a captured (pre-decrement) grindTimer and would
+  // otherwise double the deceleration each frame.
 
   const stepWU       = speed * dt;
   playerZ            = ((playerZ + stepWU) % trackLength + trackLength) % trackLength;
