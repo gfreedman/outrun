@@ -1218,7 +1218,7 @@ export class Renderer
         if (!sheet?.isReady()) continue;
         if (!rect || !worldH) continue;
 
-        const sprH = worldH * si.scale! * sc1 * halfH;
+        const sprH = worldH * (si.scale ?? 1) * sc1 * halfH;
         if (sprH < 4) continue;   // C8: raised from 2 — tiny sprites are invisible
 
         const sprW = sprH * (rect.w / rect.h) * (si.stretchX ?? 1);

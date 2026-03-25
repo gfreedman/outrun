@@ -27,6 +27,10 @@ import {
   checkTrafficCollision,
 } from './traffic';
 import { GamePhase, GameMode, GameSettings } from './types';
+import {
+  advancePhysics, applyCollisionResponse,
+  PhysicsState, InputSnapshot, PhysicsConfig,
+} from './physics';
 import { Button, anyHovered }               from './ui';
 import
 {
@@ -1008,171 +1012,85 @@ export class Game
    *
    * @param dt - Frame delta-time in seconds (already capped at MAX_FRAME_DT).
    */
+
+  /** Reads all 17 physics fields from `this` into a PhysicsState snapshot. */
+  private capturePhysicsState(): PhysicsState
+  {
+    return {
+      speed:             this.speed,
+      playerX:           this.playerX,
+      playerZ:           this.playerZ,
+      steerAngle:        this.steerAngle,
+      brakeHeld:         this.brakeHeld,
+      offRoad:           this.offRoad,
+      offRoadRecovery:   this.offRoadRecovery,
+      slideVelocity:     this.slideVelocity,
+      jitterY:           this.jitterY,
+      hitCooldown:       this.hitCooldown,
+      grindTimer:        this.grindTimer,
+      hitRecoveryTimer:  this.hitRecoveryTimer,
+      hitRecoveryBoost:  this.hitRecoveryBoost,
+      shakeTimer:        this.shakeTimer,
+      shakeIntensity:    this.shakeIntensity,
+      barneyBoostTimer:  this.barneyBoostTimer,
+      distanceTravelled: this.distanceTravelled,
+    };
+  }
+
+  /** Writes all 17 physics fields from a PhysicsState back to `this`. */
+  private applyPhysicsState(s: PhysicsState): void
+  {
+    this.speed             = s.speed;
+    this.playerX           = s.playerX;
+    this.playerZ           = s.playerZ;
+    this.steerAngle        = s.steerAngle;
+    this.brakeHeld         = s.brakeHeld;
+    this.offRoad           = s.offRoad;
+    this.offRoadRecovery   = s.offRoadRecovery;
+    this.slideVelocity     = s.slideVelocity;
+    this.jitterY           = s.jitterY;
+    this.hitCooldown       = s.hitCooldown;
+    this.grindTimer        = s.grindTimer;
+    this.hitRecoveryTimer  = s.hitRecoveryTimer;
+    this.hitRecoveryBoost  = s.hitRecoveryBoost;
+    this.shakeTimer        = s.shakeTimer;
+    this.shakeIntensity    = s.shakeIntensity;
+    this.barneyBoostTimer  = s.barneyBoostTimer;
+    this.distanceTravelled = s.distanceTravelled;
+  }
+
   private update(dt: number): void
   {
-    const { input } = this;
-    const trackLength = this.road.count * SEGMENT_LENGTH;
-    const maxSpeed    = this.effectiveMaxSpeed;
-    const speedRatio  = this.speed / maxSpeed;
-    const cfg         = RACE_CONFIG[this.settings.mode];
-
-    // ── Throttle / brake ───────────────────────────────────────────────────
-
-    if (input.isDown('ArrowUp'))
-    {
-      let accel: number;
-      if (speedRatio < ACCEL_LOW_BAND)
-      {
-        // Low-speed band (0–15%): smoothstep ramp from ACCEL_LOW → ACCEL_MID.
-        // Simulates tyres finding grip during launch — avoids a violent snap at t=0.
-        const t      = speedRatio / ACCEL_LOW_BAND;
-        const smooth = t * t * (3 - 2 * t);
-        accel = PLAYER_ACCEL_LOW + (PLAYER_ACCEL_MID - PLAYER_ACCEL_LOW) * smooth;
-      }
-      else if (speedRatio < ACCEL_HIGH_BAND)
-      {
-        // Mid-band (15–80%): constant peak thrust — the main power band.
-        accel = PLAYER_ACCEL_MID;
-      }
-      else
-      {
-        // Terminal taper (80–100%): thrust falls linearly to 0 at max speed.
-        // Models aero drag overpowering engine output near the top-speed plateau.
-        accel = PLAYER_ACCEL_MID * (1 - speedRatio) / (1 - ACCEL_HIGH_BAND);
-      }
-
-      this.speed     += accel * cfg.accelMultiplier * this.hitRecoveryBoost * dt;
-      this.brakeHeld  = 0;
-    }
-    else if (input.isDown('ArrowDown') || input.isDown(' '))
-    {
-      this.brakeHeld = Math.min(this.brakeHeld + dt, PLAYER_BRAKE_RAMP);
-      const t        = this.brakeHeld / PLAYER_BRAKE_RAMP;
-      this.speed    -= PLAYER_BRAKE_MAX * t * t * dt;
-    }
-    else
-    {
-      const coastRate = PLAYER_COAST_RATE * (0.5 + 0.5 * speedRatio);
-      this.speed     -= coastRate * dt;
-      this.brakeHeld  = Math.max(0, this.brakeHeld - dt * 4);
-    }
-
-    // ── Barney afterburner boost ───────────────────────────────────────────
-    // Override speed cap: allow 50% above normal max; push toward boost ceiling.
-    if (this.barneyBoostTimer > 0)
-    {
-      const boostMax = maxSpeed * BARNEY_BOOST_MULTIPLIER;
-      this.speed = Math.min(boostMax, this.speed + maxSpeed * 2.0 * dt);
-    }
-
-    this.speed = Math.max(0, Math.min(this.speed,
-      this.barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
-
-    // ── Steering ───────────────────────────────────────────────────────────
-
-    // gripFactor reduces available lateral authority at high speed (quadratic).
-    // At rest: gripFactor=1.0 (full authority).
-    // At max speed: gripFactor=0.5 (50% — tyre slip on cold rubber).
-    const gripFactor = 1 - speedRatio * speedRatio * 0.5;
-    if (this.speed > 0)
-    {
-      if (input.isDown('ArrowLeft'))  this.playerX -= PLAYER_STEERING * gripFactor * dt;
-      if (input.isDown('ArrowRight')) this.playerX += PLAYER_STEERING * gripFactor * dt;
-    }
-    this.playerX = Math.max(-2, Math.min(2, this.playerX));
-
-    // ── Centrifugal force ──────────────────────────────────────────────────
-
     const playerSegment = this.road.findSegment(this.playerZ);
-    this.playerX -= playerSegment.curve * speedRatio * CENTRIFUGAL * dt;
+    const input: InputSnapshot = {
+      throttle:   this.input.isDown('ArrowUp'),
+      brake:      this.input.isDown('ArrowDown') || this.input.isDown(' '),
+      steerLeft:  this.input.isDown('ArrowLeft'),
+      steerRight: this.input.isDown('ArrowRight'),
+    };
+    const cfg: PhysicsConfig = {
+      maxSpeed:        this.effectiveMaxSpeed,
+      accelMultiplier: RACE_CONFIG[this.settings.mode].accelMultiplier,
+      trackLength:     this.road.count * SEGMENT_LENGTH,
+      segmentCurve:    playerSegment.curve,
+    };
 
-    // ── Drift ──────────────────────────────────────────────────────────────
+    const prevOffRoad = this.offRoad;
+    const physIn      = this.capturePhysicsState();
+    const { state: physOut, screechRatio } = advancePhysics(physIn, input, dt, cfg);
+    this.applyPhysicsState(physOut);
 
-    if (speedRatio > 0.5 && Math.abs(playerSegment.curve) > 0)
-    {
-      const centForce = Math.abs(playerSegment.curve * speedRatio * CENTRIFUGAL);
-      const availGrip = PLAYER_STEERING * gripFactor;
-      if (centForce > availGrip * DRIFT_ONSET)
-      {
-        const excess   = centForce - availGrip * DRIFT_ONSET;
-        const slideDir = playerSegment.curve > 0 ? -1 : 1;
-        this.slideVelocity += slideDir * excess * DRIFT_RATE * dt;
-      }
-    }
-    this.playerX += this.slideVelocity * dt;
+    // ── Audio feedback (non-pure, stays in game.ts) ─────────────────────
 
-    const counterSteering =
-      (this.slideVelocity >  0.02 && input.isDown('ArrowLeft')) ||
-      (this.slideVelocity < -0.02 && input.isDown('ArrowRight'));
-    let decayRate = counterSteering ? DRIFT_CATCH : DRIFT_DECAY;
-    if (this.hitCooldown > 0) decayRate = Math.min(decayRate, 2.5);
-    this.slideVelocity *= Math.exp(-decayRate * dt);
+    this.audio.updateScreech(screechRatio);
 
-    // Continuous screech: feed grip ratio every frame; AudioManager fades in/out
-    if (speedRatio > 0.4 && Math.abs(playerSegment.curve) > 0)
-    {
-      const centForce  = Math.abs(playerSegment.curve * speedRatio * CENTRIFUGAL);
-      const availGrip  = PLAYER_STEERING * gripFactor;
-      this.audio.updateScreech(centForce / availGrip);
-    }
-    else
-    {
-      this.audio.updateScreech(0);
-    }
-
-    // Clamp slide velocity — allow wider drift during hit recovery so the
-    // car visibly slides after a big collision instead of snapping back.
-    const slideCap = this.hitCooldown > 0 ? 0.75 : 0.5;
-    this.slideVelocity = Math.max(-slideCap, Math.min(slideCap, this.slideVelocity));
-
-    // ── Steer angle (visual) ───────────────────────────────────────────────
-
-    if (input.isDown('ArrowLeft'))        this.steerAngle -= PLAYER_STEER_RATE * dt;
-    else if (input.isDown('ArrowRight'))  this.steerAngle += PLAYER_STEER_RATE * dt;
-    else                                  this.steerAngle *= Math.exp(-PLAYER_STEER_RATE * 4 * dt);
-    this.steerAngle = Math.max(-1, Math.min(1, this.steerAngle));
-
-    // ── Off-road ───────────────────────────────────────────────────────────
-
-    this.offRoad = Math.abs(this.playerX) > 1;
-
-    if (this.offRoad)
-    {
-      this.speed          -= OFFROAD_DECEL * dt;
-      if (input.isDown('ArrowUp'))
-        this.speed = Math.max(this.speed, maxSpeed * OFFROAD_CRAWL_RATIO);
-      this.offRoadRecovery = 0;
-      const jitterTarget   = this.speed > 0 ? (Math.random() - 0.5) * 10 : 0;
-      this.jitterY += (jitterTarget - this.jitterY) * (1 - Math.exp(-OFFROAD_JITTER_BLEND * dt));
-
-      if (!this.wasOffRoad) this.audio.startRumble();
-    }
-    else
-    {
-      this.offRoadRecovery = Math.min(1, this.offRoadRecovery + dt / OFFROAD_RECOVERY_TIME);
-      if (this.offRoadRecovery < 1)
-      {
-        const recoveryMax = maxSpeed * (OFFROAD_MAX_RATIO + (1 - OFFROAD_MAX_RATIO) * this.offRoadRecovery);
-        this.speed = Math.min(this.speed, recoveryMax);
-      }
-      this.jitterY *= Math.exp(-OFFROAD_JITTER_DECAY * dt);
-
-      if (this.wasOffRoad) this.audio.stopRumble();
-    }
+    if (this.offRoad && !prevOffRoad) this.audio.startRumble();
+    if (!this.offRoad && prevOffRoad) this.audio.stopRumble();
     this.wasOffRoad = this.offRoad;
-
-    this.speed = Math.max(0, Math.min(this.speed,
-      this.barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
 
     // ── Collision ──────────────────────────────────────────────────────────
 
     this.updateCollisions(dt);
-
-    // ── Advance ───────────────────────────────────────────────────────────
-
-    const stepWU      = this.speed * dt;
-    this.playerZ      = ((this.playerZ + stepWU) % trackLength + trackLength) % trackLength;
-    this.distanceTravelled += stepWU;
 
     // ── Traffic ───────────────────────────────────────────────────────────
 
@@ -1180,6 +1098,7 @@ export class Game
 
     // ── Engine audio ──────────────────────────────────────────────────────
 
+    const speedRatio = this.speed / this.effectiveMaxSpeed;
     this.audio.updateEngine(speedRatio);
   }
 
@@ -1328,70 +1247,11 @@ export class Game
       return;
     }
 
-    // Pre-compute collision response values shared across all static hit classes.
-    // "approach" measures how fast the player was moving laterally toward the
-    // object at impact — higher approach = larger restitution flick.
-    const preHitSpeedRatio = this.speed / this.effectiveMaxSpeed;
-    const gripFactor       = 1 - preHitSpeedRatio * preHitSpeedRatio * 0.5;
-    const bumpSign         = -hit.bumpDir;
-    const steerApproach = hit.bumpDir * this.steerAngle * PLAYER_STEERING * gripFactor;
-    const slideApproach = hit.bumpDir * this.slideVelocity;
-    const approach      = Math.max(0, steerApproach + slideApproach);
+    const hitResult = applyCollisionResponse(this.capturePhysicsState(), hit, this.effectiveMaxSpeed);
+    this.applyPhysicsState(hitResult);
 
-    switch (hit.cls)
-    {
-      case CollisionClass.Glance:
-      {
-        // Cactus: speed scrub + bump; no time or score penalty
-        this.speed   *= HIT_GLANCE_SPEED_MULT;
-        this.playerX += bumpSign * HIT_GLANCE_BUMP;
-        this.shakeTimer     = SHAKE_GLANCE_DURATION;
-        this.shakeIntensity = SHAKE_GLANCE_INTENSITY;
-        this.hitCooldown    = HIT_GLANCE_COOLDOWN;
-        this.audio.playCrashObject();
-        break;
-      }
-      case CollisionClass.Smack:
-      {
-        // Palm / billboard: speed cap + flick; no time or score penalty
-        this.speed *= HIT_SMACK_SPEED_MULT;
-        this.speed  = Math.min(this.speed, this.effectiveMaxSpeed * HIT_SMACK_SPEED_CAP);
-        const flick         = Math.max(0.08, approach * HIT_SMACK_RESTITUTION + preHitSpeedRatio * HIT_SMACK_FLICK_BASE);
-        this.slideVelocity  = bumpSign * Math.min(flick, 0.45);
-        this.shakeTimer       = SHAKE_SMACK_DURATION;
-        this.shakeIntensity   = SHAKE_SMACK_INTENSITY;
-        this.hitCooldown      = HIT_SMACK_COOLDOWN;
-        this.hitRecoveryTimer = HIT_SMACK_RECOVERY_TIME;
-        this.hitRecoveryBoost = HIT_SMACK_RECOVERY_BOOST;
-        this.audio.playCrashObject();
-        break;
-      }
-      case CollisionClass.Crunch:
-      {
-        // House: grind + slow; no time or score penalty
-        this.speed = Math.min(this.speed, this.effectiveMaxSpeed * HIT_CRUNCH_SPEED_CAP);
-        this.grindTimer = HIT_CRUNCH_GRIND_TIME;
-        const flick        = Math.max(0.14, approach * HIT_CRUNCH_RESTITUTION + preHitSpeedRatio * HIT_CRUNCH_FLICK_BASE);
-        this.slideVelocity = bumpSign * Math.min(flick, 0.45);
-        this.shakeTimer     = SHAKE_CRUNCH_DURATION;
-        this.shakeIntensity = SHAKE_CRUNCH_INTENSITY;
-        this.hitCooldown    = HIT_CRUNCH_COOLDOWN;
-        this.hitRecoveryTimer = HIT_CRUNCH_RECOVERY_TIME;
-        this.hitRecoveryBoost = HIT_CRUNCH_RECOVERY_BOOST;
-        this.audio.playCrashObject();
-        break;
-      }
-      case CollisionClass.Ghost:
-        break;
-      default:
-      {
-        const _exhaustive: never = hit.cls;
-      }
-    }
-
-    if (this.speed > 0)
-      this.speed = Math.max(this.speed, this.effectiveMaxSpeed * HIT_SPEED_FLOOR);
-    this.playerX = Math.max(-2, Math.min(2, this.playerX));
+    // Audio stays in game.ts — not part of the pure collision response.
+    if (hit.cls !== CollisionClass.Ghost) this.audio.playCrashObject();
   }
 
   // ── Draw helpers ───────────────────────────────────────────────────────────
