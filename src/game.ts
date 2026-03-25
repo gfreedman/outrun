@@ -121,14 +121,20 @@ function saveSettings(s: GameSettings): void
  */
 export class Game
 {
+  /** The HTML canvas element the game renders into. */
   private canvas:   HTMLCanvasElement;
+  /** Stateless renderer -- receives all state as params to render(). */
   private renderer: Renderer;
+  /** Keyboard/touch input polling manager. */
   private input:    InputManager;
+  /** Web Audio API manager for engine, screech, crash, and music. */
   private audio:    AudioManager;
 
   // ── State machine ──────────────────────────────────────────────────────────
 
+  /** Current top-level state (PRELOADING, INTRO, COUNTDOWN, PLAYING, etc.). */
   private phase:    GamePhase = GamePhase.PRELOADING;
+  /** Persisted user preferences (difficulty mode, sound toggle). */
   private settings: GameSettings;
 
   // ── Preloader state ────────────────────────────────────────────────────────
@@ -144,14 +150,23 @@ export class Game
 
   // ── Player physics ─────────────────────────────────────────────────────────
 
+  /** World depth position (increases as the player drives forward). */
   private playerZ          = 0;
+  /** Normalised lateral position (-1..+1 = road; beyond = off-road). */
   private playerX          = 0;
+  /** Forward speed in world units per second. */
   private speed            = 0;
+  /** Visual steer angle (-1..+1) for sprite frame selection only. */
   private steerAngle       = 0;
+  /** Accumulated brake hold time (seconds); ramps brake force quadratically. */
   private brakeHeld        = 0;
+  /** True when |playerX| > 1 (car is on the grass verge). */
   private offRoad          = false;
+  /** Recovery blend factor (0 = just left grass, 1 = fully recovered). */
   private offRoadRecovery  = 1;
+  /** Lateral slide velocity from drift/oversteer (road-widths/sec). */
   private slideVelocity    = 0;
+  /** Vertical pixel jitter from off-road terrain or camera shake. */
   private jitterY          = 0;
 
   // ── Effective top speed (varies by mode) ──────────────────────────────────
@@ -160,52 +175,87 @@ export class Game
 
   // ── Collision state ────────────────────────────────────────────────────────
 
+  /** Seconds remaining before the next collision can register. */
   private hitCooldown      = 0;
+  /** Seconds remaining of sustained grind drag (house crunch only). */
   private grindTimer       = 0;
+  /** Seconds remaining of boosted acceleration recovery after a hit. */
   private hitRecoveryTimer = 0;
+  /** Acceleration multiplier during the recovery window (1.0 = normal). */
   private hitRecoveryBoost = 1.0;
+  /** Seconds remaining of camera shake effect. */
   private shakeTimer       = 0;
+  /** Maximum pixel offset of the current camera shake. */
   private shakeIntensity   = 0;
 
   // ── Race timers + scoring ─────────────────────────────────────────────────
 
+  /** Total elapsed race time in seconds (counts up from 0). */
   private raceTimer         = 0;
-  private distanceTravelled = 0;   // cumulative world units (not looped)
-  private finishLineWU      = 0;   // exact WU where car crosses the start/finish gate
-  private timeRemaining     = 0;   // countdown timer (seconds left)
-  private score             = 0;   // accumulated score
-  private stageNameTimer    = 0;   // seconds left to show stage announcement
-  private timeUpDecelDone   = false;  // true once car is stopped after TIME UP
-  private barneyBoostTimer  = 0;   // seconds left of afterburner boost
-  private barneyKillCount   = 0;   // how many Barney cars collected this race
+  /** Cumulative world units driven (never wraps -- used for finish detection). */
+  private distanceTravelled = 0;
+  /** Exact world-unit position where the finish line triggers. */
+  private finishLineWU      = 0;
+  /** Countdown timer: seconds remaining before TIME UP. */
+  private timeRemaining     = 0;
+  /** Accumulated score (base rate + speed bonus - crash penalties). */
+  private score             = 0;
+  /** Seconds left to show the "COCONUT BEACH" stage announcement. */
+  private stageNameTimer    = 0;
+  /** True once the car has fully stopped after a TIME UP. */
+  private timeUpDecelDone   = false;
+  /** Seconds left of Barney afterburner speed boost. */
+  private barneyBoostTimer  = 0;
+  /** Number of Barney cars destroyed this race (bonus at finish). */
+  private barneyKillCount   = 0;
 
   // ── Finishing cinematic ────────────────────────────────────────────────────
 
-  private finishingTimer       = 0;   // seconds elapsed since crossing the line
-  private finishingSlid        = false; // true once the sideways slide has been triggered
-  private finishingTravelledWU = 0;   // WU rolled since FINISHING began — hard-capped at stop zone
+  /** Seconds elapsed since crossing the finish line. */
+  private finishingTimer       = 0;
+  /** True once the sideways slide has been triggered during finishing. */
+  private finishingSlid        = false;
+  /** World units rolled since FINISHING began -- hard-capped to stop near the gate. */
+  private finishingTravelledWU = 0;
 
   // ── Countdown state ────────────────────────────────────────────────────────
 
+  /** Current countdown step: 3, 2, 1, or 'GO!'. */
   private countdownValue: number | 'GO!' = 3;
+  /** Seconds elapsed since the countdown began. */
   private countdownTimer  = 0;
 
   // ── Intro / menu state ─────────────────────────────────────────────────────
 
+  /** Currently focused main-menu item (keyboard nav). */
   private menuItem:     'start' | 'mode' | 'settings' = 'start';
+  /** Which sub-menu overlay is open, or null for the main menu. */
   private menuSubMenu:  'mode' | 'settings' | null = null;
+  /** Currently highlighted difficulty in the mode picker. */
   private menuSubMode:  GameMode = GameMode.MEDIUM;
+  /** Current state of the sound toggle in the settings panel. */
   private menuSubSound  = true;
+  /** Monotonic clock (seconds) driving the 2 Hz blink on menu text. */
   private pulseClock    = 0;
 
   // ── Mouse state ────────────────────────────────────────────────────────────
 
+  /** Current mouse X in canvas pixels (updated on mousemove). */
   private mouseX     = -1;
+  /** Current mouse Y in canvas pixels (updated on mousemove). */
   private mouseY     = -1;
-  private clickX     = -1;   // snapshot of mouseX at click time — never overwritten by onMouseMove
+  /** Snapshot of mouseX at click time -- never overwritten by onMouseMove. */
+  private clickX     = -1;
+  /** Snapshot of mouseY at click time -- never overwritten by onMouseMove. */
   private clickY     = -1;
+  /** True for one frame after a left-click; consumed by tick methods. */
   private mouseClick = false;
 
+  /**
+   * Converts viewport mouse coordinates to canvas-pixel coordinates.
+   * Uses getBoundingClientRect + CSS-to-canvas scale factor so the
+   * mapping remains correct when the canvas is letterboxed or resized.
+   */
   private onMouseMove = (e: MouseEvent): void =>
   {
     const r      = this.canvas.getBoundingClientRect();
@@ -215,6 +265,10 @@ export class Game
     this.mouseY  = (e.clientY - r.top)  * scaleY;
   };
 
+  /**
+   * Handles left-click: records canvas-pixel click position and sets the
+   * mouseClick flag.  Only button 0 (left) is processed; right-click ignored.
+   */
   private onMouseDown = (e: MouseEvent): void =>
   {
     if (e.button !== 0) return;
@@ -261,10 +315,14 @@ export class Game
 
   // ── Loop ───────────────────────────────────────────────────────────────────
 
+  /** Timestamp (ms) of the previous requestAnimationFrame callback. */
   private lastTimestamp = 0;
+  /** Current requestAnimationFrame handle; 0 when the loop is stopped. */
   private rafId         = 0;
 
+  /** Current canvas width in CSS pixels (set by resize()). */
   w = 0;
+  /** Current canvas height in CSS pixels (set by resize()). */
   h = 0;
 
   /**
@@ -1062,6 +1120,8 @@ export class Game
       this.audio.updateScreech(0);
     }
 
+    // Clamp slide velocity — allow wider drift during hit recovery so the
+    // car visibly slides after a big collision instead of snapping back.
     const slideCap = this.hitCooldown > 0 ? 0.75 : 0.5;
     this.slideVelocity = Math.max(-slideCap, Math.min(slideCap, this.slideVelocity));
 
@@ -1268,6 +1328,9 @@ export class Game
       return;
     }
 
+    // Pre-compute collision response values shared across all static hit classes.
+    // "approach" measures how fast the player was moving laterally toward the
+    // object at impact — higher approach = larger restitution flick.
     const preHitSpeedRatio = this.speed / this.effectiveMaxSpeed;
     const gripFactor       = 1 - preHitSpeedRatio * preHitSpeedRatio * 0.5;
     const bumpSign         = -hit.bumpDir;

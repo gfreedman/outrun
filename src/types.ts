@@ -136,9 +136,13 @@ export interface RoadSegment
  */
 export enum CollisionClass
 {
+  /** No physical effect -- shrubs, signs pass through the car. */
   Ghost  = 'ghost',
+  /** Minor impact -- cactus: small speed scrub + lateral bump. */
   Glance = 'glance',
+  /** Hard impact -- palm trunk or billboard post: speed cap + flick. */
   Smack  = 'smack',
+  /** Building grind -- house: sustained drag + severe speed cap. */
   Crunch = 'crunch',
 }
 

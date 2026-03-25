@@ -353,20 +353,39 @@ export const CLOUD_FRAME_COUNT = 19;
 
 // ── SpriteSheetMap ────────────────────────────────────────────────────────────
 
+/**
+ * Named map of all sprite sheets the Renderer can accept.
+ *
+ * Pass a Partial<SpriteSheetMap> to the Renderer constructor -- any omitted
+ * sheets are treated as null (sprites of that type silently not drawn).
+ * Using a named map instead of positional parameters prevents silent
+ * mis-ordering bugs when sheets are added or rearranged.
+ */
 export interface SpriteSheetMap
 {
+  /** Player car sprite sheet (37-frame Ferrari Testarossa animation strip). */
   car:         SpriteLoader;
   /** One SpriteLoader per traffic car type, keyed by TrafficType. */
   trafficCars: Partial<Record<TrafficType, SpriteLoader>>;
+  /** Palm tree sprite sheet (9 palm varieties). */
   road:        SpriteLoader;
+  /** Standard billboard sprite sheet (beagle/tavern/tobacco ads). */
   billboard:   SpriteLoader;
+  /** Cactus sprite sheet (22 desert cactus varieties). */
   cactus:      SpriteLoader;
+  /** Cookie board sprite sheet (portrait cigarette signs). */
   cookie:      SpriteLoader;
+  /** Barney board sprite sheet (metal/palette ads). */
   barney:      SpriteLoader;
+  /** Big board sprite sheet (ultra-wide landscape billboards). */
   big:         SpriteLoader;
+  /** Shrub sprite sheet (short scrub, sagebrush, creosote). */
   shrub:       SpriteLoader;
+  /** Road turn-sign sprite sheet (left/right warning signs). */
   sign:        SpriteLoader;
+  /** House and building sprite sheet (25 architectural varieties). */
   house:       SpriteLoader;
+  /** Cloud sprite sheet (19 white cloud frames for sky parallax). */
   clouds:      SpriteLoader;
 }
 

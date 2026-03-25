@@ -133,10 +133,22 @@ const BAR_COLOR_UNLIT = 'rgba(80,80,80,0.5)'; // 50% transparent — background 
  */
 export interface ProjectedSeg
 {
+  /** Reference to the source road segment (for colour, sprites, etc.). */
   seg: RoadSegment;
+  /** Perspective scale at the near (p1) edge -- used by sprite sizing. */
   sc1: number;
-  sx1: number; sy1: number; sw1: number;
-  sx2: number; sy2: number; sw2: number;
+  /** Screen X centre of the near edge. */
+  sx1: number;
+  /** Screen Y of the near edge (larger = lower on screen). */
+  sy1: number;
+  /** Road half-width in pixels at the near edge. */
+  sw1: number;
+  /** Screen X centre of the far edge. */
+  sx2: number;
+  /** Screen Y of the far edge (smaller = higher on screen). */
+  sy2: number;
+  /** Road half-width in pixels at the far edge. */
+  sw2: number;
 }
 
 // ── ColorRun ──────────────────────────────────────────────────────────────────
@@ -154,9 +166,12 @@ export interface ProjectedSeg
  */
 export interface ColorRun
 {
+  /** CSS colour string shared by all segments in this run. */
   color:    string;
-  startIdx: number;   // index into projPool (nearest end of run)
-  endIdx:   number;   // index into projPool (farthest end of run)
+  /** Index into projPool of the nearest (bottom) segment in the run. */
+  startIdx: number;
+  /** Index into projPool of the farthest (top) segment in the run. */
+  endIdx:   number;
 }
 
 /**
@@ -197,23 +212,40 @@ export function buildColorRuns(
  */
 interface HudLayout
 {
-  padX:      number;   // left edge of the entire HUD cluster
-  // 7-segment speed digits
-  digitH:    number;   // height of each digit cell in pixels
-  digitW:    number;   // width of each digit cell in pixels
-  digitT:    number;   // segment line thickness in pixels
-  digitGap:  number;   // horizontal gap between adjacent digit cells
-  digitY:    number;   // top Y of the digit row
-  // "km/h" label (yellow, to the right of the digits)
-  kphX:      number;   // left X of the "km/h" text
-  kphY:      number;   // baseline Y of the "km/h" text
-  kphFont:   string;   // CSS font string for the label
-  // Single-row speed bar (below the digits)
-  barX:      number;   // left X of the bar
-  barY:      number;   // top Y of the bar
-  barH:      number;   // height of each segment rectangle
-  barSegW:   number;   // width of each segment rectangle
-  barStride: number;   // barSegW + gap between segments
+  /** Left edge of the entire HUD cluster (pixels from canvas left). */
+  padX:      number;
+
+  // ── 7-segment speed digits ──────────────────────────────────────────────
+  /** Height of each digit cell in pixels. */
+  digitH:    number;
+  /** Width of each digit cell in pixels. */
+  digitW:    number;
+  /** Segment line thickness in pixels. */
+  digitT:    number;
+  /** Horizontal gap between adjacent digit cells. */
+  digitGap:  number;
+  /** Top Y of the digit row. */
+  digitY:    number;
+
+  // ── "km/h" label (yellow, to the right of the digits) ──────────────────
+  /** Left X of the "km/h" text. */
+  kphX:      number;
+  /** Baseline Y of the "km/h" text. */
+  kphY:      number;
+  /** CSS font string for the km/h label. */
+  kphFont:   string;
+
+  // ── Single-row speed bar (below the digits) ────────────────────────────
+  /** Left X of the bar. */
+  barX:      number;
+  /** Top Y of the bar. */
+  barY:      number;
+  /** Height of each segment rectangle. */
+  barH:      number;
+  /** Width of each segment rectangle. */
+  barSegW:   number;
+  /** Total stride per segment (barSegW + inter-segment gap). */
+  barStride: number;
 }
 
 // ── Helper: fillSegment ───────────────────────────────────────────────────────
@@ -1191,7 +1223,9 @@ export class Renderer
 
         const sprW = sprH * (rect.w / rect.h) * (si.stretchX ?? 1);
 
-        // Board sprites anchor from their road-facing inner edge.
+        // Board sprites anchor from their road-facing inner edge so the
+        // painted side faces the driver.  Non-board sprites (trees, etc.)
+        // are centre-anchored so they look natural from either side.
         const isBoard  = family === 'billboard' || family === 'cookie' || family === 'barney' || family === 'big';
         const drawX = isBoard
           ? (si.worldX > 0 ? Math.round(sprX) : Math.round(sprX - sprW))
@@ -2958,6 +2992,12 @@ export class Renderer
    * Both gates use vertical posts + horizontal beam.
    * Start = red/white alternating vertical stripes.
    * Finish = black/white checkerboard.
+   *
+   * @param isFinish - True for checkerboard finish gate, false for red/white start.
+   * @param x        - Left edge of the gate in canvas pixels.
+   * @param y        - Top edge of the gate in canvas pixels.
+   * @param gw       - Total gate width in canvas pixels.
+   * @param gh       - Total gate height in canvas pixels.
    */
   private drawGate(isFinish: boolean, x: number, y: number, gw: number, gh: number): void
   {
@@ -2966,27 +3006,29 @@ export class Renderer
     const beamH   = Math.max(4, Math.round(gh * 0.12));
     const postH   = gh - beamH;
 
-    // Posts
+    // Vertical support posts on left and right sides
     ctx.fillStyle = '#CCCCCC';
     ctx.fillRect(x,                    y + beamH, postW, postH);
     ctx.fillRect(x + gw - postW,       y + beamH, postW, postH);
 
-    // Horizontal beam with alternating stripes
+    // Horizontal beam: stripe count scales with gate width so stripes
+    // remain roughly square regardless of perspective foreshortening.
     const stripeCount = Math.max(4, Math.round(gw / beamH));
     const stripeW     = gw / stripeCount;
     for (let i = 0; i < stripeCount; i++)
     {
       const even = i % 2 === 0;
       ctx.fillStyle = isFinish
-        ? (even ? '#FFFFFF' : '#222222')
-        : (even ? '#DD0000' : '#FFFFFF');
+        ? (even ? '#FFFFFF' : '#222222')   // checkerboard for finish
+        : (even ? '#DD0000' : '#FFFFFF');  // red/white for start
       ctx.fillRect(Math.round(x + i * stripeW), y, Math.ceil(stripeW), beamH);
     }
+    // Thin border around the entire beam
     ctx.strokeStyle = '#333333';
     ctx.lineWidth   = 1;
     ctx.strokeRect(x, y, gw, beamH);
 
-    // Banner text
+    // Banner text centred on the beam (outlined for legibility)
     const label = isFinish ? 'FINISH' : 'START';
     const fs    = Math.min(beamH * 0.75, 28);
     ctx.font      = `bold ${Math.round(fs)}px Impact, sans-serif`;

@@ -34,11 +34,17 @@ import {
  */
 export enum TrafficType
 {
+  /** Standard yellow traffic car -- the most common obstacle. */
   Car     = 'car',
+  /** Purple dinosaur car -- awards afterburner boost on kill. */
   Barney  = 'barney',
+  /** Small blue speedster -- fast-moving, harder to catch. */
   GottaGo = 'gottago',
+  /** Green Yoshi-themed car -- standard traffic behaviour. */
   Yoshi   = 'yoshi',
+  /** Yellow banana car -- standard traffic behaviour. */
   Banana  = 'banana',
+  /** Blue mega car -- standard traffic behaviour. */
   Mega    = 'mega',
 }
 
@@ -62,6 +68,11 @@ export interface TrafficCar
   spinAngle: number;
 }
 
+/**
+ * Result returned by checkTrafficCollision() when a player-to-traffic
+ * overlap is detected.  Contains the bump direction, closing speed, and
+ * a reference to the struck car so the caller can apply lateral kick.
+ */
 export interface TrafficHitResult
 {
   /**

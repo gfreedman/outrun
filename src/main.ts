@@ -8,6 +8,7 @@
 import { Game }                     from './game';
 import { GameMode, GameSettings }   from './types';
 
+/** The single <canvas> element where the entire game is rendered. */
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 
 /**
@@ -35,8 +36,11 @@ function loadPersistedSettings(): GameSettings | undefined
 
 const game = new Game(canvas, loadPersistedSettings());
 
+/** Maximum windowed canvas width in CSS pixels (matches 720p). */
 const MAX_CANVAS_W = 1280;
+/** Maximum windowed canvas height in CSS pixels (matches 720p). */
 const MAX_CANVAS_H = 720;
+/** Target aspect ratio (16:9) used for letter/pillar-boxing. */
 const ASPECT       = MAX_CANVAS_W / MAX_CANVAS_H;   // 16 / 9
 
 /**

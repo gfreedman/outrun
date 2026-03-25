@@ -113,7 +113,14 @@ function makePRNG(seed: number): {
   pick: <T>(arr: readonly T[]) => T;
 }
 {
+  // Force to unsigned 32-bit integer for bitwise operations
   let s = seed >>> 0;
+
+  /**
+   * Returns a pseudo-random float in [0, 1).
+   * Uses the Mulberry32 algorithm: three mix/multiply rounds on a
+   * single 32-bit state variable.  Period is 2^32 before repeating.
+   */
   const rand = (): number =>
   {
     s += 0x6D2B79F5;
@@ -122,10 +129,15 @@ function makePRNG(seed: number): {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967295;
   };
+
+  /** Returns a pseudo-random integer in [lo, hi] inclusive. */
   const rInt = (lo: number, hi: number): number =>
     Math.floor(rand() * (hi - lo + 1)) + lo;
+
+  /** Returns a uniformly random element from the given array. */
   const pick = <T>(arr: readonly T[]): T =>
     arr[Math.floor(rand() * arr.length)];
+
   return { rand, rInt, pick };
 }
 
@@ -140,13 +152,21 @@ function makePRNG(seed: number): {
  */
 export interface SerializedSegment
 {
+  /** Sequential segment index (0-based). */
   index:   number;
+  /** Horizontal curve strength for this segment. */
   curve:   number;
+  /** Pre-computed colour set (road, grass, rumble, lane). */
   color:   SegmentColor;
+  /** Roadside objects attached to this segment (empty array if none). */
   sprites: SpriteInstance[];
+  /** Near edge (p1) world Y coordinate (height above ground). */
   p1y:     number;
+  /** Near edge (p1) world Z coordinate (depth along road). */
   p1z:     number;
+  /** Far edge (p2) world Y coordinate (height above ground). */
   p2y:     number;
+  /** Far edge (p2) world Z coordinate (depth along road). */
   p2z:     number;
 }
 
@@ -176,7 +196,12 @@ export class Road
   private boardLastPlaced: [number, number] = [-999, -999];
   private static readonly MIN_BOARD_GAP = 45;
 
-  /** Builds the track layout immediately on construction. */
+  /**
+   * Builds the track layout immediately on construction.
+   *
+   * @param variant - 'default' for the Coconut Beach / Nurburgring course,
+   *                  'hard' for the extended hard-mode course.
+   */
   constructor(variant: 'default' | 'hard' = 'default')
   {
     if (variant === 'hard') this.resetHardRoad();
@@ -1450,7 +1475,9 @@ export class Road
 
   /**
    * Serializes all segments to the minimal format understood by fromData().
-   * Called by scripts/generate-road.ts at build time — not used at runtime.
+   * Called by scripts/generate-road.ts at build time -- not used at runtime.
+   *
+   * @returns Array of SerializedSegment objects suitable for JSON.stringify().
    */
   toJSON(): SerializedSegment[]
   {

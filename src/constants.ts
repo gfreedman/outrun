@@ -249,9 +249,14 @@ export const PARALLAX_SKY   = 0.001;
 export const COLLISION_WINDOW = [-1, 0, 1, 2] as const;
 
 // ── Hit detection — lateral hitbox half-widths (world units) ─────────────────
+
+/** Lateral half-width for cactus collision detection (world units). */
 export const HITBOX_CACTUS    = 450;
+/** Lateral half-width for palm tree collision detection (world units). */
 export const HITBOX_PALM      = 550;
+/** Lateral half-width for billboard collision detection (world units). */
 export const HITBOX_BILLBOARD = 700;
+/** Lateral half-width for house collision detection (world units). */
 export const HITBOX_HOUSE     = 950;
 
 /**
@@ -282,25 +287,44 @@ export const NEAR_MISS_RATIO  = 1.5;
 export const NEAR_MISS_WOBBLE = 0.015;
 
 // ── Glance (cactus) ───────────────────────────────────────────────────────────
+
+/** Speed multiplier on cactus impact (0.87 = 13% speed loss). */
 export const HIT_GLANCE_SPEED_MULT    = 0.87;
+/** Lateral bump magnitude (road-widths) applied on cactus impact. */
 export const HIT_GLANCE_BUMP          = 0.04;
+/** Collision cooldown (seconds) after a cactus hit before next detection. */
 export const HIT_GLANCE_COOLDOWN      = 0.30;
 
 // ── Smack (palm / billboard) ──────────────────────────────────────────────────
+
+/** Speed multiplier on palm/billboard impact (0.52 = 48% speed loss). */
 export const HIT_SMACK_SPEED_MULT     = 0.52;
-export const HIT_SMACK_SPEED_CAP      = 0.55;   // fraction of PLAYER_MAX_SPEED
+/** Hard speed cap after smack, as a fraction of PLAYER_MAX_SPEED. */
+export const HIT_SMACK_SPEED_CAP      = 0.55;
+/** Lateral bump magnitude (road-widths) applied on smack impact. */
 export const HIT_SMACK_BUMP           = 0.14;
+/** Collision cooldown (seconds) after a smack before next detection. */
 export const HIT_SMACK_COOLDOWN       = 0.85;
-export const HIT_SMACK_RECOVERY_BOOST = 1.5;    // accel multiplier post-hit
-export const HIT_SMACK_RECOVERY_TIME  = 1.2;    // seconds of boosted recovery
+/** Acceleration multiplier during the post-smack recovery window. */
+export const HIT_SMACK_RECOVERY_BOOST = 1.5;
+/** Duration (seconds) of boosted acceleration after a smack. */
+export const HIT_SMACK_RECOVERY_TIME  = 1.2;
 
 // ── Crunch (house) ────────────────────────────────────────────────────────────
-export const HIT_CRUNCH_SPEED_CAP      = 0.08;  // fraction of PLAYER_MAX_SPEED
-export const HIT_CRUNCH_GRIND_DECEL    = 7800;  // wu/s² sustained drag
-export const HIT_CRUNCH_GRIND_TIME     = 2.0;   // seconds of grind
+
+/** Hard speed cap after house crunch, as a fraction of PLAYER_MAX_SPEED. */
+export const HIT_CRUNCH_SPEED_CAP      = 0.08;
+/** Sustained drag (wu/s²) applied during the grind timer. */
+export const HIT_CRUNCH_GRIND_DECEL    = 7800;
+/** Duration (seconds) of the sustained grind drag after a house hit. */
+export const HIT_CRUNCH_GRIND_TIME     = 2.0;
+/** Lateral bump magnitude (road-widths) applied on house crunch. */
 export const HIT_CRUNCH_BUMP           = 0.22;
+/** Collision cooldown (seconds) after a house crunch before next detection. */
 export const HIT_CRUNCH_COOLDOWN       = 1.50;
+/** Acceleration multiplier during the post-crunch recovery window. */
 export const HIT_CRUNCH_RECOVERY_BOOST = 2.0;
+/** Duration (seconds) of boosted acceleration after a house crunch. */
 export const HIT_CRUNCH_RECOVERY_TIME  = 2.0;
 
 // ── Collision restitution factors ─────────────────────────────────────────────
@@ -333,11 +357,18 @@ export const OFFROAD_JITTER_BLEND    = 8;
 export const OFFROAD_JITTER_DECAY    = 15;
 
 // ── Camera shake ──────────────────────────────────────────────────────────────
-export const SHAKE_GLANCE_INTENSITY   = 4;      // max screen offset in px
+
+/** Maximum screen pixel offset during a glance (cactus) camera shake. */
+export const SHAKE_GLANCE_INTENSITY   = 4;
+/** Duration (seconds) of cactus camera shake. */
 export const SHAKE_GLANCE_DURATION    = 0.08;
+/** Maximum screen pixel offset during a smack (palm/billboard) camera shake. */
 export const SHAKE_SMACK_INTENSITY    = 14;
+/** Duration (seconds) of smack camera shake. */
 export const SHAKE_SMACK_DURATION     = 0.25;
+/** Maximum screen pixel offset during a crunch (house) camera shake. */
 export const SHAKE_CRUNCH_INTENSITY   = 10;
+/** Duration (seconds) of house crunch camera shake. */
 export const SHAKE_CRUNCH_DURATION    = 1.00;
 
 // ── Speed floor during any collision ─────────────────────────────────────────
