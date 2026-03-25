@@ -267,6 +267,17 @@ export class Game
   w = 0;
   h = 0;
 
+  /**
+   * Creates a Game instance bound to the given canvas.
+   *
+   * Instantiates the Renderer, InputManager, and AudioManager, loads all
+   * sprite sheets and audio assets via a Preloader, then waits in the
+   * PRELOADING phase until every asset resolves before advancing to INTRO.
+   *
+   * @param canvas           - The HTML canvas element to render into.
+   * @param initialSettings  - Optional settings override (e.g. from tests).
+   *                           Falls back to localStorage, then defaults.
+   */
   constructor(canvas: HTMLCanvasElement, initialSettings?: GameSettings)
   {
     this.canvas   = canvas;
