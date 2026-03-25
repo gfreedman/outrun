@@ -71,8 +71,14 @@ import
   FINISHING_DURATION, FINISHING_DECEL,
 } from './constants';
 
+/** localStorage key used to persist GameSettings between sessions. */
 const STORAGE_KEY = 'outrun_settings';
 
+/**
+ * Reads persisted GameSettings from localStorage.
+ * Falls back to { mode: MEDIUM, soundEnabled: true } if nothing is stored
+ * or the stored value is malformed.
+ */
 function loadSettings(): GameSettings
 {
   try
@@ -91,12 +97,28 @@ function loadSettings(): GameSettings
   return { mode: GameMode.MEDIUM, soundEnabled: true };
 }
 
+/**
+ * Writes GameSettings to localStorage so they survive page reloads.
+ * Silently ignores quota / private-browsing errors.
+ */
 function saveSettings(s: GameSettings): void
 {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
   catch { /* quota / private-mode */ }
 }
 
+/**
+ * Top-level game controller.
+ *
+ * Owns the state machine (GamePhase), all physics state, the Renderer,
+ * InputManager, AudioManager, and the rAF loop.  The HTML page creates one
+ * Game instance and calls start() / resize() — everything else is internal.
+ *
+ * State machine summary:
+ *   PRELOADING → INTRO → COUNTDOWN → PLAYING ─┬→ FINISHING → GOAL
+ *                                               └→ TIMEUP
+ *   GOAL / TIMEUP → INTRO (via exitToMenu or user input)
+ */
 export class Game
 {
   private canvas:   HTMLCanvasElement;
@@ -326,6 +348,10 @@ export class Game
     });
   }
 
+  /**
+   * Starts the requestAnimationFrame loop.
+   * Safe to call multiple times — ignored if the loop is already running.
+   */
   start(): void
   {
     if (this.rafId !== 0) return;
@@ -333,14 +359,29 @@ export class Game
     this.rafId = requestAnimationFrame(this.loop);
   }
 
+  /**
+   * Cancels the requestAnimationFrame loop.
+   * The game state is preserved; call start() to resume.
+   */
   stop(): void
   {
     cancelAnimationFrame(this.rafId);
     this.rafId = 0;
   }
 
+  /**
+   * Updates the logical canvas resolution.
+   * Called by main.ts on every window resize and fullscreen change.
+   *
+   * @param w - New canvas width in CSS pixels.
+   * @param h - New canvas height in CSS pixels.
+   */
   resize(w: number, h: number): void { this.w = w; this.h = h; }
 
+  /**
+   * Stops the loop and removes all event listeners.
+   * Call when the game is being torn down (e.g. SPA navigation).
+   */
   destroy(): void
   {
     this.stop();
@@ -351,6 +392,13 @@ export class Game
 
   // ── Main loop ──────────────────────────────────────────────────────────────
 
+  /**
+   * The requestAnimationFrame callback.  Computes a capped delta-time,
+   * dispatches to the active phase tick function, then re-schedules itself.
+   *
+   * dt is capped at MAX_FRAME_DT (1/30 s) so a tab wake-up after a long
+   * background pause never causes a giant physics jump.
+   */
   private loop = (timestamp: number): void =>
   {
     const dt = Math.min((timestamp - this.lastTimestamp) / 1000, MAX_FRAME_DT);
@@ -372,6 +420,10 @@ export class Game
 
   // ── Phase: PRELOADING ──────────────────────────────────────────────────────
 
+  /**
+   * Renders the loading progress bar each frame while assets download.
+   * No physics or input are processed during this phase.
+   */
   private tickPreload(): void
   {
     const progress = this.preloader?.progress ?? 0;
@@ -380,6 +432,19 @@ export class Game
 
   // ── Phase: INTRO ───────────────────────────────────────────────────────────
 
+  /**
+   * Processes input and renders the title/menu screen each frame.
+   *
+   * Handles three sub-states based on menuSubMenu:
+   *   null       → main menu: arrow-key focus + Enter/click on START/MODE/SETTINGS.
+   *   'mode'     → difficulty picker: up/down selects; Enter or click confirms.
+   *   'settings' → options panel: Enter/click toggles sound; Escape/click-out closes.
+   *
+   * Button hit-areas are registered by the renderer; this method calls btn.tick()
+   * immediately after to compute hover/click state for this frame.
+   *
+   * @param dt - Frame delta-time (used only to advance pulseClock).
+   */
   private tickIntro(dt: number): void
   {
     this.pulseClock += dt;
@@ -506,6 +571,16 @@ export class Game
   }
 
 
+  /**
+   * Initialises all race state and transitions to COUNTDOWN.
+   * Called when the player confirms START from the intro menu, or hits PLAY AGAIN.
+   *
+   * Responsibilities:
+   *   - Selects the correct road data (EASY = default, MEDIUM/HARD = hard course).
+   *   - Applies mode-specific hill/curve scaling and injects the finish celebration.
+   *   - Resets all physics, collision, scoring, and timer fields.
+   *   - Starts music and requests fullscreen (first interaction allowed by browsers).
+   */
   private beginRace(): void
   {
     // EASY uses the base Nürburgring course; MEDIUM and HARD use the hard course layout
@@ -569,7 +644,11 @@ export class Game
       document.documentElement.requestFullscreen().catch(() => { /* permission denied — stay windowed */ });
   }
 
-  /** Return to INTRO and exit fullscreen if active. */
+  /**
+   * Returns to the INTRO phase.
+   * Silences all audio, clears engine/screech, stops music, and exits
+   * fullscreen if it was active.  Safe to call from any in-game phase.
+   */
   private exitToMenu(): void
   {
     this.audio.silenceEngine();
@@ -583,6 +662,15 @@ export class Game
 
   // ── Phase: COUNTDOWN ──────────────────────────────────────────────────────
 
+  /**
+   * Advances the 3-2-1-GO! countdown sequence.
+   *
+   * The road scene is rendered but the car is stationary (update() is not called).
+   * A tone is played on each transition.  After "GO!" has shown for 0.7 s the
+   * phase advances to PLAYING.
+   *
+   * @param dt - Frame delta-time in seconds.
+   */
   private tickCountdown(dt: number): void
   {
     this.countdownTimer += dt;
@@ -617,6 +705,19 @@ export class Game
 
   // ── Phase: PLAYING ─────────────────────────────────────────────────────────
 
+  /**
+   * The main gameplay tick — called every frame during the race.
+   *
+   * Per-frame order:
+   *   1. Advance race/countdown timers; accumulate score at current speed.
+   *   2. Tick music and run full physics update().
+   *   3. Render the road scene (drawRace).
+   *   4. Process QUIT button.
+   *   5. Check finish-line crossing → FINISHING.
+   *   6. Check time expiry → TIMEUP.
+   *
+   * @param dt - Frame delta-time in seconds.
+   */
   private tickPlaying(dt: number): void
   {
     this.raceTimer        += dt;
@@ -679,6 +780,16 @@ export class Game
   // immediately — car crosses the finish gate and skids to a stop just past it.
   // Confetti rains throughout.  After FINISHING_DURATION → GOAL screen.
 
+  /**
+   * Plays the post-finish cinematic: hard deceleration, sideways skid, and
+   * confetti rain.  The car rolls at most 12 segments past the gate so it
+   * stops inside the billboard celebration zone.
+   *
+   * No player input is accepted during this phase.
+   * After FINISHING_DURATION seconds the phase advances to GOAL.
+   *
+   * @param dt - Frame delta-time in seconds.
+   */
   private tickFinishing(dt: number): void
   {
     this.finishingTimer += dt;
@@ -742,6 +853,11 @@ export class Game
 
   // ── Phase: GOAL ────────────────────────────────────────────────────────────
 
+  /**
+   * Renders the GOAL results screen each frame and handles dismissal input.
+   * The road scene stays rendered in the background (car is frozen at the gate).
+   * Enter / PLAY AGAIN → beginRace(); Escape / MAIN MENU → exitToMenu().
+   */
   private tickGoal(): void
   {
     this.drawRace();
@@ -767,6 +883,13 @@ export class Game
 
   // ── Phase: TIMEUP ──────────────────────────────────────────────────────────
 
+  /**
+   * Decelerates the car to a stop after the countdown reaches zero, then
+   * shows the TIME UP overlay until the player presses CONTINUE.
+   * Engine audio fades with speed.  Enter / Escape / CONTINUE → exitToMenu().
+   *
+   * @param dt - Frame delta-time in seconds.
+   */
   private tickTimeUp(dt: number): void
   {
     // Decelerate to a stop; fade engine with speed
@@ -798,6 +921,24 @@ export class Game
 
   // ── Physics update (PLAYING only) ─────────────────────────────────────────
 
+  /**
+   * Advances all player physics by one time step.  Called only in PLAYING phase.
+   *
+   * Processing order (order matters — later steps read values set by earlier ones):
+   *   1. Throttle / brake / coast → raw speed.
+   *   2. Barney afterburner → override speed cap.
+   *   3. Steering input → playerX.
+   *   4. Centrifugal force → playerX drift.
+   *   5. Drift / oversteer → slideVelocity accumulates and decays.
+   *   6. Visual steer angle (sprite frame only, not physics).
+   *   7. Off-road detection → speed cap + terrain jitter.
+   *   8. Collision detection and response.
+   *   9. Advance playerZ, distanceTravelled.
+   *  10. Update traffic positions.
+   *  11. Update engine audio.
+   *
+   * @param dt - Frame delta-time in seconds (already capped at MAX_FRAME_DT).
+   */
   private update(dt: number): void
   {
     const { input } = this;
@@ -813,16 +954,21 @@ export class Game
       let accel: number;
       if (speedRatio < ACCEL_LOW_BAND)
       {
+        // Low-speed band (0–15%): smoothstep ramp from ACCEL_LOW → ACCEL_MID.
+        // Simulates tyres finding grip during launch — avoids a violent snap at t=0.
         const t      = speedRatio / ACCEL_LOW_BAND;
         const smooth = t * t * (3 - 2 * t);
         accel = PLAYER_ACCEL_LOW + (PLAYER_ACCEL_MID - PLAYER_ACCEL_LOW) * smooth;
       }
       else if (speedRatio < ACCEL_HIGH_BAND)
       {
+        // Mid-band (15–80%): constant peak thrust — the main power band.
         accel = PLAYER_ACCEL_MID;
       }
       else
       {
+        // Terminal taper (80–100%): thrust falls linearly to 0 at max speed.
+        // Models aero drag overpowering engine output near the top-speed plateau.
         accel = PLAYER_ACCEL_MID * (1 - speedRatio) / (1 - ACCEL_HIGH_BAND);
       }
 
@@ -855,6 +1001,9 @@ export class Game
 
     // ── Steering ───────────────────────────────────────────────────────────
 
+    // gripFactor reduces available lateral authority at high speed (quadratic).
+    // At rest: gripFactor=1.0 (full authority).
+    // At max speed: gripFactor=0.5 (50% — tyre slip on cold rubber).
     const gripFactor = 1 - speedRatio * speedRatio * 0.5;
     if (this.speed > 0)
     {
@@ -965,6 +1114,17 @@ export class Game
 
   // ── Collision ──────────────────────────────────────────────────────────────
 
+  /**
+   * Pushes the player away from any solid (Smack/Crunch) objects within the
+   * COLLISION_WINDOW segment range.  This is a positional constraint applied
+   * every frame (regardless of hitCooldown) so the car cannot phase through
+   * a solid object by approaching it from the side.
+   *
+   * Only fires when the player is already off-road (|playerX| >= COLLISION_MIN_OFFSET).
+   * On-road players cannot overlap road-edge objects by definition.
+   *
+   * @param segIdx - Index of the segment the player is currently on.
+   */
   private blockSolidObjects(segIdx: number): void
   {
     if (Math.abs(this.playerX) < COLLISION_MIN_OFFSET) return;
@@ -985,6 +1145,24 @@ export class Game
     }
   }
 
+  /**
+   * Ticks all collision timers, runs solid-object blocking, then tests for
+   * new static-sprite and traffic collisions.
+   *
+   * Static-sprite collisions (checkCollisions) are tested first.  If a hit
+   * is found, traffic collision testing is skipped for this frame — the car
+   * can only take one hit class per cooldown window.
+   *
+   * Traffic collision handling distinguishes two cases:
+   *   - Barney hit: triggers afterburner, no penalty.
+   *   - Regular hit: speed penalty + lateral flick + time penalty (−1 s).
+   *   - Afterburner active: bulldoze through — no penalty, the struck car
+   *     gets flung hard.
+   *
+   * Near-misses apply a cosmetic wobble nudge but no speed or score penalty.
+   *
+   * @param dt - Frame delta-time in seconds.
+   */
   private updateCollisions(dt: number): void
   {
     this.hitCooldown      = Math.max(0, this.hitCooldown      - dt);
@@ -1144,6 +1322,14 @@ export class Game
 
   // ── Draw helpers ───────────────────────────────────────────────────────────
 
+  /**
+   * Issues a single renderer.render() call with all current game state.
+   * The steer angle is augmented by a small drift visual (`-slideVelocity × 0.15`)
+   * so the car sprite leans in the direction of an active rear-wheel slide.
+   *
+   * Used by tickPlaying, tickCountdown, tickGoal, and tickTimeUp — any phase
+   * that needs the live road scene behind its overlay.
+   */
   private drawRace(): void
   {
     const { renderer, road, w, h } = this;

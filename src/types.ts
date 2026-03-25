@@ -144,26 +144,49 @@ export enum CollisionClass
 
 // ── Game state ────────────────────────────────────────────────────────────────
 
+/**
+ * Drives the top-level state machine in Game.
+ * Each value corresponds to one tickXxx() method and one distinct screen.
+ */
 export enum GamePhase
 {
-  PRELOADING,  // Asset loading with progress bar
-  INTRO,       // Title / menu screen
-  COUNTDOWN,   // 3-2-1-GO sequence
-  PLAYING,     // Active race
-  FINISHING,   // Car crossed finish — cinematic slide to stop + confetti
-  GOAL,        // GOAL! results screen with billboards
-  TIMEUP,      // Clock expired before finish — TIME UP screen
+  /** Sprite sheets downloading — progress bar shown, no input. */
+  PRELOADING,
+  /** Title / menu screen — GAME MODE, SETTINGS, START. */
+  INTRO,
+  /** 3-2-1-GO! countdown sequence — road visible, car frozen. */
+  COUNTDOWN,
+  /** Active race — full physics, timers, scoring, traffic. */
+  PLAYING,
+  /** Car crossed the finish line — cinematic deceleration + confetti. */
+  FINISHING,
+  /** GOAL! results panel — score + race time + buttons. */
+  GOAL,
+  /** Clock hit zero before the finish line — TIME UP overlay. */
+  TIMEUP,
 }
 
+/**
+ * Available difficulty levels.  Determines road course, traffic density,
+ * speed cap, and hill/curve scaling.  Stored in localStorage via GameSettings.
+ */
 export enum GameMode
 {
+  /** Gentle road, one traffic car, capped at ~195 km/h. */
   EASY   = 'easy',
+  /** Full-strength hard course at 293 km/h with 4 traffic cars. */
   MEDIUM = 'medium',
+  /** Hard course at 358 km/h with 8 traffic cars — survival mode. */
   HARD   = 'hard',
 }
 
+/**
+ * Persisted user preferences, stored in localStorage between sessions.
+ */
 export interface GameSettings
 {
+  /** Currently selected difficulty. */
   mode:         GameMode;
+  /** Whether engine/screech/crash audio is enabled. */
   soundEnabled: boolean;
 }

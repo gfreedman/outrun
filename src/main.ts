@@ -10,6 +10,11 @@ import { GameMode, GameSettings }   from './types';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 
+/**
+ * Attempts to read previously saved GameSettings from localStorage.
+ * Returns undefined if nothing was stored, the value was malformed, or
+ * localStorage is unavailable (private browsing / quota error).
+ */
 function loadPersistedSettings(): GameSettings | undefined
 {
   try
@@ -34,6 +39,16 @@ const MAX_CANVAS_W = 1280;
 const MAX_CANVAS_H = 720;
 const ASPECT       = MAX_CANVAS_W / MAX_CANVAS_H;   // 16 / 9
 
+/**
+ * Resizes the canvas to fill the window while preserving a 16:9 aspect ratio.
+ *
+ * In fullscreen: expands to the raw display size (no cap, letterbox removed).
+ * Windowed: capped at 1280×720 with letter/pillar-boxing via CSS margin.
+ *
+ * The canvas logical size (canvas.width / height) equals the CSS pixel size —
+ * no DPR scaling is applied.  This gives a deliberate retina "upscale" on
+ * high-DPI displays, which suits the chunky pixel-art aesthetic.
+ */
 function resize(): void
 {
   const vw = window.innerWidth;

@@ -1265,19 +1265,12 @@ export class Road
   // ── Lookup ────────────────────────────────────────────────────────────────
 
   /**
-   * Returns the segment the player is currently standing on.
+   * Returns the index of the segment beneath a world-space Z position.
    *
    * playerZ increases as the player moves forward.  We divide by SEGMENT_LENGTH
-   * to find which "slot" the player is in, then wrap around using modulo so the
-   * track loops seamlessly when the player reaches the end.
-   *
-   * @param playerZ - Player's current depth position in world units.
-   * @returns The RoadSegment beneath the player.
-   */
-  /**
-   * Returns the index of the segment beneath a world-space Z position.
-   * Handles both the +n wrap guard (so negative Z never yields -1) and
-   * the modulo wrap for track looping — the single authoritative formula.
+   * to find which "slot" the player is in, then wrap modulo the track length so
+   * the road loops seamlessly.  The double-modulo (+n % n) guards against
+   * negative Z before the first frame.
    *
    * @param z - World-space depth position (may be negative before first frame).
    * @returns Segment index in [0, count).
@@ -1288,6 +1281,13 @@ export class Road
     return ((Math.floor(z / SEGMENT_LENGTH) % n) + n) % n;
   }
 
+  /**
+   * Returns the RoadSegment beneath a world-space Z position.
+   * Convenience wrapper around findSegmentIndex().
+   *
+   * @param playerZ - World-space depth position.
+   * @returns The RoadSegment the player is currently on.
+   */
   findSegment(playerZ: number): RoadSegment
   {
     return this._segments[this.findSegmentIndex(playerZ)];
@@ -1426,6 +1426,8 @@ export class Road
       });
     }
 
+    // Walk the ±spread window around the gate, layering in celebration sprites.
+    // `rel` is the distance from startSeg (0 = nearest before spread, spread*2 = end).
     for (let idx = startSeg; idx <= endSeg; idx++)
     {
       const seg = this._segments[idx];

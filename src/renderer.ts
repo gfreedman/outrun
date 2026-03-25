@@ -728,10 +728,20 @@ function drawSegDigit(
 
 // ── Renderer ──────────────────────────────────────────────────────────────────
 
+/**
+ * Stateless (per-frame) renderer for the OutRun game.
+ *
+ * Owns no game logic — receives all state as parameters to render().
+ * All expensive objects (gradient, projection pool, HUD layout) are cached
+ * internally and only rebuilt when dimensions or display state change.
+ */
 export class Renderer
 {
+  /** The 2-D canvas rendering context obtained from the canvas at construction. */
   private ctx:              CanvasRenderingContext2D;
 
+  // One SpriteLoader per roadside object family.  null when the sheet was not
+  // provided to the constructor — sprites of that family are silently skipped.
   private carSprites:       SpriteLoader | null;
   private roadSprites:      SpriteLoader | null;
   private billboardSprites: SpriteLoader | null;
@@ -1739,6 +1749,16 @@ export class Renderer
 
   // ── Preloader screen ───────────────────────────────────────────────────────
 
+  /**
+   * Draws the loading screen shown while sprite sheets are downloading.
+   * Replaces the canvas with a black fill, "LOADING…" text, and an orange
+   * progress bar.  On error, shows the error message in red instead.
+   *
+   * @param w        - Canvas width.
+   * @param h        - Canvas height.
+   * @param progress - Fraction [0, 1] of assets loaded so far.
+   * @param error    - If defined, an error message replaces the progress bar.
+   */
   renderPreloader(w: number, h: number, progress: number, error?: string): void
   {
     const { ctx } = this;
@@ -1783,6 +1803,31 @@ export class Renderer
 
   // ── Intro / menu screen ────────────────────────────────────────────────────
 
+  /**
+   * Draws the title / main-menu screen.
+   *
+   * If a hero image is available it fills the background (letterboxed); otherwise
+   * a sky gradient + road strip + "OUT RUN" title is generated.  All interactive
+   * elements — menu buttons, sub-menu overlays — are drawn on top.
+   *
+   * Sub-menu routing:
+   *   subMenu === 'mode'     → drawModeMenu overlay
+   *   subMenu === 'settings' → drawSettingsPanel overlay
+   *   subMenu === null       → main three-button row (GAME MODE / START / SETTINGS)
+   *
+   * Button hit-areas are registered HERE each frame (via btn.setRect) so that
+   * game.ts can call btn.tick() immediately afterwards with the current mouse pos.
+   *
+   * @param w            - Canvas width.
+   * @param h            - Canvas height.
+   * @param selectedItem - Currently focused main-menu item (keyboard nav).
+   * @param selectedMode - Currently active difficulty string.
+   * @param soundEnabled - Whether sound is on (shown in settings panel).
+   * @param subMenu      - Which sub-menu overlay is open, or null for main menu.
+   * @param pulse        - Alternating bool (2 Hz) for blinking "press start" effects.
+   * @param heroImage    - Pre-loaded hero JPEG, or null to use procedural background.
+   * @param btns         - All interactive Button objects used on this screen.
+   */
   renderIntro(
     w: number, h: number,
     selectedItem:  'start' | 'mode' | 'settings',
@@ -1935,6 +1980,23 @@ export class Renderer
     ctx.restore();
   }
 
+  /**
+   * Draws the difficulty-selection overlay (three full-width horizontal bands).
+   *
+   * Each band shows the mode name, a one-line description (when selected), and
+   * a coloured left chevron.  The layout uses fixed proportions of h so it
+   * scales correctly at any canvas height.
+   *
+   * IMPORTANT: band geometry (bandH, bandTop) MUST match `modeCardAt()` in
+   * game.ts — they share the same layout contract.
+   *
+   * @param w            - Canvas width.
+   * @param h            - Canvas height.
+   * @param imgX         - Left edge of the hero image (menu constrained to this).
+   * @param imgW         - Width of the hero image.
+   * @param selectedMode - Currently highlighted mode key.
+   * @param btns         - Easy / Medium / Hard Button objects.
+   */
   private drawModeMenu(w: number, h: number, imgX: number, imgW: number, selectedMode: string, btns?: { easy: Button; medium: Button; hard: Button }): void
   {
     const { ctx } = this;
@@ -2025,6 +2087,19 @@ export class Renderer
     );
   }
 
+  /**
+   * Draws the OPTIONS panel (a centered modal over the hero image).
+   *
+   * Contains:
+   *   - Title bar with orange background + CLOSE button (top-right).
+   *   - SOUND toggle pill (◀ ON ▶ / ◀ OFF ▶).
+   *   - ABOUT section with a clickable GitHub link.
+   *
+   * @param w            - Canvas width.
+   * @param h            - Canvas height.
+   * @param soundEnabled - Current sound toggle state (drives pill display).
+   * @param btns         - Close / Sound / Github Button objects.
+   */
   private drawSettingsPanel(w: number, h: number, soundEnabled: boolean, btns?: { close: Button; sound: Button; github: Button }): void
   {
     const { ctx } = this;
@@ -2152,6 +2227,15 @@ export class Renderer
 
   // ── Countdown overlay ──────────────────────────────────────────────────────
 
+  /**
+   * Draws the large 3-2-1-GO! countdown text over the road scene.
+   * The text is centred horizontally and sits just below the vertical midpoint.
+   * "GO!" uses a green fill; numbers use white — both have a thick black outline.
+   *
+   * @param w     - Canvas width.
+   * @param h     - Canvas height.
+   * @param value - Current countdown step: 3, 2, 1, or the string 'GO!'.
+   */
   renderCountdown(w: number, h: number, value: number | 'GO!'): void
   {
     const { ctx } = this;
@@ -2177,6 +2261,18 @@ export class Renderer
 
   // ── Barney afterburner screen effect ──────────────────────────────────────
 
+  /**
+   * Draws the Barney afterburner screen effect — a radial purple/orange glow
+   * plus pulsing top/bottom edge bars.  Alpha fades in over the first 0.5 s
+   * and pulses at ~6 Hz throughout.
+   *
+   * Rendered between the road and the HUD so it feels like a lens effect
+   * rather than an overlay on top of UI elements.
+   *
+   * @param w     - Canvas width.
+   * @param h     - Canvas height.
+   * @param timer - Seconds remaining on the boost (used for fade-in alpha).
+   */
   private renderAfterburner(w: number, h: number, timer: number): void
   {
     const { ctx } = this;
@@ -2200,6 +2296,24 @@ export class Renderer
 
   // ── GOAL! screen ───────────────────────────────────────────────────────────
 
+  /**
+   * Draws the GOAL! results panel over the frozen road scene.
+   *
+   * Panel contents:
+   *   - "Yay you finished!" or "ooof too bad" banner (font-scaled to fit).
+   *   - Score + race time rows; Barney kill + bonus rows when barneyKills > 0.
+   *   - PLAY AGAIN and MAIN MENU buttons.
+   *   - Confetti animation (rendered last, in front of everything).
+   *
+   * @param w             - Canvas width.
+   * @param h             - Canvas height.
+   * @param score         - Final accumulated score.
+   * @param elapsedSec    - Total race time in seconds.
+   * @param barneyKills   - Number of Barney cars destroyed this race.
+   * @param timeRemaining - Seconds left when crossing the finish line.
+   * @param btnPlayAgain  - PLAY AGAIN button.
+   * @param btnMenu       - MAIN MENU button.
+   */
   renderGoalScreen(
     w: number, h: number,
     score: number, elapsedSec: number,
@@ -2369,6 +2483,17 @@ export class Renderer
 
   // ── TIME UP screen ─────────────────────────────────────────────────────────
 
+  /**
+   * Draws the TIME UP overlay shown when the countdown reaches zero.
+   *
+   * Features a flashing red/white "TIME UP" banner, the player's final score,
+   * and a CONTINUE button that returns to the main menu.
+   *
+   * @param w           - Canvas width.
+   * @param h           - Canvas height.
+   * @param score       - Final accumulated score.
+   * @param btnContinue - The CONTINUE → main menu button.
+   */
   renderTimeUpScreen(w: number, h: number, score: number, btnContinue: Button): void
   {
     const { ctx } = this;
@@ -2440,6 +2565,18 @@ export class Renderer
 
   // ── Confetti (finish celebration) ─────────────────────────────────────────
 
+  /**
+   * Draws 160 coloured confetti ribbons falling from above the canvas.
+   *
+   * Each ribbon is deterministic — position, size, colour, and rotation rate
+   * are all derived from the particle index using integer hash constants, so
+   * no mutable per-particle state is needed.  The ribbons wrap vertically so
+   * the effect continues indefinitely without restarting.
+   *
+   * @param w - Canvas width.
+   * @param h - Canvas height.
+   * @param t - Elapsed time in seconds since the animation began (from caller).
+   */
   renderConfetti(w: number, h: number, t: number): void
   {
     const { ctx } = this;
@@ -2490,6 +2627,21 @@ export class Renderer
 
   // ── Barney & Beagle celebration billboards ─────────────────────────────────
 
+  /**
+   * Draws four procedural celebration billboards for the GOAL screen:
+   *   Left large:  Barney (purple dino) + "ROAD KILL!" label.
+   *   Right large: Beagle (brown dog)   + "GOOD BOY!" label.
+   *   Left small:  Second Barney (slightly transparent).
+   *   Right small: Second Beagle (slightly transparent).
+   *
+   * All characters are drawn with canvas arc/ellipse primitives — no images
+   * needed.  `drawBoard()` is a local helper that handles the post, shadow,
+   * face, border, and labels for any board; the character is passed as a
+   * callback so the geometry can be shared.
+   *
+   * @param w - Canvas width.
+   * @param h - Canvas height.
+   */
   private renderBillboards(w: number, h: number): void
   {
     const { ctx } = this;
@@ -2728,6 +2880,16 @@ export class Renderer
 
   // ── Stage name announcement ────────────────────────────────────────────────
 
+  /**
+   * Draws the "STAGE ONE - 1 / COCONUT BEACH" announcement that appears at
+   * race start.  The text fades in over 0.3 s, holds, then fades out over
+   * the last 0.7 s.  Positioned in the upper third of the sky band so it
+   * sits comfortably above the horizon and below the race HUD bar.
+   *
+   * @param w     - Canvas width.
+   * @param h     - Canvas height.
+   * @param timer - Seconds remaining (counts down from 3.5 toward 0).
+   */
   private renderStageAnnouncement(w: number, h: number, timer: number): void
   {
     // timer counts DOWN from 3.5 → 0

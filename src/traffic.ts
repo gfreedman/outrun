@@ -83,23 +83,28 @@ export interface TrafficHitResult
 /** The four valid lane centre positions. */
 const LANES = [-1200, -500, 500, 1200] as const;
 
+/** Returns a randomly chosen lane centre X from the four valid positions. */
 function randomLane(): number
 {
   return LANES[Math.floor(Math.random() * LANES.length)];
 }
 
+/** Returns a random forward speed in [TRAFFIC_SPEED_MIN, TRAFFIC_SPEED_MAX]. */
 function randomSpeed(): number
 {
   return TRAFFIC_SPEED_MIN + Math.random() * (TRAFFIC_SPEED_MAX - TRAFFIC_SPEED_MIN);
 }
 
+/** Returns a random seconds-until-next-lane-change in [TIMER_MIN, TIMER_MAX]. */
 function randomLaneTimer(): number
 {
   return TRAFFIC_LANE_TIMER_MIN + Math.random() * (TRAFFIC_LANE_TIMER_MAX - TRAFFIC_LANE_TIMER_MIN);
 }
 
+/** All valid TrafficType values; cached to avoid Object.values() on every spawn. */
 const TRAFFIC_TYPES = Object.values(TrafficType);
 
+/** Returns a uniformly random TrafficType from the full enum. */
 function randomType(): TrafficType
 {
   return TRAFFIC_TYPES[Math.floor(Math.random() * TRAFFIC_TYPES.length)];
@@ -159,6 +164,21 @@ export function initTraffic(segmentCount: number, trafficCount = TRAFFIC_COUNT):
 
 // ── Per-frame update ──────────────────────────────────────────────────────────
 
+/**
+ * Advances all traffic cars one physics step.
+ *
+ * Each car:
+ *   1. Moves forward by speed × dt (wrapping around the track).
+ *   2. May pick a new lane target (lazy weave AI).
+ *   3. Applies lateral throw velocity if the car was recently hit (with spin).
+ *   4. Is recycled to the far horizon if it falls too far behind or shoots
+ *      too far ahead of the player.
+ *
+ * @param cars         - Mutable traffic car pool.
+ * @param playerZ      - Player's current world depth.
+ * @param segmentCount - Total road segments (used to compute track wrap length).
+ * @param dt           - Frame delta-time in seconds.
+ */
 export function updateTraffic(
   cars:         TrafficCar[],
   playerZ:      number,
