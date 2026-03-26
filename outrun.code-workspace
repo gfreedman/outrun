@@ -11,8 +11,7 @@
     "files.exclude": {
       "node_modules": true,
       "dist": true,
-      ".claude": true,
-      "scripts": true
+      ".claude": true
     },
     "explorer.fileNesting.enabled": true,
     "explorer.fileNesting.patterns": {
