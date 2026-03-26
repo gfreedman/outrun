@@ -134,8 +134,9 @@ describe('updateTraffic — recycle always spawns at horizon', () =>
     const cars    = initTraffic(SEG_COUNT);
     const playerZ = 5000;
 
-    // Force every car behind the player
-    cars.forEach(car => { car.worldZ = playerZ - SEGMENT_LENGTH; });
+    // Force every car far enough behind the player to exceed TRAFFIC_TRAIL_SEGS (25 segs)
+    // Cars within 25 segs behind are intentionally NOT recycled (they can catch a slowing player)
+    cars.forEach(car => { car.worldZ = playerZ - 26 * SEGMENT_LENGTH; });
 
     // Run enough frames for the recycle branch to fire
     updateTraffic(cars, playerZ, SEG_COUNT, 0.016);

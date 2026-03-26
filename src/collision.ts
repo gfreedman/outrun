@@ -57,10 +57,13 @@ const FAMILY_CONFIG: Record<SpriteFamily, FamilyConfig> =
   barney:    { cls: CollisionClass.Smack,  hitboxRadius: HITBOX_PALM,       blockRadius: BLOCK_SMACK },
   big:       { cls: CollisionClass.Smack,  hitboxRadius: HITBOX_PALM,       blockRadius: BLOCK_SMACK },
   cactus:    { cls: CollisionClass.Glance, hitboxRadius: HITBOX_CACTUS,     blockRadius: 0           },
-  shrub:     { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
-  sign:      { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
+  shrub:      { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
+  sign:       { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
   // BLOCK_HOUSE < HITBOX_HOUSE so the player is inside the detection zone at the wall boundary.
-  house:     { cls: CollisionClass.Crunch, hitboxRadius: HITBOX_HOUSE,      blockRadius: BLOCK_HOUSE },
+  house:      { cls: CollisionClass.Crunch, hitboxRadius: HITBOX_HOUSE,      blockRadius: BLOCK_HOUSE },
+  // Finish-line gates are purely decorative — the car drives through them.
+  gate_start:  { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
+  gate_finish: { cls: CollisionClass.Ghost,  hitboxRadius: 0,                 blockRadius: 0           },
 };
 
 /**
