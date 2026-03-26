@@ -93,6 +93,8 @@ export interface ProjectedSeg
   seg: RoadSegment;
   /** Perspective scale at the near (p1) edge -- used by sprite sizing. */
   sc1: number;
+  /** Perspective scale at the far (p2) edge. */
+  sc2: number;
   /** Screen X centre of the near edge. */
   sx1: number;
   /** Screen Y of the near edge (larger = lower on screen). */
@@ -698,7 +700,7 @@ export class Renderer
     this.projPool = Array.from({ length: DRAW_DISTANCE + 100 }, () => (
     {
       seg: null! as RoadSegment,
-      sc1: 0,
+      sc1: 0, sc2: 0,
       sx1: 0, sy1: 0, sw1: 0,
       sx2: 0, sy2: 0, sw2: 0,
     }));
@@ -897,6 +899,7 @@ export class Renderer
         const slot = this.projPool[this.projCount++];
         slot.seg = seg;
         slot.sc1 = sc1;   // stored so Pass 2 sprites don't need to re-derive it
+        slot.sc2 = sc2;   // stored so traffic cars can interpolate within the segment
         slot.sx1 = sx1; slot.sy1 = sy1; slot.sw1 = sw1;
         slot.sx2 = sx2; slot.sy2 = sy2; slot.sw2 = sw2;
         horizonCeiling = Math.min(horizonCeiling, sy2);
@@ -1140,10 +1143,16 @@ export class Renderer
 
           const { frameW, frameH, worldH } = spec;
 
-          // Use projPool's perspective scale and road-centre X directly —
-          // no re-projection from worldZ needed.
-          const scCar   = p.sc1;
-          const carScrX = p.sx1 + car.worldX * scCar * halfW;
+          // Interpolate within the segment using the car's fractional depth.
+          // Without this the car snaps to p.sy1 (near edge Y) and jumps a
+          // full slot delta every ~3 frames as it crosses segment boundaries —
+          // the visible "vibration" reported at normal driving speeds.
+          const t      = (car.worldZ % SEGMENT_LENGTH) / SEGMENT_LENGTH;
+          const scCar  = p.sc1 + (p.sc2 - p.sc1) * t;
+          const syCar  = p.sy1 + (p.sy2 - p.sy1) * t;
+          const sxCar  = p.sx1 + (p.sx2 - p.sx1) * t;
+
+          const carScrX = sxCar + car.worldX * scCar * halfW;
           if (carScrX < -500 || carScrX > w + 500) continue;
 
           const sprH = worldH * scCar * halfH;
@@ -1153,7 +1162,7 @@ export class Renderer
           const drawW = Math.round(sprW);
           const drawH = Math.round(sprH);
           const drawX = Math.round(carScrX - sprW / 2);
-          const drawY = Math.round(p.sy1 - sprH);
+          const drawY = Math.round(syCar - sprH);
 
           // Reuse the class-level pre-allocated rect object.
           const tr = this.trafficRect;

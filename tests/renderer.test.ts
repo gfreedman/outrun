@@ -130,6 +130,7 @@ function makeProj(opts: {
   return {
     seg: makeSeg({ rumble: opts.rumble, lane: opts.lane, grass: opts.grass }),
     sc1: opts.sc1 ?? 1,
+    sc2: 0.8,          // far-edge scale; smaller than sc1 (perspective)
     sx1: opts.sx1 ?? 640,
     sy1: opts.sy1 ?? 100,
     sw1: opts.sw1 ?? 200,

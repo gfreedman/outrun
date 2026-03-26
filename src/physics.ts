@@ -271,6 +271,10 @@ export function advancePhysics(
   // Overwrites off-road jitter when a collision shake is active.  shakeTimer
   // was decremented at the top of this function, so jitter stops automatically
   // on the tick after it expires.
+  //
+  // shakeIntensity decays exponentially each frame so the camera jolts hard
+  // on impact and smoothly settles, rather than vibrating at constant amplitude
+  // (which reads as traffic-car "jitter" at 60 fps).
   if (shakeTimer > 0)
     jitterY = (Math.random() - 0.5) * shakeIntensity * 2;
 

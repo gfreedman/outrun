@@ -32,6 +32,7 @@ import {
   PhysicsState, InputSnapshot, PhysicsConfig,
 } from './physics';
 import { Button, anyHovered }               from './ui';
+import { IntroController }                  from './intro-controller';
 import
 {
   PLAYER_MAX_SPEED,
@@ -75,42 +76,6 @@ import
   FINISHING_DURATION, FINISHING_DECEL,
 } from './constants';
 
-/** localStorage key used to persist GameSettings between sessions. */
-const STORAGE_KEY = 'outrun_settings';
-
-/**
- * Reads persisted GameSettings from localStorage.
- * Falls back to { mode: MEDIUM, soundEnabled: true } if nothing is stored
- * or the stored value is malformed.
- */
-function loadSettings(): GameSettings
-{
-  try
-  {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw)
-    {
-      const s = JSON.parse(raw) as Partial<GameSettings>;
-      const mode = Object.values(GameMode).includes(s.mode as GameMode)
-        ? s.mode as GameMode
-        : GameMode.MEDIUM;
-      return { mode, soundEnabled: s.soundEnabled !== false };
-    }
-  }
-  catch { /* ignore parse errors */ }
-  return { mode: GameMode.MEDIUM, soundEnabled: true };
-}
-
-/**
- * Writes GameSettings to localStorage so they survive page reloads.
- * Silently ignores quota / private-browsing errors.
- */
-function saveSettings(s: GameSettings): void
-{
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); }
-  catch { /* quota / private-mode */ }
-}
-
 /**
  * Top-level game controller.
  *
@@ -137,15 +102,14 @@ export class Game
   // ── State machine ──────────────────────────────────────────────────────────
 
   /** Current top-level state (PRELOADING, INTRO, COUNTDOWN, PLAYING, etc.). */
-  private phase:    GamePhase = GamePhase.PRELOADING;
-  /** Persisted user preferences (difficulty mode, sound toggle). */
-  private settings: GameSettings;
+  private phase: GamePhase = GamePhase.PRELOADING;
+  /** Menu state machine + settings persistence. */
+  private intro: IntroController;
 
   // ── Preloader state ────────────────────────────────────────────────────────
 
-  private preloader:  Preloader | null = null;
-  private loadError:  string = '';
-  private heroImage:  HTMLImageElement | null = null;
+  private preloader: Preloader | null = null;
+  private loadError: string = '';
 
   // ── Road + traffic (initialised on game start, not construction) ───────────
 
@@ -229,19 +193,6 @@ export class Game
   /** Seconds elapsed since the countdown began. */
   private countdownTimer  = 0;
 
-  // ── Intro / menu state ─────────────────────────────────────────────────────
-
-  /** Currently focused main-menu item (keyboard nav). */
-  private menuItem:     'start' | 'mode' | 'settings' = 'start';
-  /** Which sub-menu overlay is open, or null for the main menu. */
-  private menuSubMenu:  'mode' | 'settings' | null = null;
-  /** Currently highlighted difficulty in the mode picker. */
-  private menuSubMode:  GameMode = GameMode.MEDIUM;
-  /** Current state of the sound toggle in the settings panel. */
-  private menuSubSound  = true;
-  /** Monotonic clock (seconds) driving the 2 Hz blink on menu text. */
-  private pulseClock    = 0;
-
   // ── Mouse state ────────────────────────────────────────────────────────────
 
   /** Current mouse X in canvas pixels (updated on mousemove). */
@@ -287,23 +238,6 @@ export class Game
   };
 
   // ── UI Buttons ─────────────────────────────────────────────────────────────
-  // Each button's rect is registered by the renderer each frame, then tick()
-  // is called in the game tick to compute fresh hover/click state.
-
-  // Main menu
-  private btnMode     = new Button();
-  private btnSettings = new Button();
-  private btnStart    = new Button();
-
-  // Mode submenu cards
-  private btnEasy   = new Button();
-  private btnMedium = new Button();
-  private btnHard   = new Button();
-
-  // Settings panel
-  private btnClose  = new Button();
-  private btnSound  = new Button();
-  private btnGithub = new Button();
 
   // In-game
   private btnQuit      = new Button();
@@ -342,10 +276,8 @@ export class Game
    */
   constructor(canvas: HTMLCanvasElement, initialSettings?: GameSettings)
   {
-    this.canvas   = canvas;
-    this.settings = initialSettings ?? loadSettings();
-    this.menuSubMode  = this.settings.mode;
-    this.menuSubSound = this.settings.soundEnabled;
+    this.canvas = canvas;
+    this.intro  = new IntroController(canvas, () => this.beginRace(), initialSettings);
 
     // Road is built once at construction time (MEDIUM default).
     // It is rebuilt with the chosen mode when the player hits START.
@@ -401,17 +333,6 @@ export class Game
       img.src = url;
       return { promise, name: url.split('/').pop() ?? url };
     });
-
-    // Load hero image separately — its resolution determines the intro layout,
-    // but a load failure is non-fatal (we fall back to the gradient background).
-    const heroImg = new Image();
-    const heroPromise = new Promise<void>(resolve =>
-    {
-      heroImg.onload  = () => { this.heroImage = heroImg; resolve(); };
-      heroImg.onerror = () => resolve();   // graceful fallback
-    });
-    heroImg.src = 'sprites/source_for_sprites/hero.jpg';
-    entries.push({ promise: heroPromise, name: 'hero' });
 
     this.preloader = new Preloader(entries);
     this.preloader.done.then(result =>
@@ -480,7 +401,7 @@ export class Game
     switch (this.phase)
     {
       case GamePhase.PRELOADING: this.tickPreload();        break;
-      case GamePhase.INTRO:      this.tickIntro(dt);        break;
+      case GamePhase.INTRO:      this.tickIntro(dt);          break;
       case GamePhase.COUNTDOWN:  this.tickCountdown(dt);    break;
       case GamePhase.PLAYING:    this.tickPlaying(dt);      break;
       case GamePhase.FINISHING:  this.tickFinishing(dt);    break;
@@ -505,142 +426,14 @@ export class Game
 
   // ── Phase: INTRO ───────────────────────────────────────────────────────────
 
-  /**
-   * Processes input and renders the title/menu screen each frame.
-   *
-   * Handles three sub-states based on menuSubMenu:
-   *   null       → main menu: arrow-key focus + Enter/click on START/MODE/SETTINGS.
-   *   'mode'     → difficulty picker: up/down selects; Enter or click confirms.
-   *   'settings' → options panel: Enter/click toggles sound; Escape/click-out closes.
-   *
-   * Button hit-areas are registered by the renderer; this method calls btn.tick()
-   * immediately after to compute hover/click state for this frame.
-   *
-   * @param dt - Frame delta-time (used only to advance pulseClock).
-   */
+  /** Delegates to IntroController; clears mouseClick if consumed. */
   private tickIntro(dt: number): void
   {
-    this.pulseClock += dt;
-
-    const { input } = this;
-    const MODES = [GameMode.EASY, GameMode.MEDIUM, GameMode.HARD] as const;
-
-    if (this.menuSubMenu === 'mode')
-    {
-      const idx = MODES.indexOf(this.menuSubMode);
-
-      // ── Keyboard navigation (bands are vertical — up/down primary) ─────
-      if (input.wasPressed('ArrowUp')   || input.wasPressed('ArrowLeft'))
-        this.menuSubMode = MODES[Math.max(0, idx - 1)];
-      if (input.wasPressed('ArrowDown') || input.wasPressed('ArrowRight'))
-        this.menuSubMode = MODES[Math.min(MODES.length - 1, idx + 1)];
-
-      if (input.wasPressed('Enter'))  { this.settings.mode = this.menuSubMode; this.menuSubMenu = null; saveSettings(this.settings); }
-      if (input.wasPressed('Escape')) { this.menuSubMenu = null; }
-
-      // ── Buttons ─────────────────────────────────────────────────────────
-      const modeButtons = [this.btnEasy, this.btnMedium, this.btnHard] as const;
-      modeButtons.forEach((btn, i) => btn.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick));
-
-      modeButtons.forEach((btn, i) => { if (btn.hovered) this.menuSubMode = MODES[i]; });
-
-      if (this.mouseClick)
-      {
-        modeButtons.forEach((btn, i) =>
-        {
-          if (btn.clicked)
-          {
-            this.menuSubMode   = MODES[i];
-            this.settings.mode = this.menuSubMode;
-            this.menuSubMenu   = null;
-            saveSettings(this.settings);
-          }
-        });
-        this.mouseClick = false;
-      }
-
-      this.canvas.style.cursor = anyHovered(...modeButtons) ? 'pointer' : 'default';
-    }
-    else if (this.menuSubMenu === 'settings')
-    {
-      // Rects registered by drawSettingsPanel each frame; tick() reads them.
-      this.btnClose .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
-      this.btnSound .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
-      this.btnGithub.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
-
-      this.canvas.style.cursor = anyHovered(this.btnClose, this.btnSound, this.btnGithub) ? 'pointer' : 'default';
-
-      if (input.wasPressed('Enter') || input.wasPressed(' ') || this.btnSound.clicked)
-      {
-        this.settings.soundEnabled = !this.settings.soundEnabled;
-        this.menuSubSound = this.settings.soundEnabled;
-        saveSettings(this.settings);
-      }
-
-      if (this.btnGithub.clicked)
-        window.open('https://github.com/gfreedman/outrun', '_blank', 'noopener');
-
-      // Close on X click, Escape, or click outside panel
-      const { w, h } = this;
-      const px = Math.round(w * 0.18), py = Math.round(h * 0.16);
-      const pw = Math.round(w * 0.64), ph = Math.round(h * 0.62);
-      const inPanel = this.mouseX >= px && this.mouseX <= px + pw
-                   && this.mouseY >= py && this.mouseY <= py + ph;
-      if (input.wasPressed('Escape') || this.btnClose.clicked || (this.mouseClick && !inPanel))
-        this.menuSubMenu = null;
-
-      this.mouseClick = false;
-    }
-    else
-    {
-      const items: Array<'mode' | 'settings' | 'start'> = ['mode', 'settings', 'start'];
-      const idx = items.indexOf(this.menuItem);
-
-      // ── Keyboard nav ────────────────────────────────────────────────────
-      if (input.wasPressed('ArrowUp'))   this.menuItem = items[Math.max(0, idx - 1)];
-      if (input.wasPressed('ArrowDown')) this.menuItem = items[Math.min(items.length - 1, idx + 1)];
-
-      // ── Buttons — rects registered by renderer each frame ────────────────
-      this.btnMode    .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
-      this.btnSettings.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
-      this.btnStart   .tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
-
-      this.canvas.style.cursor = anyHovered(this.btnMode, this.btnSettings, this.btnStart) ? 'pointer' : 'default';
-
-      const clickItem: typeof this.menuItem | null =
-        this.btnMode.clicked     ? 'mode'     :
-        this.btnSettings.clicked ? 'settings' :
-        this.btnStart.clicked    ? 'start'     :
-        null;
-
-      if (input.wasPressed('Enter') || input.wasPressed(' ') || (this.mouseClick && clickItem !== null))
-      {
-        if (clickItem !== null) this.menuItem = clickItem;
-        this.mouseClick = false;
-        if (this.menuItem === 'mode')          { this.menuSubMenu = 'mode'; this.menuSubMode = this.settings.mode; }
-        else if (this.menuItem === 'settings') { this.menuSubMenu = 'settings'; }
-        else                                   { this.beginRace(); }
-      }
-      else
-      {
-        this.mouseClick = false;
-      }
-    }
-
-    this.renderer.renderIntro(
-      this.w, this.h,
-      this.menuItem,
-      this.menuSubMenu === 'mode' ? this.menuSubMode : this.settings.mode,
-      this.settings.soundEnabled,
-      this.menuSubMenu,
-      Math.floor(this.pulseClock * 2) % 2 === 0,
-      this.heroImage,
-      {
-        mode: this.btnMode, settings: this.btnSettings, start: this.btnStart,
-        easy: this.btnEasy, medium: this.btnMedium,     hard:  this.btnHard,
-        close: this.btnClose, sound: this.btnSound,     github: this.btnGithub,
-      },
+    const consumed = this.intro.tick(
+      dt, this.input, this.renderer, this.w, this.h,
+      this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick,
     );
+    if (consumed) this.mouseClick = false;
   }
 
 
@@ -658,11 +451,11 @@ export class Game
   {
     // EASY uses the base Nürburgring course; MEDIUM and HARD use the hard course layout
     // (MEDIUM applies 75% curve / 80% hill scaling so it sits halfway between modes)
-    const roadData = this.settings.mode === GameMode.EASY ? ROAD_DATA : ROAD_DATA_HARD;
-    this.road = Road.fromData(roadData, this.settings.mode);
+    const roadData = this.intro.settings.mode === GameMode.EASY ? ROAD_DATA : ROAD_DATA_HARD;
+    this.road = Road.fromData(roadData, this.intro.settings.mode);
     this.road.injectFinishCelebration();
 
-    const cfg = RACE_CONFIG[this.settings.mode];
+    const cfg = RACE_CONFIG[this.intro.settings.mode];
     this.effectiveMaxSpeed = PLAYER_MAX_SPEED * cfg.maxSpeedRatio;
     this.trafficCars = initTraffic(this.road.count, cfg.trafficCount);
 
@@ -688,7 +481,7 @@ export class Game
     // Gate is at segment START_GATE_SEGMENT; add one extra segment so the car is
     // visually past it before FINISHING triggers.
     this.finishLineWU = (this.road.count + Road.START_GATE_SEGMENT + 1) * SEGMENT_LENGTH;
-    this.timeRemaining     = RACE_TIME_LIMIT[this.settings.mode];
+    this.timeRemaining     = RACE_TIME_LIMIT[this.intro.settings.mode];
     this.score             = 0;
     this.stageNameTimer    = 3.5;
     this.timeUpDecelDone   = false;
@@ -705,7 +498,7 @@ export class Game
 
     // Init audio on first user interaction
     this.audio.init();
-    this.audio.setEnabled(this.settings.soundEnabled);
+    this.audio.setEnabled(this.intro.settings.soundEnabled);
     this.audio.startMusic();
 
     // Go fullscreen on the document root, NOT the canvas element.
@@ -818,7 +611,7 @@ export class Game
 
     // ── Finish detection (checked BEFORE time-up so a simultaneous
     //    crossing-as-clock-hits-zero gives FINISHING, not TIME UP) ──────
-    const cfg = RACE_CONFIG[this.settings.mode];
+    const cfg = RACE_CONFIG[this.intro.settings.mode];
     if (this.distanceTravelled >= this.finishLineWU)
     {
       // Bank the score now (once); the cinematic runs then GOAL screen shows it
@@ -900,7 +693,7 @@ export class Game
 
     // ── Render ────────────────────────────────────────────────────────────
     const { renderer, road, w, h } = this;
-    const cfg         = RACE_CONFIG[this.settings.mode];
+    const cfg         = RACE_CONFIG[this.intro.settings.mode];
     const driftVisual = -this.slideVelocity * 0.12;
     const renderSteer = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
 
@@ -1071,7 +864,7 @@ export class Game
     };
     const cfg: PhysicsConfig = {
       maxSpeed:        this.effectiveMaxSpeed,
-      accelMultiplier: RACE_CONFIG[this.settings.mode].accelMultiplier,
+      accelMultiplier: RACE_CONFIG[this.intro.settings.mode].accelMultiplier,
       trackLength:     this.road.count * SEGMENT_LENGTH,
       segmentCurve:    playerSegment.curve,
     };
@@ -1263,7 +1056,7 @@ export class Game
     const { renderer, road, w, h } = this;
     const driftVisual = -this.slideVelocity * 0.15;
     const renderSteer = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
-    const cfg         = RACE_CONFIG[this.settings.mode];
+    const cfg         = RACE_CONFIG[this.intro.settings.mode];
 
     renderer.render(
       road.segments, road.count,
