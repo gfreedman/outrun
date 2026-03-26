@@ -13,9 +13,14 @@
  * At runtime game.ts imports ROAD_DATA from road-data.ts and calls
  * Road.fromData(ROAD_DATA), skipping the 50–200 ms synchronous plant passes
  * entirely.
+ *
+ * Idempotent: if the serialized output is identical to the existing file,
+ * the file is not touched — preserving mtime and avoiding spurious esbuild
+ * rebuilds on `npm run dev` when the course layout hasn't changed.
  */
 
 import { Road }            from '../src/road';
+import * as crypto         from 'node:crypto';
 import * as fs             from 'node:fs';
 import * as path           from 'node:path';
 import { fileURLToPath }   from 'node:url';
@@ -34,7 +39,6 @@ const banner  = [
   '//',
   `// ROAD_DATA:      ${data.length} segments (easy/medium course)`,
   `// ROAD_DATA_HARD: ${dataHard.length} segments (hard course — sweepers, blind crests, chicanes)`,
-  `// Generated: ${new Date().toISOString()}`,
   '',
 ].join('\n');
 
@@ -47,6 +51,24 @@ const content = [
   `export const ROAD_DATA_HARD: SerializedSegment[] = ${JSON.stringify(dataHard)};`,
   '',
 ].join('\n');
+
+// Content-hash guard: skip writing if the file hasn't changed.
+// Prevents esbuild from seeing a touched file and triggering a full re-bundle
+// on every `npm run dev` when the course layout is unchanged.
+function sha256(s: string): string
+{
+  return crypto.createHash('sha256').update(s).digest('hex');
+}
+
+let existingHash = '';
+try   { existingHash = sha256(fs.readFileSync(outPath, 'utf8')); }
+catch { /* file doesn't exist yet — first run */ }
+
+if (sha256(content) === existingHash)
+{
+  console.log(`generate-road: no changes — ${data.length} + ${dataHard.length} segments unchanged`);
+  process.exit(0);
+}
 
 fs.writeFileSync(outPath, content, 'utf8');
 console.log(`generate-road: wrote ${data.length} + ${dataHard.length} segments → src/road-data.ts (${(content.length / 1024).toFixed(1)} KB)`);
