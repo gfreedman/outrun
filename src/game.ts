@@ -49,7 +49,7 @@ import
   HIT_SMACK_SPEED_MULT, HIT_SMACK_SPEED_CAP, HIT_SMACK_BUMP,
   HIT_SMACK_COOLDOWN, HIT_SMACK_RECOVERY_BOOST, HIT_SMACK_RECOVERY_TIME,
   HIT_SMACK_RESTITUTION, HIT_SMACK_FLICK_BASE,
-  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_DECEL, HIT_CRUNCH_GRIND_TIME,
+  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_TIME,
   HIT_CRUNCH_BUMP, HIT_CRUNCH_COOLDOWN,
   HIT_CRUNCH_RECOVERY_BOOST, HIT_CRUNCH_RECOVERY_TIME,
   HIT_CRUNCH_RESTITUTION, HIT_CRUNCH_FLICK_BASE,
@@ -796,7 +796,8 @@ export class Game
     this.raceTimer        += dt;
     this.timeRemaining     = Math.max(0, this.timeRemaining - dt);
     this.stageNameTimer    = Math.max(0, this.stageNameTimer - dt);
-    this.barneyBoostTimer  = Math.max(0, this.barneyBoostTimer - dt);
+    // barneyBoostTimer is now decremented inside advancePhysics() so that all
+    // player timer ticks are owned by the single pure physics state machine.
 
     // Score: base rate + speed bonus (pts/sec)
     const speedRatio = this.speed / this.effectiveMaxSpeed;
@@ -1090,7 +1091,7 @@ export class Game
 
     // ── Collision ──────────────────────────────────────────────────────────
 
-    this.updateCollisions(dt);
+    this.updateCollisions();
 
     // ── Traffic ───────────────────────────────────────────────────────────
 
@@ -1153,19 +1154,12 @@ export class Game
    *
    * @param dt - Frame delta-time in seconds.
    */
-  private updateCollisions(dt: number): void
+  private updateCollisions(): void
   {
-    this.hitCooldown      = Math.max(0, this.hitCooldown      - dt);
-    this.grindTimer       = Math.max(0, this.grindTimer       - dt);
-    this.hitRecoveryTimer = Math.max(0, this.hitRecoveryTimer - dt);
-    this.shakeTimer       = Math.max(0, this.shakeTimer       - dt);
-
-    if (this.grindTimer > 0) this.speed -= HIT_CRUNCH_GRIND_DECEL * dt;
-
-    if (this.shakeTimer > 0)
-      this.jitterY = (Math.random() - 0.5) * this.shakeIntensity * 2;
-
-    if (this.hitRecoveryTimer <= 0) this.hitRecoveryBoost = 1.0;
+    // All timer decrements (hitCooldown, grindTimer, hitRecoveryTimer, shakeTimer,
+    // barneyBoostTimer) and their driven effects (grind decel, shake jitter,
+    // hitRecoveryBoost reset) now live in advancePhysics(), which runs first
+    // inside update().  This method is now purely collision detection + response.
 
     const segIdx = this.road.findSegmentIndex(this.playerZ);
     this.blockSolidObjects(segIdx);

@@ -24,7 +24,7 @@ import {
   HIT_SMACK_SPEED_MULT, HIT_SMACK_SPEED_CAP,
   HIT_SMACK_COOLDOWN, HIT_SMACK_RECOVERY_BOOST, HIT_SMACK_RECOVERY_TIME,
   HIT_SMACK_RESTITUTION, HIT_SMACK_FLICK_BASE,
-  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_TIME,
+  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_TIME, HIT_CRUNCH_GRIND_DECEL,
   HIT_CRUNCH_COOLDOWN,
   HIT_CRUNCH_RECOVERY_BOOST, HIT_CRUNCH_RECOVERY_TIME,
   HIT_CRUNCH_RESTITUTION, HIT_CRUNCH_FLICK_BASE,
@@ -113,6 +113,19 @@ export function advancePhysics(
   let barneyBoostTimer = state.barneyBoostTimer;
   let distanceTravelled = state.distanceTravelled;
 
+  // ── Tick all timers ──────────────────────────────────────────────────────
+  // All timer decrements live here so advancePhysics is the single, complete
+  // physics state machine.  Timers run BEFORE any physics that reads them,
+  // so the "active" window is always [set → first tick → ... → zero → off].
+  barneyBoostTimer  = Math.max(0, barneyBoostTimer  - dt);
+  hitCooldown       = Math.max(0, hitCooldown       - dt);
+  grindTimer        = Math.max(0, grindTimer        - dt);
+  hitRecoveryTimer  = Math.max(0, hitRecoveryTimer  - dt);
+  shakeTimer        = Math.max(0, shakeTimer        - dt);
+
+  // Timer-driven state transition: recovery boost expires with its timer.
+  if (hitRecoveryTimer <= 0) hitRecoveryBoost = 1.0;
+
   const { maxSpeed, accelMultiplier, trackLength, segmentCurve } = cfg;
   const speedRatio = speed / maxSpeed;
 
@@ -162,6 +175,12 @@ export function advancePhysics(
 
   speed = Math.max(0, Math.min(speed,
     barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
+
+  // ── Grind deceleration (crunch aftermath) ────────────────────────────
+  // Applied after the Barney boost section so the speed clamp above does not
+  // immediately cancel out grind penalty.  grindTimer was already decremented
+  // at the top of this function, so the guard is false on the final expiry tick.
+  if (grindTimer > 0) speed -= HIT_CRUNCH_GRIND_DECEL * dt;
 
   // ── Steering ─────────────────────────────────────────────────────────
 
@@ -248,11 +267,14 @@ export function advancePhysics(
   speed = Math.max(0, Math.min(speed,
     barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
 
+  // ── Shake jitter (collision aftermath) ───────────────────────────────
+  // Overwrites off-road jitter when a collision shake is active.  shakeTimer
+  // was decremented at the top of this function, so jitter stops automatically
+  // on the tick after it expires.
+  if (shakeTimer > 0)
+    jitterY = (Math.random() - 0.5) * shakeIntensity * 2;
+
   // ── Advance ──────────────────────────────────────────────────────────
-  // Note: grind decel (HIT_CRUNCH_GRIND_DECEL) is applied by updateCollisions()
-  // in game.ts, which owns the grindTimer countdown.  Do NOT apply it here —
-  // advancePhysics receives a captured (pre-decrement) grindTimer and would
-  // otherwise double the deceleration each frame.
 
   const stepWU       = speed * dt;
   playerZ            = ((playerZ + stepWU) % trackLength + trackLength) % trackLength;

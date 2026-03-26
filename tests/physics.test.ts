@@ -342,31 +342,397 @@ describe('advancePhysics — playerZ advance', () =>
   });
 });
 
-// ── advancePhysics — grind timer passthrough ─────────────────────────────────
+// ── advancePhysics — timer countdowns ────────────────────────────────────────
 //
-// grind decel (HIT_CRUNCH_GRIND_DECEL) is intentionally NOT applied inside
-// advancePhysics — it lives in game.ts updateCollisions() which owns the timer
-// countdown.  Applying it here would double the deceleration each frame because
-// capturePhysicsState() passes the pre-decrement grindTimer value.
+// advancePhysics is the single owner of all player timer decrements.
+// Every timer must tick by dt each frame and floor at 0 — never go negative.
 
-describe('advancePhysics — grind timer passthrough', () =>
+describe('advancePhysics — timer countdowns', () =>
 {
-  it('grindTimer is passed through unchanged (decel lives in updateCollisions)', () =>
+  it('barneyBoostTimer decrements by dt', () =>
   {
-    const st = makeState({ speed: 5000, grindTimer: 1.0 });
+    const st = makeState({ barneyBoostTimer: 0.5 });
     const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
-    // grindTimer must come out exactly as it went in — advancePhysics does NOT tick it
-    expect(state.grindTimer).toBe(1.0);
+    expect(state.barneyBoostTimer).toBeCloseTo(0.5 - DT, 5);
   });
 
-  it('speed with grindTimer > 0 is NOT less than speed with grindTimer = 0 (decel not applied here)', () =>
+  it('barneyBoostTimer floors at 0 (never negative)', () =>
+  {
+    const st = makeState({ barneyBoostTimer: DT * 0.1 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.barneyBoostTimer).toBe(0);
+  });
+
+  it('hitCooldown decrements by dt', () =>
+  {
+    const st = makeState({ hitCooldown: 1.0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.hitCooldown).toBeCloseTo(1.0 - DT, 5);
+  });
+
+  it('hitCooldown floors at 0', () =>
+  {
+    const st = makeState({ hitCooldown: DT * 0.1 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.hitCooldown).toBe(0);
+  });
+
+  it('grindTimer decrements by dt', () =>
+  {
+    const st = makeState({ grindTimer: 1.0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.grindTimer).toBeCloseTo(1.0 - DT, 5);
+  });
+
+  it('grindTimer floors at 0', () =>
+  {
+    const st = makeState({ grindTimer: DT * 0.1 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.grindTimer).toBe(0);
+  });
+
+  it('hitRecoveryTimer decrements by dt', () =>
+  {
+    const st = makeState({ hitRecoveryTimer: 1.0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.hitRecoveryTimer).toBeCloseTo(1.0 - DT, 5);
+  });
+
+  it('shakeTimer decrements by dt', () =>
+  {
+    const st = makeState({ shakeTimer: 1.0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.shakeTimer).toBeCloseTo(1.0 - DT, 5);
+  });
+
+  it('all 5 timers reach exactly 0 within their natural duration (62-tick simulation)', () =>
+  {
+    // Start all at 1.0 s; 62 ticks at 60 fps = ~1.033 s — well past expiry.
+    let st = makeState({
+      barneyBoostTimer: 1.0, hitCooldown: 1.0, grindTimer: 1.0,
+      hitRecoveryTimer: 1.0, shakeTimer: 1.0,
+    });
+    for (let i = 0; i < 62; i++)
+    {
+      const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+      st = state;
+    }
+    expect(st.barneyBoostTimer).toBe(0);
+    expect(st.hitCooldown).toBe(0);
+    expect(st.grindTimer).toBe(0);
+    expect(st.hitRecoveryTimer).toBe(0);
+    expect(st.shakeTimer).toBe(0);
+  });
+});
+
+// ── advancePhysics — grind decel ─────────────────────────────────────────────
+//
+// When grindTimer > dt (still active after this tick's decrement), the car
+// decelerates by HIT_CRUNCH_GRIND_DECEL per second on top of normal coasting.
+// When the timer expires this tick (grindTimer <= dt → floors to 0), decel
+// is NOT applied because the guard fires on the post-decrement value.
+
+describe('advancePhysics — grind decel', () =>
+{
+  it('grindTimer >> dt: speed decreases more than coasting alone', () =>
   {
     const stGrind   = makeState({ speed: 5000, grindTimer: 1.0 });
-    const stNoGrind = makeState({ speed: 5000, grindTimer: 0 });
+    const stNoGrind = makeState({ speed: 5000, grindTimer: 0   });
     const { state: withGrind }    = advancePhysics(stGrind,   NO_INPUT, DT, makeCfg());
     const { state: withoutGrind } = advancePhysics(stNoGrind, NO_INPUT, DT, makeCfg());
-    // Both paths see identical coast decel — grindTimer has no effect here
-    expect(withGrind.speed).toBeCloseTo(withoutGrind.speed, 1);
+    expect(withGrind.speed).toBeLessThan(withoutGrind.speed);
+  });
+
+  it('grindTimer = 0: no extra decel beyond coasting', () =>
+  {
+    const st    = makeState({ speed: 5000, grindTimer: 0 });
+    const stRef = makeState({ speed: 5000 });
+    const { state: out }    = advancePhysics(st,    NO_INPUT, DT, makeCfg());
+    const { state: outRef } = advancePhysics(stRef, NO_INPUT, DT, makeCfg());
+    expect(out.speed).toBeCloseTo(outRef.speed, 1);
+  });
+
+  it('grindTimer expires exactly this tick (grindTimer < dt): decel NOT applied', () =>
+  {
+    // Timer tiny enough to floor to 0 — the `if (grindTimer > 0)` guard is false.
+    const stExpiring = makeState({ speed: 5000, grindTimer: DT * 0.5 });
+    const stZero     = makeState({ speed: 5000, grindTimer: 0         });
+    const { state: outExpiring } = advancePhysics(stExpiring, NO_INPUT, DT, makeCfg());
+    const { state: outZero }     = advancePhysics(stZero,     NO_INPUT, DT, makeCfg());
+    expect(outExpiring.speed).toBeCloseTo(outZero.speed, 1);
+  });
+});
+
+// ── advancePhysics — hitRecoveryBoost reset ──────────────────────────────────
+
+describe('advancePhysics — hitRecoveryBoost reset', () =>
+{
+  it('hitRecoveryTimer > dt: hitRecoveryBoost preserved', () =>
+  {
+    const boost = 1.5;
+    const st = makeState({ hitRecoveryTimer: 1.0, hitRecoveryBoost: boost });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.hitRecoveryBoost).toBe(boost);
+  });
+
+  it('hitRecoveryTimer expires this tick: hitRecoveryBoost resets to 1.0', () =>
+  {
+    const st = makeState({ hitRecoveryTimer: DT * 0.1, hitRecoveryBoost: 1.5 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.hitRecoveryTimer).toBe(0);
+    expect(state.hitRecoveryBoost).toBe(1.0);
+  });
+
+  it('hitRecoveryTimer already 0: hitRecoveryBoost stays 1.0 (idempotent)', () =>
+  {
+    const st = makeState({ hitRecoveryTimer: 0, hitRecoveryBoost: 1.0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.hitRecoveryBoost).toBe(1.0);
+  });
+});
+
+// ── advancePhysics — shake jitter ────────────────────────────────────────────
+
+describe('advancePhysics — shake jitter', () =>
+{
+  it('shakeTimer > dt and nonzero intensity: |jitterY| > 0 in at least one of 20 trials', () =>
+  {
+    // Probabilistic: Math.random() could theoretically produce exactly 0.5,
+    // but P(all 20 trials zero) is effectively 0 for any nonzero intensity.
+    const st = makeState({ shakeTimer: 1.0, shakeIntensity: 10 });
+    let nonZeroSeen = false;
+    for (let i = 0; i < 20; i++)
+    {
+      const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+      if (Math.abs(state.jitterY) > 0) { nonZeroSeen = true; break; }
+    }
+    expect(nonZeroSeen).toBe(true);
+  });
+
+  it('shakeTimer = 0: jitterY decays toward 0 (not overwritten by shake noise)', () =>
+  {
+    // On-road, shakeTimer off — jitterY should decay exponentially, not stay large.
+    const st = makeState({ shakeTimer: 0, shakeIntensity: 10, jitterY: 5, playerX: 0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(Math.abs(state.jitterY)).toBeLessThan(5);
+  });
+
+  it('shakeTimer expires this tick: jitterY NOT set to shake noise (guard false)', () =>
+  {
+    // shakeTimer tiny → floors to 0 → guard false → off-road decay path runs instead.
+    // Jitter should decay, not spike to intensity range.
+    const st = makeState({ shakeTimer: DT * 0.1, shakeIntensity: 100, jitterY: 1, playerX: 0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    // If shake had fired, jitterY would be up to ±100.  Decay gives ≈ 0.98.
+    expect(Math.abs(state.jitterY)).toBeLessThan(10);
+  });
+});
+
+// ── advancePhysics — offRoadRecovery ─────────────────────────────────────────
+
+describe('advancePhysics — offRoadRecovery', () =>
+{
+  it('on-road: offRoadRecovery increases toward 1', () =>
+  {
+    const st = makeState({ speed: 5000, playerX: 0, offRoadRecovery: 0.3 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.offRoadRecovery).toBeGreaterThan(0.3);
+    expect(state.offRoadRecovery).toBeLessThanOrEqual(1);
+  });
+
+  it('off-road: offRoadRecovery resets to 0', () =>
+  {
+    const st = makeState({ speed: 5000, playerX: 1.5, offRoadRecovery: 0.8 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.offRoadRecovery).toBe(0);
+  });
+
+  it('offRoadRecovery does not exceed 1', () =>
+  {
+    const st = makeState({ speed: 5000, playerX: 0, offRoadRecovery: 1.0 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(state.offRoadRecovery).toBeLessThanOrEqual(1.0);
+  });
+});
+
+// ── advancePhysics — screechRatio ────────────────────────────────────────────
+
+describe('advancePhysics — screechRatio', () =>
+{
+  it('fast curve (HARD, speedRatio=0.8): screechRatio > 0', () =>
+  {
+    const st  = makeState({ speed: PLAYER_MAX_SPEED * 0.8 });
+    const cfg = makeCfg({ segmentCurve: 6 });   // ROAD_CURVE.HARD
+    const { screechRatio } = advancePhysics(st, NO_INPUT, DT, cfg);
+    expect(screechRatio).toBeGreaterThan(0);
+  });
+
+  it('straight road (segmentCurve = 0): screechRatio = 0', () =>
+  {
+    const st  = makeState({ speed: PLAYER_MAX_SPEED * 0.8 });
+    const cfg = makeCfg({ segmentCurve: 0 });
+    const { screechRatio } = advancePhysics(st, NO_INPUT, DT, cfg);
+    expect(screechRatio).toBe(0);
+  });
+
+  it('low speed (speedRatio <= 0.4) on hard curve: screechRatio = 0', () =>
+  {
+    const st  = makeState({ speed: PLAYER_MAX_SPEED * 0.3 });
+    const cfg = makeCfg({ segmentCurve: 6 });
+    const { screechRatio } = advancePhysics(st, NO_INPUT, DT, cfg);
+    expect(screechRatio).toBe(0);
+  });
+});
+
+// ── advancePhysics — steerAngle (visual) ─────────────────────────────────────
+
+describe('advancePhysics — steerAngle', () =>
+{
+  it('steerLeft: steerAngle moves negative', () =>
+  {
+    const steerLeft: InputSnapshot = { ...NO_INPUT, steerLeft: true };
+    const st = makeState({ speed: 5000, steerAngle: 0 });
+    const { state } = advancePhysics(st, steerLeft, DT, makeCfg());
+    expect(state.steerAngle).toBeLessThan(0);
+  });
+
+  it('steerRight: steerAngle moves positive', () =>
+  {
+    const steerRight: InputSnapshot = { ...NO_INPUT, steerRight: true };
+    const st = makeState({ speed: 5000, steerAngle: 0 });
+    const { state } = advancePhysics(st, steerRight, DT, makeCfg());
+    expect(state.steerAngle).toBeGreaterThan(0);
+  });
+
+  it('no steer input: steerAngle decays toward 0', () =>
+  {
+    const st = makeState({ speed: 5000, steerAngle: 0.5 });
+    const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+    expect(Math.abs(state.steerAngle)).toBeLessThan(0.5);
+  });
+
+  it('steerAngle is clamped to [-1, +1]', () =>
+  {
+    const steerLeft: InputSnapshot = { ...NO_INPUT, steerLeft: true };
+    let current = makeState({ speed: 5000, steerAngle: -0.99 });
+    for (let i = 0; i < 20; i++)
+    {
+      const { state } = advancePhysics(current, steerLeft, DT, makeCfg());
+      current = state;
+    }
+    expect(current.steerAngle).toBeGreaterThanOrEqual(-1);
+  });
+});
+
+// ── applyCollisionResponse — bumpDir → slideVelocity direction ───────────────
+
+describe('applyCollisionResponse — bumpDir → slideVelocity direction', () =>
+{
+  /**
+   * bumpDir = +1 means the obstacle is to the RIGHT of the player, so the car
+   * bounces LEFT.  bumpSign = -bumpDir = -1, so slideVelocity < 0 (leftward).
+   */
+  it('Smack bumpDir=+1: slideVelocity < 0 (pushed left)', () =>
+  {
+    const st  = makeState({ speed: 5000, playerX: 0.8, steerAngle: 0 });
+    const hit: StaticHitDescriptor = { cls: CollisionClass.Smack, bumpDir: +1 };
+    const result = applyCollisionResponse(st, hit, PLAYER_MAX_SPEED);
+    expect(result.slideVelocity).toBeLessThan(0);
+  });
+
+  it('Smack bumpDir=-1: slideVelocity > 0 (pushed right)', () =>
+  {
+    const st  = makeState({ speed: 5000, playerX: -0.8, steerAngle: 0 });
+    const hit: StaticHitDescriptor = { cls: CollisionClass.Smack, bumpDir: -1 };
+    const result = applyCollisionResponse(st, hit, PLAYER_MAX_SPEED);
+    expect(result.slideVelocity).toBeGreaterThan(0);
+  });
+
+  it('Crunch bumpDir=+1: slideVelocity < 0 (pushed left)', () =>
+  {
+    const st  = makeState({ speed: 5000, playerX: 0.8, steerAngle: 0 });
+    const hit: StaticHitDescriptor = { cls: CollisionClass.Crunch, bumpDir: +1 };
+    const result = applyCollisionResponse(st, hit, PLAYER_MAX_SPEED);
+    expect(result.slideVelocity).toBeLessThan(0);
+  });
+
+  it('Crunch bumpDir=-1: slideVelocity > 0 (pushed right)', () =>
+  {
+    const st  = makeState({ speed: 5000, playerX: -0.8, steerAngle: 0 });
+    const hit: StaticHitDescriptor = { cls: CollisionClass.Crunch, bumpDir: -1 };
+    const result = applyCollisionResponse(st, hit, PLAYER_MAX_SPEED);
+    expect(result.slideVelocity).toBeGreaterThan(0);
+  });
+});
+
+// ── applyCollisionResponse — immutability ────────────────────────────────────
+
+describe('applyCollisionResponse — immutability', () =>
+{
+  it('does not mutate the input state object', () =>
+  {
+    const st = makeState({ speed: 5000, playerX: 0.8 });
+    const frozen = { ...st };
+    const hit: StaticHitDescriptor = { cls: CollisionClass.Crunch, bumpDir: +1 };
+    applyCollisionResponse(st, hit, PLAYER_MAX_SPEED);
+    expect(st).toEqual(frozen);
+  });
+});
+
+// ── advancePhysics — integration (multi-tick simulation) ─────────────────────
+
+describe('advancePhysics — integration (60-tick simulation)', () =>
+{
+  it('speed stays in [0, maxSpeed] over 60 full-throttle ticks', () =>
+  {
+    let st = makeState({ speed: 0 });
+    for (let i = 0; i < 60; i++)
+    {
+      const { state } = advancePhysics(st, THROTTLE, DT, makeCfg());
+      st = state;
+      expect(st.speed).toBeGreaterThanOrEqual(0);
+      expect(st.speed).toBeLessThanOrEqual(PLAYER_MAX_SPEED);
+    }
+  });
+
+  it('playerZ advances and stays in [0, trackLength) over 60 ticks', () =>
+  {
+    const trackLength = 500 * SEGMENT_LENGTH;
+    let st = makeState({ speed: PLAYER_MAX_SPEED * 0.8 });
+    for (let i = 0; i < 60; i++)
+    {
+      const { state } = advancePhysics(st, NO_INPUT, DT, makeCfg());
+      st = state;
+      expect(st.playerZ).toBeGreaterThanOrEqual(0);
+      expect(st.playerZ).toBeLessThan(trackLength);
+    }
+  });
+
+  it('playerX stays in [-2, +2] with hard steerRight over 60 ticks', () =>
+  {
+    const steerRight: InputSnapshot = { ...NO_INPUT, steerRight: true };
+    let st = makeState({ speed: PLAYER_MAX_SPEED * 0.8, playerX: 0 });
+    for (let i = 0; i < 60; i++)
+    {
+      const { state } = advancePhysics(st, steerRight, DT, makeCfg());
+      st = state;
+      expect(st.playerX).toBeLessThanOrEqual(2);
+      expect(st.playerX).toBeGreaterThanOrEqual(-2);
+    }
+  });
+
+  it('distanceTravelled strictly increases (never wraps with playerZ)', () =>
+  {
+    const trackLength = 500 * SEGMENT_LENGTH;
+    // Start near end of track so playerZ wraps
+    let st = makeState({ speed: PLAYER_MAX_SPEED * 0.8, playerZ: trackLength - 10, distanceTravelled: 1e6 });
+    for (let i = 0; i < 10; i++)
+    {
+      const prev = st.distanceTravelled;
+      const { state } = advancePhysics(st, THROTTLE, DT, makeCfg());
+      st = state;
+      expect(st.distanceTravelled).toBeGreaterThan(prev);
+    }
   });
 });
 
