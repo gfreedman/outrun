@@ -170,7 +170,7 @@ export class AudioManager
    * Returns a soft-clipping distortion curve.
    * `amount` controls saturation intensity (50 = light, 200 = heavy).
    */
-  private makeDistortionCurve(amount: number): Float32Array
+  private makeDistortionCurve(amount: number): Float32Array<ArrayBuffer>
   {
     const n    = 256;
     const curve = new Float32Array(n);
