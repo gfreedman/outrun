@@ -1,0 +1,31 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "files.exclude": {
+      "node_modules": true,
+      "dist": true,
+      ".claude": true
+    },
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+      "renderer.ts": "renderer-hud.ts, renderer-menu.ts, renderer-screens.ts",
+      "game.ts": "intro-controller.ts",
+      "road.ts": "road-data.ts",
+      "tsconfig.json": "vitest.config.ts, package.json, package-lock.json, esbuild.config.js"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode",
+      "ms-vscode.vscode-typescript-next"
+    ]
+  }
+}
