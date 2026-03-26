@@ -7,23 +7,23 @@ source art changes. Running the game never touches them.
 ## Quick start
 
 ```bash
-cd sprites/
 pip install pillow numpy scipy
-python3 build_all.py
+python3 sprites/asset_build_scripts/build_all.py
 ```
 
 `build_all.py` runs the full pipeline in dependency order and is idempotent
-— safe to re-run at any time.
+— safe to re-run at any time.  Can be invoked from any directory.
 
 ## Directory layout
 
 ```
 sprites/
-  assets/              # committed PNG sheets consumed by src/sprites.ts
-  source_for_sprites/  # original reference art (Photoshop exports, AI images)
-  build_all.py         # full pipeline runner — start here
-  build_*.py           # per-family sheet assemblers (palm, cactus, billboard…)
-  extract_*.py         # frame extractors for source sheets with complex layouts
+  assets/                # committed PNG sheets consumed by src/sprites.ts
+  source_for_sprites/    # original reference art (Photoshop exports, AI images)
+  asset_build_scripts/   # offline build tools — only needed when source art changes
+    build_all.py         # full pipeline runner — start here
+    build_*.py           # per-family sheet assemblers (palm, cactus, billboard…)
+    extract_*.py         # frame extractors for source sheets with complex layouts
 ```
 
 ## What each script does

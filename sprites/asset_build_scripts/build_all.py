@@ -3,10 +3,9 @@
 build_all.py
 
 Thin runner that documents and executes the full sprite-extraction pipeline
-in the correct dependency order.  Run from the sprites/ directory:
+in the correct dependency order.  Can be run from anywhere:
 
-    cd sprites/
-    python3 build_all.py
+    python3 sprites/asset_build_scripts/build_all.py
 
 ── Pipeline order ────────────────────────────────────────────────────────────
 
@@ -23,17 +22,23 @@ without needing to re-run the full pipeline.  This file exists solely to
 record the order and make a full rebuild one command.
 """
 
+import os
 import subprocess
 import sys
 
+# Anchor working directory to sprites/ so all sibling scripts resolve asset
+# paths correctly regardless of where this file is invoked from.
+os.chdir(os.path.join(os.path.dirname(__file__), ".."))
+
 SCRIPTS = [
-    "build_billboard_sheet.py",
-    "extract_billboards.py",
-    "extract_big_billboard.py",
-    "extract_barney_billboards.py",
-    "extract_cookie_billboards.py",
-    "extract_new_cars.py",
-]
+    os.path.join("asset_build_scripts", s) for s in [
+        "build_billboard_sheet.py",
+        "extract_billboards.py",
+        "extract_big_billboard.py",
+        "extract_barney_billboards.py",
+        "extract_cookie_billboards.py",
+        "extract_new_cars.py",
+    ]]
 
 def run(script: str) -> None:
     print(f"\n{'=' * 60}")
