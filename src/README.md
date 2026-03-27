@@ -51,6 +51,11 @@ Physics constants (max speed, steering, centrifugal, drift), camera geometry
 (height, depth, road width, segment length), color palette (hex strings), draw
 distance, sprite hitbox radii, collision window, traffic parameters.
 
+Key handling constants:
+- `CENTRIFUGAL = 0.22` — hard corners winnable at full speed (was 0.35)
+- `PLAYER_BRAKE_RAMP = 0.02` — near-instant arcade brake response (was 0.10)
+- `OFFROAD_RECOVERY_TIME = 0.6` — quick speed cap recovery on return to road (was 1.5)
+
 If you want to change how something *feels*, start here.
 
 ---
@@ -85,6 +90,10 @@ Four game phases, each with its own `tick` method:
 
 On phase transition (e.g. START → COUNTDOWN), `beginRace()` initialises
 the race state from `intro.settings`.
+
+Player physics state includes `steerVelocity` (lateral steering momentum,
+road-widths/sec) alongside the existing fields. `capturePhysicsState()` and
+`applyPhysicsState()` round-trip all 18 fields through `advancePhysics()`.
 
 ---
 
@@ -184,12 +193,22 @@ and TIME_UP phases.
 
 ### `physics.ts`
 **Pure physics functions, unit-testable.**
-`advancePhysics(state, input, cfg, dt)` — single-frame tick. Mutates
-`PhysicsState` in place: throttle, braking, coasting, steering, centrifugal drift,
-off-road friction, grind deceleration, `playerZ` advance.
+`advancePhysics(state, input, cfg, dt)` — single-frame tick. Computes:
+throttle (3-phase accel curve), braking (near-instant ramp), coasting
+(low-speed roll via `max(0.3, speedRatio)`), steering inertia (`steerVelocity`
+accumulator — ramps to full lock in ~100 ms, springs back on release),
+trail-braking grip bonus (+25% when brake+steer), centrifugal drift,
+off-road friction, grind deceleration, high-speed straight rumble (>90% speed),
+and `playerZ` advance.
 
-`applyCollisionResponse(state, hit)` — applies the result of a collision hit
-descriptor to the physics state (speed reduction, shake, grind timer, etc.).
+`PhysicsState` carries 18 fields; `steerVelocity` (road-widths/sec) is the
+lateral steering momentum that drives the inertia model.
+
+Grip model: `gripFactor = 1 - speedRatio × 0.25` (linear; 75% grip at top
+speed). `effectiveGrip = gripFactor × 1.25` when trail-braking.
+
+`applyCollisionResponse(state, hit)` — applies speed reduction, lateral flick,
+shake timer, grind timer, and recovery boost from a static-sprite collision.
 
 Both functions are pure (no global state, no DOM). Fully tested in
 `tests/physics.test.ts`.

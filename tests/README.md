@@ -60,10 +60,11 @@ Key contracts:
 
 Two groups:
 
-**`advancePhysics`** — the per-frame tick: throttle, braking, coasting, steering,
-centrifugal drift, off-road friction, grind deceleration, playerZ advance.
+**`advancePhysics`** — the per-frame tick: throttle, braking, coasting, steering
+inertia (`steerVelocity` accumulator), trail-braking grip bonus, centrifugal drift,
+off-road friction, grind deceleration, high-speed rumble, playerZ advance.
 Tests call this with a known `PhysicsState` + `InputSnapshot` + `PhysicsConfig`
-and assert on the resulting state.
+and assert on the resulting state. `makeState()` includes `steerVelocity: 0`.
 
 **`applyCollisionResponse`** — what happens when you hit something:
 - `Ghost` — no effect (shrubs, signs)
