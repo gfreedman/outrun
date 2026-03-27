@@ -202,10 +202,11 @@ export class Road
    * @param variant - 'default' for the Coconut Beach / Nurburgring course,
    *                  'hard' for the extended hard-mode course.
    */
-  constructor(variant: 'default' | 'hard' = 'default')
+  constructor(variant: 'default' | 'hard' | 'legendary' = 'default')
   {
-    if (variant === 'hard') this.resetHardRoad();
-    else                    this.resetRoad();
+    if (variant === 'hard')      this.resetHardRoad();
+    else if (variant === 'legendary') this.resetLegendaryRoad();
+    else                         this.resetRoad();
   }
 
   /** Total number of segments in the track. Used for wrap-around maths. */
@@ -468,6 +469,221 @@ export class Road
 
     // ── 14. Final blast to the line ────────────────────────────────────────
     r(10,  80, 10,    0,  0);     // 100 — flat out
+
+    this.boardLastPlaced = [-999, -999];
+
+    this.plantSigns();
+    this.plantShrubs();
+    this.plantPalms();
+    this.plantBillboards();
+    this.plantCookieBoards();
+    this.plantBarneyBoards();
+    this.plantBigBoards();
+    this.plantCactuses();
+    this.plantHouses();
+  }
+
+  /**
+   * THE CATHEDRAL — legendary hard-mode course.
+   *
+   * Spa-Francorchamps × Nürburgring Nordschleife.  Three acts:
+   *
+   *   ACT 1 — SPA OPENING
+   *     La Source hairpin → Eau Rouge / Raidillon blind climb →
+   *     Kemmel Straight blast → Les Combes chicane →
+   *     Pouhon mega-sweeper → Blanchimont → Bus Stop surprise.
+   *
+   *   ACT 2 — NORDSCHLEIFE TRANSITION
+   *     Hatzenbach technical sequence → Quiddelbacher Höhe blind crest+surprise →
+   *     Schwedenkreuz THE mega left sweeper (220 hold) →
+   *     Aremberg downhill → Fuchsröhre blind downhill → Adenauer tight section.
+   *
+   *   ACT 3 — THE GREEN HELL CAULDRON
+   *     Das Karussell (220-hold hard left going up — THE WALL) →
+   *     Hohe Acht summit blind drop → Pflanzgarten compression jumps →
+   *     Stefan Bellof S-bends → Kesselchen downhill blast →
+   *     Klostertal climber → final home straight.
+   *
+   * ~3 500 segments ≈ 5.3 km.  No rest zones.  Every long straight feeds
+   * directly into the hardest corner of its act.
+   */
+  private resetLegendaryRoad(): void
+  {
+    this._segments = [];
+    this.lastY    = 0;
+
+    const r = (enter: number, hold: number, leave: number, curve: number, hill: number) =>
+      this.addRoad(enter, hold, leave, curve, hill);
+
+    const CE = ROAD_CURVE.EASY;   // 2  — sweeper
+    const CM = ROAD_CURVE.MEDIUM; // 4  — committed corner
+    const CH = ROAD_CURVE.HARD;   // 6  — survival turn
+    const HL = ROAD_HILL.LOW;     // 150
+    const HM = ROAD_HILL.MEDIUM;  // 350
+    const HH = ROAD_HILL.HIGH;    // 600 — blind crest territory
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ACT 1 — SPA OPENING
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Pre-grid straight ─────────────────────────────────────────────────
+    r( 1, 80,  1,    0,   0);     //  82 — build speed, read the wall ahead
+
+    // ── La Source — hard right hairpin ────────────────────────────────────
+    // The most famous braking point on the calendar. No gradual entry.
+    r(10, 28, 10,   CH,   0);     //  48 — snap hard right
+
+    // ── Eau Rouge valley — flat slight left ───────────────────────────────
+    // The dip before the fury. Easy, fast.
+    r( 8, 28,  8,  -CE,   0);     //  44 — flat slight left, floor it
+
+    // ── Raidillon — blind uphill sweeping right ───────────────────────────
+    // Heart of Spa. You commit at 250 km/h. The crest swallows the exit.
+    r(10, 65, 10,   CE,  HH);     //  85 — climbing right, sight line gone
+    r( 8, 22,  8,    0,  HM);     //  38 — blind crest straight over the top
+
+    // ── Kemmel Straight — 140-hold flat blast ─────────────────────────────
+    // Longest flat run on the circuit. Pedal flat. Traffic ahead.
+    r( 1,140,  1,    0,   0);     // 142 — maximum speed
+
+    // ── Les Combes chicane ────────────────────────────────────────────────
+    // Hard braking zone into a right-left snap. No run-off.
+    r( 8, 22,  8,   CH,   0);     //  38 — hard right
+    r( 8, 22,  8,  -CH,   0);     //  38 — hard left mirror
+
+    // ── Rivage — medium right going down ──────────────────────────────────
+    r(12, 48, 12,   CM, -HL);     //  72 — medium right, slight descent
+
+    // ── Pouhon — vast double-left sweeper ────────────────────────────────
+    // Two apexes, flat out in a modern car. Here you are committed.
+    // The road rises gently — you arrive at the second apex blind.
+    r(22,165, 22,  -CE,  HL);     // 209 — the great left
+
+    // ── Brief flat before Blanchimont ────────────────────────────────────
+    r( 1, 40,  1,    0,   0);     //  42
+
+    // ── Blanchimont — very fast right sweeper ────────────────────────────
+    // Almost flat out. One mistake and you find the barrier.
+    r(15,105, 15,   CE,   0);     // 135 — flat-out right
+
+    // ── Bus Stop chicane — tight surprise ────────────────────────────────
+    // The lap's only slow corner, and it always catches you by surprise.
+    r( 6, 15,  6,   CH,   0);     //  27 — hard right
+    r( 6, 15,  6,  -CH,   0);     //  27 — hard left
+
+    // ── Connector — short straight to link into Nordschleife ─────────────
+    r( 1, 35,  1,    0,   0);     //  37
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ACT 2 — NORDSCHLEIFE TRANSITION
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Hatzenbach — fast technical sequence ──────────────────────────────
+    // Three medium corners with no recovery gap. Rhythm required.
+    r(10, 42, 10,   CM,   0);     //  62 — medium right
+    r(10, 42, 10,  -CM,   0);     //  62 — medium left
+    r(10, 32, 10,   CE,  HL);     //  52 — easy right, slight rise
+
+    // ── Hocheichen — fast right over a small rise ─────────────────────────
+    r( 8, 52,  8,   CE,  HM);     //  68 — climbing right
+
+    // ── Quiddelbacher Höhe — blind straight crest then HARD LEFT ─────────
+    // The hill is perfectly straight — it screams at you to hold flat.
+    // The hard left waits at the very top. No warning. No run-off.
+    r( 1, 75,  1,    0,  HH);     //  77 — straight climb, no braking point visible
+    r(10, 32, 10,  -CH, -HH);     //  52 — SURPRISE: hard left + massive drop
+
+    // ── Flugplatz — double compression bump ──────────────────────────────
+    // Short undulations that unsettle the car mid-corner.
+    r( 1, 55,  1,    0,  HM);     //  57 — up
+    r( 1, 22,  1,    0, -HM);     //  24 — down
+
+    // ── Schwedenkreuz — THE MEGA LEFT SWEEPER ────────────────────────────
+    // 220 hold segments. You forget you are still in it.
+    // Flat, fast, relentless. This is what a F1 car was built for.
+    r(25,220, 25,  -CE,   0);     // 270 — vast left, 10+ seconds at full speed
+
+    // ── Aremberg — fast downhill right ───────────────────────────────────
+    // Drops away into the valley. Don't brake too late.
+    r(12, 58, 12,   CM, -HM);     //  82 — medium right, falling fast
+
+    // ── Fuchsröhre — long blind downhill straight ─────────────────────────
+    // The road keeps dropping. You are going faster than feels safe.
+    // No corners. No shelter. Just commitment.
+    r( 1,115,  1,    0, -HH);     // 117 — long fall, maximum speed
+
+    // ── Adenauer Forst — tight technical section ──────────────────────────
+    // Three snappy corners, back to back. This is why the Nordschleife
+    // has killed more cars than any other track on earth.
+    r( 6, 15,  6,  -CH,   0);     //  27
+    r( 6, 15,  6,   CH,  HM);     //  27 — right + climbing
+    r( 6, 15,  6,  -CM, -HM);     //  27 — medium left + dropping
+
+    // ── Brief recovery valley ─────────────────────────────────────────────
+    r( 1, 30,  1,    0,   0);     //  32
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ACT 3 — THE GREEN HELL CAULDRON
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Metzgesfeld — flowing right with slight rise ───────────────────────
+    r(15, 85, 15,   CM,  HL);     // 115 — medium right, building
+
+    // ── Kallenhard / Wehrseifen — alternating medium pace ─────────────────
+    r(12, 52, 12,  -CM,   0);     //  76
+    r(10, 42, 10,   CE, -HL);     //  62 — easy right, slight drop
+
+    // ── DAS KARUSSELL — THE WALL ──────────────────────────────────────────
+    // A 220-hold hard LEFT climbing corner.
+    // You are in it forever. The wall on the outside rises with you.
+    // A mistake here is a DNF. This is the signature of the Green Hell.
+    r(20,220, 20,  -CH,  HM);     // 260 — THE wall corner
+
+    // ── Exit straight — brief oxygen ─────────────────────────────────────
+    r( 1, 32,  1,    0,   0);     //  34
+
+    // ── Hohe Acht — highest point of the track ────────────────────────────
+    // Straight climb to the summit. The view from the top is spectacular
+    // for approximately 0.1 seconds before the road drops away.
+    r( 1, 95,  1,    0,  HH);     //  97 — straight up
+
+    // ── Summit drop + hard right ──────────────────────────────────────────
+    // You crest the hill. There is nothing ahead but sky. Then the road
+    // reappears, turning hard right, plunging downhill.
+    r(10, 42, 10,   CH, -HH);     //  62 — HARD RIGHT + massive drop
+
+    // ── Wippermann / Eschbach — fast downhill sequence ────────────────────
+    r(10, 52, 10,   CM, -HM);     //  72 — right, dropping
+    r(10, 52, 10,  -CE, -HL);     //  72 — easy left, still descending
+
+    // ── Pflanzgarten — compression / jump sequence ────────────────────────
+    // The road bucks. Three hills in quick succession.
+    // Each crest launches the car slightly off the road.
+    r( 5, 28,  5,    0,  HM);     //  38 — up
+    r( 5, 22,  5,  -CE, -HM);     //  32 — down + left kink
+    r( 5, 28,  5,   CE,  HM);     //  38 — up + right kink
+    r( 5, 22,  5,    0, -HH);     //  32 — BIG DROP, no corner — pure speed
+
+    // ── Stefan Bellof S — fast flowing S-bends ────────────────────────────
+    // Named after the man who lapped the Ring in 6:11. Respect the name.
+    r(12, 58, 12,   CM,   0);     //  82 — medium right
+    r(12, 58, 12,  -CM,   0);     //  82 — medium left
+
+    // ── Kesselchen — long straight downhill blast ─────────────────────────
+    // The fastest part of the lap. The road drops 600 metres of elevation
+    // in what feels like 5 seconds. Traffic is very bad here.
+    r( 1,135,  1,    0, -HH);     // 137 — falling flat out
+
+    // ── Klostertal — fast right, climbing back up ─────────────────────────
+    r(15, 95, 15,   CM,  HM);     // 125 — right and rising
+
+    // ── Caracciola S — medium left then medium right ──────────────────────
+    r(12, 62, 12,  -CE,  HL);     //  86 — left, slight rise
+    r(10, 45, 10,   CE, -HL);     //  65 — right, slight drop
+
+    // ── Final home straight ───────────────────────────────────────────────
+    // You have survived the Cathedral. One last flat-out blast to the line.
+    r( 1, 95,  1,    0, -HL);     //  97 — slight downhill, full throttle
 
     this.boardLastPlaced = [-999, -999];
 
@@ -1344,9 +1560,9 @@ export class Road
    * Reconstructs a Road from pre-built serialised data.
    *
    * When `mode` is supplied the road data is filtered to match the difficulty:
-   *   EASY  — curve and hill values scaled down (gentler road).
-   *   HARD  — curve and hill values scaled up (more aggressive road).
-   *   MEDIUM — no modification (uses the data as-is).
+   *   EASY   — hard course at hillScale 1.80 (full curves, committed hills).
+   *   MEDIUM — hard course at hillScale 2.60 (blind crests begin).
+   *   HARD   — legendary course at hillScale 3.50 (genuine altitude, full speed).
    *
    * A start gate sprite is injected at segment START_GATE_SEGMENT regardless
    * of mode.  The caller uses `distanceTravelled` to detect finish — no finish

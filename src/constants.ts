@@ -604,9 +604,9 @@ export interface RaceConfig
  */
 export const RACE_TIME_LIMIT: Record<GameMode, number> =
 {
-  [GameMode.EASY]:   90,
+  [GameMode.EASY]:   120,   // was 90 — now running the full hard course
   [GameMode.MEDIUM]: 120,
-  [GameMode.HARD]:   120,
+  [GameMode.HARD]:   165,   // longer track — The Cathedral is ~5.3 km
 };
 
 // ── Finish-line cinematic (FINISHING phase) ────────────────────────────────────
@@ -656,39 +656,41 @@ export const TIMEUP_DECEL = 19_800;   // ≈ 3 × OFFROAD_DECEL
 
 export const RACE_CONFIG: Record<GameMode, RaceConfig> =
 {
-  // EASY — Coconut Beach default road; speed capped at ~195 km/h; 1 traffic car.
-  // One complete lap of the default 1225-segment course (≈1.85 km).
-  // Matches the warmup feel of the original OutRun Stage 1.
+  // EASY — Hard course at full speed; 293 km/h; 4 traffic cars; hills 1.8×.
+  // The old Medium — now the entry point.  Sweepers and blind crests, but
+  // no survival pressure.  One complete lap of the hard course (≈3.33 km).
   [GameMode.EASY]:
-  {
-    maxSpeedRatio:   0.667,   // ≈ 195 km/h
-    trafficCount:    1,
-    raceLengthKm:    1.80,   // one loop of the default road
-    curveScale:      1.00,
-    hillScale:       1.00,
-    accelMultiplier: 0.75,
-  },
-  // MEDIUM — Hard course at full strength; 293 km/h; 4 traffic cars.
-  // One complete lap of the 2206-segment hard course (≈3.33 km).
-  // "The OG medium mode that was nice" — Nürburgring-style at full spec.
-  [GameMode.MEDIUM]:
   {
     maxSpeedRatio:   1.0,     // 293 km/h — authentic Testarossa top speed
     trafficCount:    4,
     raceLengthKm:    3.20,   // one loop of the hard road
-    curveScale:      1.00,   // FULL curves — no softening
-    hillScale:       1.80,   // 1.8× amplification — hills noticeably rise and drop
+    curveScale:      1.00,
+    hillScale:       1.80,   // 1.8× — hills noticeably rise and drop
     accelMultiplier: 1.00,
   },
-  // HARD — Same hard course; boosted speed + max traffic + stronger accel.
-  // Effectively turns the medium course into a survival exercise.
-  [GameMode.HARD]:
+  // MEDIUM — Hard course; boosted speed 358 km/h; 8 traffic; hills 2.6×.
+  // The old Hard — crests now exceed CAMERA_HEIGHT.  Genuine blind hills.
+  [GameMode.MEDIUM]:
   {
     maxSpeedRatio:   1.222,   // ≈ 358 km/h
     trafficCount:    8,
-    raceLengthKm:    3.20,   // one loop of the hard road
-    curveScale:      1.00,   // hard course is designed natively — no scaling needed
-    hillScale:       2.60,   // 2.6× — crests exceed CAMERA_HEIGHT → genuine blind hills
+    raceLengthKm:    3.20,
+    curveScale:      1.00,
+    hillScale:       2.60,   // 2.6× — crests exceed CAMERA_HEIGHT → blind hills
     accelMultiplier: 1.25,
+  },
+  // HARD — THE CATHEDRAL: Spa-Francorchamps × Nürburgring Nordschleife.
+  // A completely new 5.3 km circuit.  410 km/h.  12 traffic.  Hills 3.5×.
+  // Eau Rouge / Raidillon → Kemmel → Schwedenkreuz → Das Karussell →
+  // Hohe Acht → Pflanzgarten → Kesselchen → home straight.
+  // No rest zones.  Every straight feeds directly into the hardest corner.
+  [GameMode.HARD]:
+  {
+    maxSpeedRatio:   1.40,    // ≈ 410 km/h — you are a missile
+    trafficCount:    12,
+    raceLengthKm:    5.20,   // one loop of The Cathedral
+    curveScale:      1.00,
+    hillScale:       3.50,   // 3.5× — summit drops exceed 2× CAMERA_HEIGHT
+    accelMultiplier: 1.50,
   },
 };

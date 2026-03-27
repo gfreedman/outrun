@@ -12,7 +12,7 @@
  */
 
 import { Road }         from './road';
-import { ROAD_DATA, ROAD_DATA_HARD } from './road-data';
+import { ROAD_DATA, ROAD_DATA_HARD, ROAD_DATA_LEGENDARY } from './road-data';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { AudioManager } from './audio';
@@ -281,9 +281,9 @@ export class Game
     this.canvas = canvas;
     this.intro  = new IntroController(canvas, () => this.beginRace(), initialSettings);
 
-    // Road is built once at construction time (MEDIUM default).
+    // Road is built once at construction time (EASY default).
     // It is rebuilt with the chosen mode when the player hits START.
-    this.road = Road.fromData(ROAD_DATA, GameMode.MEDIUM);
+    this.road = Road.fromData(ROAD_DATA_HARD, GameMode.EASY);
 
     this.renderer = new Renderer(canvas, {
       car:         new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
@@ -444,16 +444,17 @@ export class Game
    * Called when the player confirms START from the intro menu, or hits PLAY AGAIN.
    *
    * Responsibilities:
-   *   - Selects the correct road data (EASY = default, MEDIUM/HARD = hard course).
+   *   - Selects the correct road data (EASY/MEDIUM = hard course, HARD = legendary).
    *   - Applies mode-specific hill/curve scaling and injects the finish celebration.
    *   - Resets all physics, collision, scoring, and timer fields.
    *   - Starts music and requests fullscreen (first interaction allowed by browsers).
    */
   private beginRace(): void
   {
-    // EASY uses the base Nürburgring course; MEDIUM and HARD use the hard course layout
-    // (MEDIUM applies 75% curve / 80% hill scaling so it sits halfway between modes)
-    const roadData = this.intro.settings.mode === GameMode.EASY ? ROAD_DATA : ROAD_DATA_HARD;
+    // EASY and MEDIUM use the hard course; HARD uses The Cathedral (legendary course).
+    const roadData = this.intro.settings.mode === GameMode.HARD
+      ? ROAD_DATA_LEGENDARY
+      : ROAD_DATA_HARD;
     this.road = Road.fromData(roadData, this.intro.settings.mode);
     this.road.injectFinishCelebration();
 
