@@ -52,7 +52,7 @@ import {
 function makeState(overrides: Partial<PhysicsState> = {}): PhysicsState
 {
   return {
-    speed: 0, playerX: 0, playerZ: 0, steerAngle: 0, brakeHeld: 0,
+    speed: 0, playerX: 0, playerZ: 0, steerAngle: 0, steerVelocity: 0, brakeHeld: 0,
     offRoad: false, offRoadRecovery: 1, slideVelocity: 0, jitterY: 0,
     hitCooldown: 0, grindTimer: 0, hitRecoveryTimer: 0, hitRecoveryBoost: 1,
     shakeTimer: 0, shakeIntensity: 0, barneyBoostTimer: 0, distanceTravelled: 0,

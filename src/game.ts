@@ -126,6 +126,8 @@ export class Game
   private speed            = 0;
   /** Visual steer angle (-1..+1) for sprite frame selection only. */
   private steerAngle       = 0;
+  /** Lateral steering momentum (road-widths/sec) — inertia model. */
+  private steerVelocity    = 0;
   /** Accumulated brake hold time (seconds); ramps brake force quadratically. */
   private brakeHeld        = 0;
   /** True when |playerX| > 1 (car is on the grass verge). */
@@ -464,6 +466,7 @@ export class Game
     this.playerX = 0;
     this.speed   = 0;
     this.steerAngle    = 0;
+    this.steerVelocity = 0;
     this.brakeHeld     = 0;
     this.offRoad       = false;
     this.offRoadRecovery = 1;
@@ -815,6 +818,7 @@ export class Game
       playerX:           this.playerX,
       playerZ:           this.playerZ,
       steerAngle:        this.steerAngle,
+      steerVelocity:     this.steerVelocity,
       brakeHeld:         this.brakeHeld,
       offRoad:           this.offRoad,
       offRoadRecovery:   this.offRoadRecovery,
@@ -838,6 +842,7 @@ export class Game
     this.playerX           = s.playerX;
     this.playerZ           = s.playerZ;
     this.steerAngle        = s.steerAngle;
+    this.steerVelocity     = s.steerVelocity;
     this.brakeHeld         = s.brakeHeld;
     this.offRoad           = s.offRoad;
     this.offRoadRecovery   = s.offRoadRecovery;

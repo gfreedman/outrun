@@ -43,6 +43,7 @@ export interface PhysicsState {
   playerX:            number;
   playerZ:            number;
   steerAngle:         number;
+  steerVelocity:      number;   // lateral steering momentum (road-widths/sec)
   brakeHeld:          number;
   offRoad:            boolean;
   offRoadRecovery:    number;
@@ -99,6 +100,7 @@ export function advancePhysics(
   let playerX          = state.playerX;
   let playerZ          = state.playerZ;
   let steerAngle       = state.steerAngle;
+  let steerVelocity    = state.steerVelocity;
   let brakeHeld        = state.brakeHeld;
   let offRoad          = state.offRoad;
   let offRoadRecovery  = state.offRoadRecovery;
@@ -160,7 +162,8 @@ export function advancePhysics(
   }
   else
   {
-    const coastRate = PLAYER_COAST_RATE * (0.5 + 0.5 * speedRatio);
+    // Low-speed coast is gentler so the car rolls naturally below 30% speed
+    const coastRate = PLAYER_COAST_RATE * Math.max(0.3, speedRatio);
     speed    -= coastRate * dt;
     brakeHeld = Math.max(0, brakeHeld - dt * 4);
   }
@@ -183,12 +186,34 @@ export function advancePhysics(
   if (grindTimer > 0) speed -= HIT_CRUNCH_GRIND_DECEL * dt;
 
   // ── Steering ─────────────────────────────────────────────────────────
+  // Linear grip loss (was quadratic ×0.5): more planted feel at high speed.
+  // At max speed: 75% grip retained vs. 50% before.
+  const gripFactor = 1 - speedRatio * 0.25;
 
-  const gripFactor = 1 - speedRatio * speedRatio * 0.5;
+  // Trail braking: brake + steer = 25% grip bonus, rewards cornering skill.
+  const trailBraking  = input.brake && (input.steerLeft || input.steerRight);
+  const effectiveGrip = gripFactor * (trailBraking ? 1.25 : 1.0);
+
+  // Steering inertia: velocity ramps when key held, springs back on release.
+  // STEER_RAMP=24 → reaches PLAYER_STEERING in ~6 frames (100ms).
+  // STEER_RETURN=20 → decays to ~5% in ~9 frames (150ms).
+  const STEER_RAMP   = 24.0;
+  const STEER_RETURN = 20.0;
+
   if (speed > 0)
   {
-    if (input.steerLeft)  playerX -= PLAYER_STEERING * gripFactor * dt;
-    if (input.steerRight) playerX += PLAYER_STEERING * gripFactor * dt;
+    if (input.steerLeft)
+      steerVelocity = Math.max(steerVelocity - STEER_RAMP * dt, -PLAYER_STEERING);
+    else if (input.steerRight)
+      steerVelocity = Math.min(steerVelocity + STEER_RAMP * dt,  PLAYER_STEERING);
+    else
+      steerVelocity *= Math.exp(-STEER_RETURN * dt);
+
+    playerX += steerVelocity * effectiveGrip * dt;
+  }
+  else
+  {
+    steerVelocity = 0;
   }
   playerX = Math.max(-2, Math.min(2, playerX));
 
@@ -201,7 +226,7 @@ export function advancePhysics(
   if (speedRatio > 0.5 && Math.abs(segmentCurve) > 0)
   {
     const centForce = Math.abs(segmentCurve * speedRatio * CENTRIFUGAL);
-    const availGrip = PLAYER_STEERING * gripFactor;
+    const availGrip = PLAYER_STEERING * effectiveGrip;
     if (centForce > availGrip * DRIFT_ONSET)
     {
       const excess   = centForce - availGrip * DRIFT_ONSET;
@@ -224,7 +249,7 @@ export function advancePhysics(
   if (speedRatio > 0.4 && Math.abs(segmentCurve) > 0)
   {
     const centForce = Math.abs(segmentCurve * speedRatio * CENTRIFUGAL);
-    const availGrip = PLAYER_STEERING * gripFactor;
+    const availGrip = PLAYER_STEERING * effectiveGrip;
     screechRatio = centForce / availGrip;
   }
 
@@ -278,6 +303,15 @@ export function advancePhysics(
   if (shakeTimer > 0)
     jitterY = (Math.random() - 0.5) * shakeIntensity * 2;
 
+  // ── High-speed straight rumble (speed sensation) ──────────────────────
+  // Subtle vertical jitter above 90% speed on a straight — gives velocity
+  // presence without distracting on corners or at lower speeds.
+  if (shakeTimer <= 0 && !offRoad && speedRatio > 0.90 && segmentCurve === 0)
+  {
+    const rumble = (speedRatio - 0.90) / 0.10;   // 0→1 from 90% to 100%
+    jitterY = (Math.random() - 0.5) * 2.0 * rumble;
+  }
+
   // ── Advance ──────────────────────────────────────────────────────────
 
   const stepWU       = speed * dt;
@@ -290,6 +324,7 @@ export function advancePhysics(
       playerX,
       playerZ,
       steerAngle,
+      steerVelocity,
       brakeHeld,
       offRoad,
       offRoadRecovery,
@@ -336,7 +371,7 @@ export function applyCollisionResponse(
   // Pre-compute approach: how fast the player was moving laterally toward the
   // object at impact — higher approach = larger restitution flick.
   const preHitSpeedRatio = speed / maxSpeed;
-  const gripFactor       = 1 - preHitSpeedRatio * preHitSpeedRatio * 0.5;
+  const gripFactor       = 1 - preHitSpeedRatio * 0.25;
   const bumpSign         = -hit.bumpDir;
   const steerApproach    = hit.bumpDir * state.steerAngle * PLAYER_STEERING * gripFactor;
   const slideApproach    = hit.bumpDir * state.slideVelocity;

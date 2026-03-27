@@ -106,9 +106,9 @@ export const PLAYER_BRAKE_MAX   = 8400;
 
 /**
  * How long (seconds) the brakes take to develop full force.
- * Models the feel of hydraulic brake fluid pressurising under hard braking.
+ * Near-instant feel — arcade-style snappy response.
  */
-export const PLAYER_BRAKE_RAMP  = 0.10;
+export const PLAYER_BRAKE_RAMP  = 0.02;
 
 // ── Steering ─────────────────────────────────────────────────────────────────
 
@@ -142,9 +142,9 @@ export const OFFROAD_DECEL          = 6600;
 
 /**
  * Time in seconds for full speed recovery after returning to the asphalt.
- * Prevents an instant snap back to top speed by blending the cap away gradually.
+ * Short window so punishment is the grass decel itself, not a lingering tax.
  */
-export const OFFROAD_RECOVERY_TIME  = 1.5;
+export const OFFROAD_RECOVERY_TIME  = 0.6;
 
 // ── Curves & Hills ────────────────────────────────────────────────────────────
 
@@ -190,11 +190,11 @@ export const MAX_FRAME_DT = 1 / 30;   // 33 ms — 30 fps physics floor
 /**
  * How hard curves push the player's car outward (centrifugal drift).
  * Formula: playerX -= curve * speedPercent * CENTRIFUGAL * dt
- * At 0.3, a hard curve (6) at full speed drifts the car at ~1.8 road-widths/sec.
- * Steering authority at full speed is ~1.0 road-widths/sec after grip reduction,
- * creating the tight on-the-limit feel of 290 km/h cornering.
+ * At 0.22, a hard curve (6) at full speed drifts at ~1.32 rw/sec.
+ * Steering authority at full speed is ~1.82 rw/sec (linear grip model),
+ * leaving a 0.5 rw/sec margin — tight but winnable with precise inputs.
  */
-export const CENTRIFUGAL    = 0.35;
+export const CENTRIFUGAL    = 0.22;
 
 // ── Drift / oversteer ─────────────────────────────────────────────────────────
 
