@@ -95,12 +95,14 @@ export class MenuRenderer
     }
 
     // ── Hero image bounds — all menus are constrained to this region ─────────
-    let imgX = 0, imgW = w;
+    let imgX = 0, imgW = w, imgY = 0, imgH = h;
     if (heroImage && heroImage.complete && heroImage.naturalWidth > 0)
     {
       const scale = Math.min(w / heroImage.naturalWidth, h / heroImage.naturalHeight);
       imgW = Math.round(heroImage.naturalWidth  * scale);
+      imgH = Math.round(heroImage.naturalHeight * scale);
       imgX = Math.round((w - imgW) / 2);
+      imgY = Math.round((h - imgH) / 2);
     }
 
     // ── Sub-menus ────────────────────────────────────────────────────────────
@@ -149,6 +151,109 @@ export class MenuRenderer
       const rectBot = baseY + sDesc + padV;
       ctx.fillStyle = 'rgba(0,0,0,0.30)';
       ctx.fillRect(imgX, rectTop, imgW, rectBot - rectTop);
+
+      // ── Controls hint — OutRun 1986 arcade style, below title ───────────────
+      {
+        const hintCx  = imgX + imgW / 2;
+        const keyFs   = Math.round(h * 0.026);
+        const keyPad  = Math.round(keyFs * 0.32);
+        const keyH    = keyFs + keyPad * 2;
+        const arrowKW = Math.round(keyH * 1.15);
+        const spaceKW = Math.round(keyH * 2.80);
+        const actFs   = Math.round(h * 0.026);
+        const keyGap  = Math.round(arrowKW * 0.18);   // gap between ← and →
+        const textGap = Math.round(actFs * 0.55);      // gap between key and action text
+        const divGap  = Math.round(actFs * 1.40);      // gap between STEER and SPACE
+
+        // Pre-measure action text for exact centering
+        ctx.font = `bold ${actFs}px Impact, sans-serif`;
+        const steerW = Math.round(ctx.measureText('STEER').width);
+        const gasW   = Math.round(ctx.measureText('GAS').width);
+        const brakeW = Math.round(ctx.measureText('BRAKE').width);
+
+        const totalContentW = arrowKW + keyGap + arrowKW + textGap + steerW
+                            + divGap + arrowKW + textGap + gasW
+                            + divGap + spaceKW + textGap + brakeW;
+        const panPadH = Math.round(keyH * 0.55);
+        const panH    = keyH + panPadH * 2;
+        const panW    = totalContentW + Math.round(keyH * 2.0);   // generous side padding
+        const panX    = Math.round(hintCx - panW / 2);
+        const panY    = imgY + Math.round(imgH * 0.23) + 50;
+        const radius  = Math.round(panH * 0.30);
+
+        // Rounded-corner dark panel
+        ctx.beginPath();
+        ctx.roundRect(panX, panY, panW, panH, radius);
+        ctx.fillStyle = 'rgba(0,0,0,0.42)';
+        ctx.fill();
+
+        // Draw content left-to-right starting from centered origin
+        let cx2 = panX + Math.round((panW - totalContentW) / 2);
+        const keyCy = panY + panPadH + Math.round(keyH / 2);
+
+        const drawKeyCap = (label: string, kw: number): void =>
+        {
+          ctx.font = `bold ${keyFs}px Impact, monospace`;
+          const kx = Math.round(cx2);
+          const ky = Math.round(keyCy - keyH / 2);
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(kx + 2, ky + 3, kw, keyH);
+          const kg = ctx.createLinearGradient(kx, ky, kx, ky + keyH);
+          kg.addColorStop(0,   '#FFEC50');
+          kg.addColorStop(0.5, '#FFD700');
+          kg.addColorStop(1,   '#BB8800');
+          ctx.fillStyle = kg;
+          ctx.fillRect(kx, ky, kw, keyH);
+          ctx.strokeStyle = '#775500';
+          ctx.lineWidth   = 1;
+          ctx.strokeRect(kx, ky, kw, keyH);
+          ctx.fillStyle = '#000000';
+          ctx.textAlign = 'center';
+          ctx.fillText(label, kx + kw / 2, ky + keyPad + keyFs * 0.82);
+          cx2 += kw;
+        };
+
+        const drawAction = (label: string, color: string, tw: number): void =>
+        {
+          cx2 += textGap;
+          ctx.font        = `bold ${actFs}px Impact, sans-serif`;
+          ctx.textAlign   = 'left';
+          ctx.lineWidth   = Math.round(actFs * 0.15);
+          ctx.strokeStyle = '#000000';
+          ctx.lineJoin    = 'round';
+          const ty = keyCy + actFs * 0.38;
+          ctx.strokeText(label, cx2, ty);
+          ctx.fillStyle = color;
+          ctx.fillText(label, cx2, ty);
+          cx2 += tw;
+        };
+
+        // [←] [→] STEER
+        drawKeyCap('←', arrowKW);
+        cx2 += keyGap;
+        drawKeyCap('→', arrowKW);
+        drawAction('STEER', '#FFFFFF', steerW);
+
+        // divider
+        cx2 += Math.round(divGap / 2);
+        ctx.fillStyle = 'rgba(255,170,0,0.50)';
+        ctx.fillRect(Math.round(cx2), Math.round(keyCy - keyH * 0.50), 2, Math.round(keyH));
+        cx2 += 2 + Math.round(divGap / 2);
+
+        // [↑] GAS
+        drawKeyCap('↑', arrowKW);
+        drawAction('GAS', '#00FF88', gasW);
+
+        // divider
+        cx2 += Math.round(divGap / 2);
+        ctx.fillStyle = 'rgba(255,170,0,0.50)';
+        ctx.fillRect(Math.round(cx2), Math.round(keyCy - keyH * 0.50), 2, Math.round(keyH));
+        cx2 += 2 + Math.round(divGap / 2);
+
+        // [SPACE] BRAKE
+        drawKeyCap('SPACE', spaceKW);
+        drawAction('BRAKE', '#FF4422', brakeW);
+      }
 
       // ── Helper: draw a centred label with outline + optional glow ─────────
       const drawLabel = (
