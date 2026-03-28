@@ -694,6 +694,7 @@ export class Game
     // ── Render ────────────────────────────────────────────────────────────
     const { renderer, road, w, h } = this;
     const cfg         = RACE_CONFIG[this.intro.settings.mode];
+    // 0.12 (vs 0.15 in drawRace): intentionally subtler during the finish cinematic.
     const driftVisual = -this.slideVelocity * 0.12;
     const renderSteer = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
 

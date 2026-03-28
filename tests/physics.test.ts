@@ -243,12 +243,13 @@ describe('advancePhysics — centrifugal', () =>
 
   it('zero segmentCurve: no centrifugal effect', () =>
   {
-    const st = makeState({ speed: 5000 });
+    // Start at a non-zero position so any spurious centrifugal force would be detectable.
+    // (Starting at 0 would be vacuous: curve*0 = 0 regardless of the formula.)
+    const st = makeState({ speed: 5000, playerX: 0.4 });
     const cfg = makeCfg({ segmentCurve: 0 });
     const { state } = advancePhysics(st, NO_INPUT, DT, cfg);
-    // playerX should only change from coasting, not centrifugal
-    // With zero curve, centrifugal contribution is 0
-    expect(state.playerX).toBe(0);
+    // No steering, no slide, no centrifugal — playerX must stay exactly where it started.
+    expect(state.playerX).toBe(0.4);
   });
 });
 
