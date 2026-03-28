@@ -19,21 +19,25 @@ import {
   initTraffic,
   updateTraffic,
   checkTrafficCollision,
+  TrafficType,
   type TrafficCar,
+  type TrafficUpdateConfig,
 } from '../src/traffic';
 import {
   TRAFFIC_COUNT,
-  TRAFFIC_SPEED_MIN,
-  TRAFFIC_SPEED_MAX,
   TRAFFIC_HITBOX_X,
   TRAFFIC_HITBOX_SEGS,
   SEGMENT_LENGTH,
   DRAW_DISTANCE,
   ROAD_WIDTH,
   CAMERA_HEIGHT,
+  BARNEY_EVADE_SEGS_MIN,
+  BARNEY_EVADE_RANGE,
+  BANANA_WOBBLE_AMP,
+  BANANA_WOBBLE_WAVELENGTH,
 } from '../src/constants';
 import { TRAFFIC_CAR_SPECS } from '../src/sprites';
-import { TrafficType } from '../src/traffic';
+import { TrafficBehavior } from '../src/types';
 
 // Arbitrary but realistic segment count (matches typical Coconut Beach layout)
 const SEG_COUNT  = 1200;
@@ -50,12 +54,11 @@ describe('initTraffic', () =>
     expect(cars).toHaveLength(TRAFFIC_COUNT);
   });
 
-  it('all cars start with speed in [TRAFFIC_SPEED_MIN, TRAFFIC_SPEED_MAX]', () =>
+  it('all cars start with a positive speed', () =>
   {
     for (const car of cars)
     {
-      expect(car.speed).toBeGreaterThanOrEqual(TRAFFIC_SPEED_MIN);
-      expect(car.speed).toBeLessThanOrEqual(TRAFFIC_SPEED_MAX);
+      expect(car.speed).toBeGreaterThan(0);
     }
   });
 
@@ -107,7 +110,7 @@ describe('updateTraffic — Z advancement', () =>
     });
 
     const beforeZ = cars.map(c => c.worldZ);
-    updateTraffic(cars, playerZ, SEG_COUNT, dt);
+    updateTraffic(cars, { playerZ, playerX: 0, playerSpeed: 0, segmentCount: SEG_COUNT, intensity: 0, dt });
 
     for (let i = 0; i < cars.length; i++)
     {
@@ -139,7 +142,7 @@ describe('updateTraffic — recycle always spawns at horizon', () =>
     cars.forEach(car => { car.worldZ = playerZ - 26 * SEGMENT_LENGTH; });
 
     // Run enough frames for the recycle branch to fire
-    updateTraffic(cars, playerZ, SEG_COUNT, 0.016);
+    updateTraffic(cars, { playerZ, playerX: 0, playerSpeed: 0, segmentCount: SEG_COUNT, intensity: 0, dt: 0.016 });
 
     const minSegs = DRAW_DISTANCE - 5;
     const maxSegs = DRAW_DISTANCE + 5;
@@ -165,7 +168,7 @@ describe('checkTrafficCollision', () =>
   function makeCar(worldX: number, worldZ: number): TrafficCar
   {
     return {
-      type: TrafficType.Car,
+      type:      TrafficType.Car,
       worldZ,
       worldX,
       speed:     2000,
@@ -173,6 +176,23 @@ describe('checkTrafficCollision', () =>
       laneTimer: 2,
       hitVelX:   0,
       spinAngle: 0,
+      massMult:  1.0,
+      hitboxX:   TRAFFIC_HITBOX_X,   // Car type: hitboxMult = 1.0
+      behavior:  TrafficBehavior.Standard,
+    };
+  }
+
+  /** Helper: build a default TrafficUpdateConfig for tests. */
+  function makeCfg(overrides: Partial<TrafficUpdateConfig> = {}): TrafficUpdateConfig
+  {
+    return {
+      playerZ:     0,
+      playerX:     0,
+      playerSpeed: 5000,
+      segmentCount: SEG_COUNT,
+      intensity:   0,
+      dt:          0.016,
+      ...overrides,
     };
   }
 
@@ -310,5 +330,267 @@ describe('TRAFFIC_CAR_SPECS', () =>
     {
       expect(spec.worldH).toBeLessThan(CAMERA_HEIGHT);
     }
+  });
+});
+
+// ── Per-type profiles ─────────────────────────────────────────────────────────
+
+describe('initTraffic — per-type profile fields', () =>
+{
+  it('each spawned car has a positive massMult', () =>
+  {
+    const cars = initTraffic(SEG_COUNT, 12);
+    for (const car of cars)
+      expect(car.massMult).toBeGreaterThan(0);
+  });
+
+  it('each spawned car has a positive hitboxX', () =>
+  {
+    const cars = initTraffic(SEG_COUNT, 12);
+    for (const car of cars)
+      expect(car.hitboxX).toBeGreaterThan(0);
+  });
+
+  it('each spawned car has a recognised TrafficBehavior', () =>
+  {
+    const valid = new Set(Object.values(TrafficBehavior));
+    const cars = initTraffic(SEG_COUNT, 12);
+    for (const car of cars)
+      expect(valid.has(car.behavior)).toBe(true);
+  });
+
+  it('Mega cars have higher massMult than GottaGo cars (heavy vs light)', () =>
+  {
+    // Spawn a large pool and find at least one of each type.
+    // Seeded positions guarantee coverage across 50 cars.
+    const cars = initTraffic(SEG_COUNT, 50);
+    const mega    = cars.find(c => c.type === TrafficType.Mega);
+    const gottago = cars.find(c => c.type === TrafficType.GottaGo);
+    if (mega && gottago)
+      expect(mega.massMult).toBeGreaterThan(gottago.massMult);
+  });
+
+  it('Mega hitboxX is larger than Barney hitboxX', () =>
+  {
+    const cars = initTraffic(SEG_COUNT, 50);
+    const mega   = cars.find(c => c.type === TrafficType.Mega);
+    const barney = cars.find(c => c.type === TrafficType.Barney);
+    if (mega && barney)
+      expect(mega.hitboxX).toBeGreaterThan(barney.hitboxX);
+  });
+
+  it('GottaGo spawns faster than Yoshi on average (speed ranges do not overlap at low end)', () =>
+  {
+    // At intensity 0: GottaGo min = 3200, Yoshi max = 2500 → no overlap
+    // Run enough spawns to collect a sample of each
+    const cars = initTraffic(SEG_COUNT, 100);
+    const gottago = cars.filter(c => c.type === TrafficType.GottaGo);
+    const yoshi   = cars.filter(c => c.type === TrafficType.Yoshi);
+    if (gottago.length > 0 && yoshi.length > 0)
+    {
+      const minGottaGo = Math.min(...gottago.map(c => c.speed));
+      const maxYoshi   = Math.max(...yoshi.map(c => c.speed));
+      expect(minGottaGo).toBeGreaterThan(maxYoshi);
+    }
+  });
+
+  it('trafficIntensity > 0 produces higher speeds than intensity 0 on average', () =>
+  {
+    const carsEasy = initTraffic(SEG_COUNT, 50, 0);
+    const carsHard = initTraffic(SEG_COUNT, 50, 1);
+    const avgEasy  = carsEasy.reduce((s, c) => s + c.speed, 0) / carsEasy.length;
+    const avgHard  = carsHard.reduce((s, c) => s + c.speed, 0) / carsHard.length;
+    expect(avgHard).toBeGreaterThan(avgEasy);
+  });
+});
+
+// ── Behaviour: Barney evasion ─────────────────────────────────────────────────
+
+describe('updateTraffic — Barney EVADER behaviour', () =>
+{
+  it('Barney moves targetX away from player when player is within evade range', () =>
+  {
+    // Player on the right side of the road (+X).  Barney starts in the same zone.
+    // After one tick Barney's targetX should flip to the left side.
+    const playerWorldX = 600;
+    const playerXNorm  = playerWorldX / ROAD_WIDTH;
+    const barneyX      = 500;   // inner-right lane — close to player
+
+    const car: TrafficCar = {
+      type:      TrafficType.Barney,
+      worldZ:    10 * SEGMENT_LENGTH,   // 10 segs ahead of player
+      worldX:    barneyX,
+      speed:     2000,
+      targetX:   barneyX,
+      laneTimer: 3.0,
+      hitVelX:   0,
+      spinAngle: 0,
+      massMult:  0.8,
+      hitboxX:   TRAFFIC_HITBOX_X * 0.85,
+      behavior:  TrafficBehavior.Evader,
+    };
+
+    // 10 segs ahead < BARNEY_EVADE_SEGS_MIN (25) so evasion should trigger
+    updateTraffic([car], {
+      playerZ:     0,
+      playerX:     playerXNorm,
+      playerSpeed: 5000,
+      segmentCount: SEG_COUNT,
+      intensity:   0,
+      dt:          0.016,
+    });
+
+    // Barney should have fled to a negative (left-side) target
+    expect(car.targetX).toBeLessThan(0);
+  });
+
+  it('Barney does NOT evade when player is far away (beyond evade trigger depth)', () =>
+  {
+    const playerXNorm  = 500 / ROAD_WIDTH;
+
+    const car: TrafficCar = {
+      type:      TrafficType.Barney,
+      worldZ:    (BARNEY_EVADE_SEGS_MIN + 10) * SEGMENT_LENGTH,  // well beyond trigger
+      worldX:    500,
+      speed:     2000,
+      targetX:   500,
+      laneTimer: 10.0,   // won't expire during test
+      hitVelX:   0,
+      spinAngle: 0,
+      massMult:  0.8,
+      hitboxX:   TRAFFIC_HITBOX_X * 0.85,
+      behavior:  TrafficBehavior.Evader,
+    };
+
+    updateTraffic([car], {
+      playerZ:     0,
+      playerX:     playerXNorm,
+      playerSpeed: 5000,
+      segmentCount: SEG_COUNT,
+      intensity:   0,
+      dt:          0.016,
+    });
+
+    // targetX should be unchanged (no evasion triggered)
+    expect(car.targetX).toBe(500);
+  });
+
+  it('Barney does NOT evade when player is laterally far away', () =>
+  {
+    // Player far left, Barney far right — gap > BARNEY_EVADE_RANGE
+    const gap = BARNEY_EVADE_RANGE + 200;
+    const barneyX      = 1200;
+    const playerWorldX = barneyX - gap;
+    const playerXNorm  = playerWorldX / ROAD_WIDTH;
+
+    const car: TrafficCar = {
+      type:      TrafficType.Barney,
+      worldZ:    5 * SEGMENT_LENGTH,
+      worldX:    barneyX,
+      speed:     2000,
+      targetX:   barneyX,
+      laneTimer: 10.0,
+      hitVelX:   0,
+      spinAngle: 0,
+      massMult:  0.8,
+      hitboxX:   TRAFFIC_HITBOX_X * 0.85,
+      behavior:  TrafficBehavior.Evader,
+    };
+
+    updateTraffic([car], {
+      playerZ:     0,
+      playerX:     playerXNorm,
+      playerSpeed: 5000,
+      segmentCount: SEG_COUNT,
+      intensity:   0,
+      dt:          0.016,
+    });
+
+    expect(car.targetX).toBe(barneyX);
+  });
+});
+
+// ── Behaviour: Mega road-hog ──────────────────────────────────────────────────
+
+describe('updateTraffic — Mega ROAD_HOG behaviour', () =>
+{
+  it('Mega prefers centre lanes when selecting a new target (at least 50% of the time)', () =>
+  {
+    // Force laneTimer to expire every tick so we collect many target samples.
+    const car: TrafficCar = {
+      type:      TrafficType.Mega,
+      worldZ:    20 * SEGMENT_LENGTH,
+      worldX:    -1200,
+      speed:     1200,
+      targetX:   -1200,
+      laneTimer: 0.0001,
+      hitVelX:   0,
+      spinAngle: 0,
+      massMult:  2.0,
+      hitboxX:   TRAFFIC_HITBOX_X * 1.3,
+      behavior:  TrafficBehavior.RoadHog,
+    };
+
+    let centreCount = 0;
+    const trials    = 200;
+
+    for (let i = 0; i < trials; i++)
+    {
+      car.laneTimer = 0.0001;   // expire every tick
+      updateTraffic([car], {
+        playerZ:     0,
+        playerX:     0,
+        playerSpeed: 0,
+        segmentCount: SEG_COUNT,
+        intensity:   0,         // MEGA_CENTER_BIAS_MIN = 0.65 at intensity 0
+        dt:          0.016,
+      });
+      if (Math.abs(car.targetX) <= 500) centreCount++;
+    }
+
+    // At 0.65 bias expect >50% centre — use a safe lower bound for statistical noise
+    expect(centreCount / trials).toBeGreaterThan(0.50);
+  });
+});
+
+// ── Behaviour: Banana wanderer ────────────────────────────────────────────────
+
+describe('updateTraffic — Banana WANDERER behaviour', () =>
+{
+  it('Banana worldX is offset from targetX by a sine of worldZ progress', () =>
+  {
+    // Set worldZ so that after Z advance (speed * dt) it lands at π/2 phase.
+    // sin(π/2) = 1.0 → worldX ≈ targetX + BANANA_WOBBLE_AMP
+    const dt      = 0.016;
+    const speed   = 3000;
+    const targetX = 500;
+    const arrivalZ = (Math.PI / 2) * BANANA_WOBBLE_WAVELENGTH;
+    const startZ   = arrivalZ - speed * dt;
+
+    const car: TrafficCar = {
+      type:      TrafficType.Banana,
+      worldZ:    startZ > 0 ? startZ : startZ + SEG_COUNT * SEGMENT_LENGTH,
+      worldX:    targetX,
+      speed,
+      targetX,
+      laneTimer: 5.0,   // won't expire
+      hitVelX:   0,
+      spinAngle: 0,
+      massMult:  0.9,
+      hitboxX:   TRAFFIC_HITBOX_X,
+      behavior:  TrafficBehavior.Wanderer,
+    };
+
+    updateTraffic([car], {
+      playerZ:     0,
+      playerX:     0,
+      playerSpeed: 0,
+      segmentCount: SEG_COUNT,
+      intensity:   0,
+      dt,
+    });
+
+    // sin(π/2) * AMP = AMP, so worldX ≈ targetX + BANANA_WOBBLE_AMP
+    expect(car.worldX).toBeCloseTo(targetX + BANANA_WOBBLE_AMP, 0);
   });
 });

@@ -17,10 +17,12 @@ import { describe, it, expect } from 'vitest';
 import {
   advancePhysics,
   applyCollisionResponse,
+  applyTrafficHitResponse,
   PhysicsState,
   PhysicsConfig,
   InputSnapshot,
   StaticHitDescriptor,
+  TrafficHitDescriptor,
 } from '../src/physics';
 import { CollisionClass } from '../src/types';
 import {
@@ -45,6 +47,8 @@ import {
   SHAKE_CRUNCH_INTENSITY,
   HIT_CRUNCH_RECOVERY_TIME,
   HIT_CRUNCH_RECOVERY_BOOST,
+  TRAFFIC_HIT_COOLDOWN,
+  TRAFFIC_HIT_COOLDOWN_BOOSTING,
 } from '../src/constants';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -847,6 +851,178 @@ describe('advancePhysics — immutability', () =>
     const st = makeState({ speed: 5000, playerX: 0.5 });
     const frozen = { ...st };
     advancePhysics(st, THROTTLE, DT, makeCfg());
+    expect(st).toEqual(frozen);
+  });
+});
+
+// ── advancePhysics — steering attenuation ────────────────────────────────────
+//
+// At full speed the car requires wider, earlier inputs — steerVelocity
+// saturates at a lower cap than at low speed (STEER_AUTHORITY_MIN guards
+// against going to zero).
+
+describe('advancePhysics — steering attenuation at high speed', () =>
+{
+  it('saturated steerVelocity is lower at full speed than at low speed', () =>
+  {
+    const steerRight: InputSnapshot = { ...NO_INPUT, steerRight: true };
+
+    // Pre-set steerVelocity far above any authority level so one frame clamps to
+    // the authority ceiling, letting us read the authority directly from the output.
+    const lowState  = makeState({ speed: PLAYER_MAX_SPEED * 0.05, steerVelocity: 100 });
+    const highState = makeState({ speed: PLAYER_MAX_SPEED,        steerVelocity: 100 });
+
+    const { state: lowResult  } = advancePhysics(lowState,  steerRight, DT, makeCfg());
+    const { state: highResult } = advancePhysics(highState, steerRight, DT, makeCfg());
+
+    expect(Math.abs(highResult.steerVelocity)).toBeLessThan(Math.abs(lowResult.steerVelocity));
+  });
+
+  it('steerVelocity at full speed remains >= PLAYER_STEERING * STEER_AUTHORITY_MIN (never zeroed)', () =>
+  {
+    // STEER_AUTHORITY_MIN = 0.70, so capped steerVelocity ≥ PLAYER_STEERING * 0.70
+    const steerRight: InputSnapshot = { ...NO_INPUT, steerRight: true };
+    const st = makeState({ speed: PLAYER_MAX_SPEED, steerVelocity: 100 });
+    const { state: result } = advancePhysics(st, steerRight, DT, makeCfg());
+
+    // 0.70 × PLAYER_STEERING is the floor; we expect the saturated value to be at least this.
+    expect(Math.abs(result.steerVelocity)).toBeGreaterThanOrEqual(PLAYER_STEERING * 0.70 - 0.01);
+  });
+});
+
+// ── applyTrafficHitResponse ───────────────────────────────────────────────────
+
+describe('applyTrafficHitResponse — speed-as-armour', () =>
+{
+  const normalHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 1.0 };
+
+  it('higher player speed retains more speed after hit (OutRun: speed is armour)', () =>
+  {
+    const stLow  = makeState({ speed: PLAYER_MAX_SPEED * 0.20 });
+    const stHigh = makeState({ speed: PLAYER_MAX_SPEED * 0.90 });
+
+    const { state: lowResult  } = applyTrafficHitResponse(stLow,  normalHit, PLAYER_MAX_SPEED);
+    const { state: highResult } = applyTrafficHitResponse(stHigh, normalHit, PLAYER_MAX_SPEED);
+
+    // Express retained speed as fraction of pre-hit speed for a fair comparison
+    const lowRetained  = lowResult.speed  / stLow.speed;
+    const highRetained = highResult.speed / stHigh.speed;
+    expect(highRetained).toBeGreaterThan(lowRetained);
+  });
+
+  it('heavy car (massMult=2.0) causes worse deceleration than light car (massMult=0.7)', () =>
+  {
+    const st       = makeState({ speed: PLAYER_MAX_SPEED * 0.5 });
+    const heavyHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 2.0 };
+    const lightHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 0.7 };
+
+    const { state: heavyResult } = applyTrafficHitResponse(st, heavyHit, PLAYER_MAX_SPEED);
+    const { state: lightResult } = applyTrafficHitResponse(st, lightHit, PLAYER_MAX_SPEED);
+
+    expect(heavyResult.speed).toBeLessThan(lightResult.speed);
+  });
+
+  it('lateral flick is smaller at high speed than at low speed', () =>
+  {
+    const stLow  = makeState({ speed: PLAYER_MAX_SPEED * 0.10 });
+    const stHigh = makeState({ speed: PLAYER_MAX_SPEED * 0.90 });
+
+    const { state: lowResult  } = applyTrafficHitResponse(stLow,  normalHit, PLAYER_MAX_SPEED);
+    const { state: highResult } = applyTrafficHitResponse(stHigh, normalHit, PLAYER_MAX_SPEED);
+
+    expect(Math.abs(highResult.slideVelocity)).toBeLessThan(Math.abs(lowResult.slideVelocity));
+  });
+
+  it('bumpDir +1: slideVelocity < 0 (pushed left)', () =>
+  {
+    const st = makeState({ speed: PLAYER_MAX_SPEED * 0.5 });
+    const { state: result } = applyTrafficHitResponse(st, normalHit, PLAYER_MAX_SPEED);
+    expect(result.slideVelocity).toBeLessThan(0);
+  });
+
+  it('bumpDir -1: slideVelocity > 0 (pushed right)', () =>
+  {
+    const st  = makeState({ speed: PLAYER_MAX_SPEED * 0.5 });
+    const hit: TrafficHitDescriptor = { bumpDir: -1, isBoosting: false, carMassMult: 1.0 };
+    const { state: result } = applyTrafficHitResponse(st, hit, PLAYER_MAX_SPEED);
+    expect(result.slideVelocity).toBeGreaterThan(0);
+  });
+});
+
+describe('applyTrafficHitResponse — car mass effects', () =>
+{
+  it('lighter car flies further on impact (carThrowVelocity inversely proportional to mass)', () =>
+  {
+    const st       = makeState({ speed: PLAYER_MAX_SPEED * 0.5 });
+    const heavyHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 2.0 };
+    const lightHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 0.7 };
+
+    const { carThrowVelocity: heavyThrow } = applyTrafficHitResponse(st, heavyHit, PLAYER_MAX_SPEED);
+    const { carThrowVelocity: lightThrow } = applyTrafficHitResponse(st, lightHit, PLAYER_MAX_SPEED);
+
+    expect(Math.abs(lightThrow)).toBeGreaterThan(Math.abs(heavyThrow));
+  });
+
+  it('recovery boost is higher after a light hit than a heavy hit', () =>
+  {
+    const st       = makeState({ speed: PLAYER_MAX_SPEED * 0.5 });
+    const heavyHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 2.0 };
+    const lightHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 0.7 };
+
+    const { state: heavyResult } = applyTrafficHitResponse(st, heavyHit, PLAYER_MAX_SPEED);
+    const { state: lightResult } = applyTrafficHitResponse(st, lightHit, PLAYER_MAX_SPEED);
+
+    expect(lightResult.hitRecoveryBoost).toBeGreaterThan(heavyResult.hitRecoveryBoost);
+  });
+});
+
+describe('applyTrafficHitResponse — boosting branch', () =>
+{
+  it('no speed penalty and no lateral kick when boosting', () =>
+  {
+    const st  = makeState({ speed: PLAYER_MAX_SPEED, barneyBoostTimer: 2.0, slideVelocity: 0.4 });
+    const hit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: true, carMassMult: 1.0 };
+    const { state: result } = applyTrafficHitResponse(st, hit, PLAYER_MAX_SPEED);
+    expect(result.speed).toBe(PLAYER_MAX_SPEED);
+    expect(result.slideVelocity).toBe(0);   // pre-existing drift must not carry through
+  });
+
+  it('boosting cooldown is shorter than normal hit cooldown', () =>
+  {
+    const st      = makeState({ speed: PLAYER_MAX_SPEED, barneyBoostTimer: 2.0 });
+    const stNorm  = makeState({ speed: PLAYER_MAX_SPEED * 0.5 });
+    const boostHit: TrafficHitDescriptor  = { bumpDir: +1, isBoosting: true,  carMassMult: 1.0 };
+    const normalHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 1.0 };
+
+    const { state: boostResult  } = applyTrafficHitResponse(st,     boostHit,  PLAYER_MAX_SPEED);
+    const { state: normalResult } = applyTrafficHitResponse(stNorm, normalHit, PLAYER_MAX_SPEED);
+
+    expect(boostResult.hitCooldown).toBeLessThan(normalResult.hitCooldown);
+    expect(boostResult.hitCooldown).toBe(TRAFFIC_HIT_COOLDOWN_BOOSTING);
+  });
+
+  it('boosting: struck car throw is twice the normal base', () =>
+  {
+    const st      = makeState({ speed: PLAYER_MAX_SPEED, barneyBoostTimer: 2.0 });
+    const stNorm  = makeState({ speed: PLAYER_MAX_SPEED * 0.5 });
+    const boostHit:  TrafficHitDescriptor = { bumpDir: +1, isBoosting: true,  carMassMult: 1.0 };
+    const normalHit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 1.0 };
+
+    const { carThrowVelocity: boostThrow  } = applyTrafficHitResponse(st,     boostHit,  PLAYER_MAX_SPEED);
+    const { carThrowVelocity: normalThrow } = applyTrafficHitResponse(stNorm, normalHit, PLAYER_MAX_SPEED);
+
+    expect(Math.abs(boostThrow)).toBeGreaterThan(Math.abs(normalThrow));
+  });
+});
+
+describe('applyTrafficHitResponse — immutability', () =>
+{
+  it('does not mutate the input state', () =>
+  {
+    const st     = makeState({ speed: PLAYER_MAX_SPEED * 0.5, playerX: 0.3 });
+    const frozen = { ...st };
+    const hit: TrafficHitDescriptor = { bumpDir: +1, isBoosting: false, carMassMult: 1.0 };
+    applyTrafficHitResponse(st, hit, PLAYER_MAX_SPEED);
     expect(st).toEqual(frozen);
   });
 });

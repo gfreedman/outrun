@@ -63,7 +63,10 @@ If you want to change how something *feels*, start here.
 ### `types.ts`
 **Shared TypeScript interfaces and enums.**
 `RoadSegment`, `ProjectedPoint`, `SpriteInstance`, `SpriteFamily`, `GameMode`,
-`CollisionClass`, `GameSettings`, `TrafficType`.
+`CollisionClass`, `GameSettings`, `TrafficType`, `TrafficBehavior`, `TrafficProfile`.
+
+`TrafficBehavior` — six AI archetypes (Standard, Evader, Speedster, EdgeHugger,
+Wanderer, RoadHog) that drive per-car movement logic in `traffic.ts`.
 
 No logic — just type definitions used across multiple modules.
 
@@ -204,13 +207,24 @@ and `playerZ` advance.
 `PhysicsState` carries 18 fields; `steerVelocity` (road-widths/sec) is the
 lateral steering momentum that drives the inertia model.
 
-Grip model: `gripFactor = 1 - speedRatio × 0.25` (linear; 75% grip at top
-speed). `effectiveGrip = gripFactor × 1.25` when trail-braking.
+Grip model: `gripFactor = 1 - speedRatio² × 0.35` (quadratic; gentler at
+mid-speed, sharper near the top end). `effectiveGrip = gripFactor × 1.25` when
+trail-braking. Steering authority: `PLAYER_STEERING × max(0.70, 1 − speedRatio × 0.30)` — attenuated at high speed, never below 70%.
 
 `applyCollisionResponse(state, hit)` — applies speed reduction, lateral flick,
 shake timer, grind timer, and recovery boost from a static-sprite collision.
 
-Both functions are pure (no global state, no DOM). Fully tested in
+`applyTrafficHitResponse(state, hit, maxSpeed)` — traffic-specific hit response
+with two principles:
+- **Speed is armour**: `playerMass = 0.5 + speedRatio`; penalty fraction =
+  `TRAFFIC_HIT_SPEED_CAP × carMassMult / playerMass`, clamped to 1.0.
+  Fast players lose a smaller *fraction* of current speed.
+- **Car mass matters**: hitting a Mega (massMult=2.0) penalises harder and
+  recovers slower than hitting a GottaGo (massMult=0.7).
+  Boosting (Barney afterburner): no speed penalty, slideVelocity zeroed,
+  short `TRAFFIC_HIT_COOLDOWN_BOOSTING` cooldown.
+
+All three functions are pure (no global state, no DOM). Fully tested in
 `tests/physics.test.ts`.
 
 ---
@@ -232,15 +246,27 @@ Ghost families (shrub, sign) are always ignored.
 
 ### `traffic.ts`
 **AI car pool, movement, and player/traffic collision.**
-`initTraffic(segCount)` — allocates `TRAFFIC_COUNT` cars at random positions.
+`initTraffic(segCount, trafficCount, intensity)` — allocates cars at evenly
+spaced positions. Each car is assigned a `TrafficType`, `TrafficBehavior`,
+per-type `TrafficProfile` (speedMin/Max, weaveRate, hitboxMult, massMult),
+and a difficulty-scaled initial speed.
 
-`updateTraffic(cars, playerZ, segCount, dt)` — advances each car's `worldZ`
-by `speed × dt`. Cars that fall too far behind the player are recycled to
-`DRAW_DISTANCE ± 5` segments ahead.
+`updateTraffic(cars, cfg: TrafficUpdateConfig)` — advances each car's `worldZ`
+by `speed × dt` and runs per-behavior AI:
+- **Evader** (Barney): flees to the far outer lane when the player is within
+  `BARNEY_EVADE_SEGS` segments and `BARNEY_EVADE_RANGE` lateral units.
+- **Wanderer** (Banana): `worldX = targetX + sin(worldZ / WAVELENGTH) × AMP`
+  — sine-wave wobble keyed to position, not time (no drift accumulation).
+- **RoadHog** (Mega): biased lane selection toward the centre
+  (`MEGA_CENTER_BIAS_MIN`–`MEGA_CENTER_BIAS_MAX` based on `intensity`).
+- All types: speed range and lane-change rate scale with `intensity` [0..1].
+
+Cars that fall too far behind the player are recycled to `DRAW_DISTANCE ± 5`
+segments ahead.
 
 `checkTrafficCollision(playerX, playerZ, playerSpeed, cars, segCount)` — checks
-depth window and lateral overlap. Returns a hit descriptor with `bumpDir` and
-`closingSpeed`, or null.
+depth window and lateral overlap using per-car `hitboxX`. Returns a hit
+descriptor with `bumpDir`, `closingSpeed`, and the struck `hitCar`, or null.
 
 ---
 

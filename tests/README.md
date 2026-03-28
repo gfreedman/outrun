@@ -29,7 +29,7 @@ Config: `vitest.config.ts` (nested under `tsconfig.json` in the VS Code explorer
 3.  The tests import from src/ — the same source files the game uses.
 4.  No browser, no canvas, no DOM.  Any canvas calls go through a lightweight
     spy object that records method calls instead of drawing pixels.
-5.  Results are printed.  All 181 tests must pass or the exit code is non-zero.
+5.  Results are printed.  All 237 tests must pass or the exit code is non-zero.
 ```
 
 ---
@@ -58,19 +58,28 @@ Key contracts:
 **What it guards:** The pure physics functions extracted from `game.ts` into
 `src/physics.ts`.
 
-Two groups:
+Three groups:
 
 **`advancePhysics`** — the per-frame tick: throttle, braking, coasting, steering
 inertia (`steerVelocity` accumulator), trail-braking grip bonus, centrifugal drift,
 off-road friction, grind deceleration, high-speed rumble, playerZ advance.
-Tests call this with a known `PhysicsState` + `InputSnapshot` + `PhysicsConfig`
-and assert on the resulting state. `makeState()` includes `steerVelocity: 0`.
+Also covers steering attenuation: pre-saturating `steerVelocity` to 100 then
+running one frame verifies the authority clamp (`PLAYER_STEERING × max(0.70,
+1 − speedRatio × 0.30)`) is lower at full speed than at low speed, and never
+below `PLAYER_STEERING × STEER_AUTHORITY_MIN`.
 
-**`applyCollisionResponse`** — what happens when you hit something:
+**`applyCollisionResponse`** — what happens when you hit a static sprite:
 - `Ghost` — no effect (shrubs, signs)
 - `Glance` — small speed cut, brief shake (cactus scratch)
 - `Smack` — hard speed cap, recovery boost, longer shake (palm, billboard)
 - `Crunch` — worst speed cap, grind timer, longest shake (house, wall)
+
+**`applyTrafficHitResponse`** — what happens when you hit a live traffic car:
+- Speed-as-armour: high-speed player retains a larger *fraction* of speed
+- Car mass: heavy car (massMult=2.0) penalises more than light (massMult=0.7)
+- Lateral flick strictly decreases at high speed (flickScale only, no restitution)
+- Boosting branch: no speed penalty, `slideVelocity` zeroed, short cooldown
+- Immutability: input state is never mutated
 
 Cross-cutting invariants: `playerX` is always clamped to `[-1, 1]`; speed never
 falls below `HIT_SPEED_FLOOR`.
@@ -108,10 +117,25 @@ and that offset +3 (outside the window) does NOT fire.
 **What it guards:** `src/traffic.ts` — AI car spawning, per-frame movement, and
 player/traffic collision detection.
 
-Three groups:
+Groups:
 
 **Pool integrity** — `initTraffic` produces exactly `TRAFFIC_COUNT` cars, all
-with valid speeds, worldZ within bounds, and recognised `TrafficType` values.
+with valid speeds, worldZ within bounds, recognised `TrafficType` values, and
+all required personality fields (`massMult`, `hitboxX`, `behavior`).
+
+**Per-type profiles** — each `TrafficType` has the expected `TrafficBehavior`,
+correct relative mass (Mega > GottaGo) and hitbox (Mega > Barney), speed ordering
+(GottaGo fastest), and intensity-scaling (higher intensity → higher speed floor).
+
+**Barney EVADER AI** — flees to the far outer lane when the player is within
+`BARNEY_EVADE_SEGS` segments and `BARNEY_EVADE_RANGE` lateral units; does not
+evade when out of depth range or out of lateral range.
+
+**Mega ROAD_HOG AI** — lane choices are biased toward the centre (>50% over
+200 random trials).
+
+**Banana WANDERER AI** — `worldX` matches `targetX + BANANA_WOBBLE_AMP` at the
+sine peak (verifies amplitude and keying to worldZ, not time).
 
 **Update — Z advancement** — each car's `worldZ` advances by `speed × dt` per
 frame. Test pins cars to known speed and position to verify exact arithmetic.
@@ -121,10 +145,10 @@ recycled. Tests verify recycled cars always spawn at `DRAW_DISTANCE ± 5` segmen
 ahead — never mid-road. This is the regression test for the original bug where
 recycled cars could teleport to random positions.
 
-**`checkTrafficCollision`** — depth window + lateral overlap:
+**`checkTrafficCollision`** — depth window + per-car `hitboxX` lateral overlap:
 - Returns `null` when no cars are in range
 - Fires on a direct hit (same lane, within depth window)
-- Does NOT fire for an adjacent lane (gap > 2 × `TRAFFIC_HITBOX_X`)
+- Does NOT fire for an adjacent lane (gap > 2 × `car.hitboxX`)
 - `bumpDir` is correct (+1 = car to right, −1 = car to left)
 - `closingSpeed` ≈ `playerSpeed − carSpeed`
 - Returns `null` when the car is behind the player

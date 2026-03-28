@@ -25,7 +25,10 @@ Drive fast. Fight the centrifugal force on corners. Stay on the road.
 - **Pseudo-3D perspective renderer** — each road segment is projected through a virtual camera and drawn as a trapezoid, no 3D engine required
 - **Curved roads and rolling hills** — smooth eased transitions between straights, gentle bends, S-curves, and blind crests
 - **Centrifugal force** — curves push the car outward; harder corners at higher speed require active counter-steering
-- **Grip/understeer model** — steering authority tapers at speed, so 290 km/h cornering demands real commitment
+- **Grip/understeer model** — quadratic grip curve (`1 − speedRatio² × 0.35`); steering authority attenuates at speed so 290 km/h cornering demands real commitment
+- **Speed-as-armour collisions** — hitting traffic at full speed retains more velocity than limping into a car; heavy cars (Mega) punish more than light ones (GottaGo)
+- **Traffic AI personalities** — six archetypes: Standard, Evader (Barney flees sideways), Speedster (GottaGo), EdgeHugger (Yoshi), Wanderer (Banana sine-wave wobble), RoadHog (Mega blocks the centre)
+- **Difficulty-scaled traffic** — Easy/Medium/Hard tune traffic count, speed ranges, and AI aggressiveness via `trafficIntensity`
 - **Off-road friction** — grass drags the car down; speed recovers gradually after returning to asphalt
 - **Ferrari Testarossa Spider** — 37-frame sprite animation with per-frame pivot correction
 - **Roadside palm trees** — perspective-scaled sprites that follow the road's curve

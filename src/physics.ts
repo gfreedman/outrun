@@ -33,6 +33,12 @@ import {
   SHAKE_SMACK_INTENSITY, SHAKE_SMACK_DURATION,
   SHAKE_CRUNCH_INTENSITY, SHAKE_CRUNCH_DURATION,
   BARNEY_BOOST_MULTIPLIER,
+  TRAFFIC_HIT_SPEED_CAP, TRAFFIC_HIT_FLICK_BASE,
+  TRAFFIC_HIT_COOLDOWN, TRAFFIC_HIT_COOLDOWN_BOOSTING,
+  TRAFFIC_HIT_RECOVERY_TIME, TRAFFIC_HIT_RECOVERY_BOOST,
+  SHAKE_TRAFFIC_DURATION, SHAKE_TRAFFIC_INTENSITY,
+  TRAFFIC_CAR_THROW_BASE,
+  STEER_AUTHORITY_SPEED_FACTOR, STEER_AUTHORITY_MIN,
 } from './constants';
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
@@ -186,9 +192,10 @@ export function advancePhysics(
   if (grindTimer > 0) speed -= HIT_CRUNCH_GRIND_DECEL * dt;
 
   // ── Steering ─────────────────────────────────────────────────────────
-  // Linear grip loss (was quadratic ×0.5): more planted feel at high speed.
-  // At max speed: 75% grip retained vs. 50% before.
-  const gripFactor = 1 - speedRatio * 0.25;
+  // Quadratic grip loss: gentler at mid-speed, sharper near the top end.
+  // At 50% speed: 91% grip (more planted than linear).
+  // At 100% speed: 65% grip (pronounced floatiness at 400+ km/h).
+  const gripFactor = 1 - speedRatio * speedRatio * 0.35;
 
   // Trail braking: brake + steer = 25% grip bonus, rewards cornering skill.
   const trailBraking  = input.brake && (input.steerLeft || input.steerRight);
@@ -200,12 +207,18 @@ export function advancePhysics(
   const STEER_RAMP   = 24.0;
   const STEER_RETURN = 20.0;
 
+  // Steering authority: full at low speed, attenuated at high speed.
+  // The car feels planted and committed at 400 km/h — needs wider, earlier inputs.
+  // Below STEER_AUTHORITY_MIN (70%) the reduction stops so it never goes to zero.
+  const steerAuthority = PLAYER_STEERING *
+    Math.max(STEER_AUTHORITY_MIN, 1.0 - speedRatio * STEER_AUTHORITY_SPEED_FACTOR);
+
   if (speed > 0)
   {
     if (input.steerLeft)
-      steerVelocity = Math.max(steerVelocity - STEER_RAMP * dt, -PLAYER_STEERING);
+      steerVelocity = Math.max(steerVelocity - STEER_RAMP * dt, -steerAuthority);
     else if (input.steerRight)
-      steerVelocity = Math.min(steerVelocity + STEER_RAMP * dt,  PLAYER_STEERING);
+      steerVelocity = Math.min(steerVelocity + STEER_RAMP * dt,  steerAuthority);
     else
       steerVelocity *= Math.exp(-STEER_RETURN * dt);
 
@@ -371,7 +384,7 @@ export function applyCollisionResponse(
   // Pre-compute approach: how fast the player was moving laterally toward the
   // object at impact — higher approach = larger restitution flick.
   const preHitSpeedRatio = speed / maxSpeed;
-  const gripFactor       = 1 - preHitSpeedRatio * 0.25;
+  const gripFactor       = 1 - preHitSpeedRatio * preHitSpeedRatio * 0.35;
   const bumpSign         = -hit.bumpDir;
   const steerApproach    = hit.bumpDir * state.steerAngle * PLAYER_STEERING * gripFactor;
   const slideApproach    = hit.bumpDir * state.slideVelocity;
@@ -438,5 +451,105 @@ export function applyCollisionResponse(
     shakeTimer,
     shakeIntensity,
     slideVelocity,
+  };
+}
+
+// ── applyTrafficHitResponse ──────────────────────────────────────────────────
+
+/**
+ * Describes the live traffic car the player just collided with.
+ * Passed to applyTrafficHitResponse — pure, no DOM or audio.
+ */
+export interface TrafficHitDescriptor
+{
+  /** +1 = struck car is to the RIGHT of the player (player bounces left). */
+  bumpDir:     number;
+  /** True when the Barney afterburner boost is currently active. */
+  isBoosting:  boolean;
+  /** Mass multiplier of the struck traffic car (from TrafficCar.massMult). */
+  carMassMult: number;
+}
+
+/**
+ * Computes the updated player physics state after a live traffic collision,
+ * and the lateral throw velocity to apply to the struck car.
+ *
+ * Pure function — does NOT mutate the input state.  Audio, scoring, and
+ * Barney-specific logic (boost timer, kill count) remain in game.ts.
+ *
+ * Two core design principles applied here:
+ *
+ *   1. Speed is armour (OutRun):  going fast = higher effective player mass =
+ *      less deceleration penalty.  Barely moving = fragile.
+ *
+ *   2. Car mass matters (Mario Kart): hitting Mega (heavy) is catastrophic;
+ *      hitting GottaGo (light) barely slows you and they rocket sideways.
+ */
+export function applyTrafficHitResponse(
+  state:    PhysicsState,
+  hit:      TrafficHitDescriptor,
+  maxSpeed: number,
+): { state: PhysicsState; carThrowVelocity: number }
+{
+  const speedRatio = state.speed / maxSpeed;
+
+  if (hit.isBoosting)
+  {
+    // Boosting: bulldoze through — no speed penalty, no lateral kick, short cooldown.
+    // slideVelocity explicitly zeroed so a pre-existing drift doesn't persist through the hit.
+    return {
+      state: {
+        ...state,
+        slideVelocity:    0,
+        shakeTimer:       SHAKE_TRAFFIC_DURATION * 0.4,
+        shakeIntensity:   SHAKE_TRAFFIC_INTENSITY * 0.5,
+        hitCooldown:      TRAFFIC_HIT_COOLDOWN_BOOSTING,
+        hitRecoveryTimer: 0,
+        hitRecoveryBoost: 1.0,
+      },
+      carThrowVelocity: hit.bumpDir * TRAFFIC_CAR_THROW_BASE * 2.0,
+    };
+  }
+
+  // ── Normal hit ──────────────────────────────────────────────────────────────
+
+  // Player effective mass scales with speed.
+  // 0% speed → mass 0.50 (fragile).  100% → mass 1.50.  Clamp at 1.5 for boost.
+  const playerMass = 0.5 + Math.min(speedRatio, 1.0) * 1.0;
+
+  // Fractional speed penalty: lose a fraction of current speed, not a fraction of max.
+  // Fast player (high playerMass) → smaller penalty fraction → retains more speed (speed is armour).
+  // Heavy traffic car (high carMassMult) → larger penalty fraction → more speed lost.
+  const penaltyFraction = Math.min(1.0, TRAFFIC_HIT_SPEED_CAP * hit.carMassMult / playerMass);
+  let speed = state.speed * Math.max(0, 1.0 - penaltyFraction);
+  if (speed > 0)
+    speed = Math.max(speed, maxSpeed * HIT_SPEED_FLOOR);
+
+  // Lateral flick decreases at high speed — directional stability under load.
+  // flickScale → 1.0 at low speed, 0.3 at full speed.  No restitution term so
+  // flick strictly decreases with speed (fast car is more planted, less lateral kick).
+  const flickScale    = Math.max(0.3, 1.0 - speedRatio * 0.5);
+  const bumpSign      = -hit.bumpDir;
+  const slideVelocity = bumpSign * Math.min(TRAFFIC_HIT_FLICK_BASE * flickScale, 0.75);
+
+  // Recovery boost is inversely proportional to carMassMult:
+  // light car hit → snappy rebound; heavy car hit → sluggish recovery.
+  const recoveryBoost = Math.max(1.0, TRAFFIC_HIT_RECOVERY_BOOST / hit.carMassMult);
+
+  // Struck car throw: lighter cars fly further.
+  const carThrowVelocity = hit.bumpDir * (TRAFFIC_CAR_THROW_BASE / hit.carMassMult);
+
+  return {
+    state: {
+      ...state,
+      speed,
+      slideVelocity,
+      shakeTimer:       SHAKE_TRAFFIC_DURATION,
+      shakeIntensity:   SHAKE_TRAFFIC_INTENSITY,
+      hitCooldown:      TRAFFIC_HIT_COOLDOWN,
+      hitRecoveryTimer: TRAFFIC_HIT_RECOVERY_TIME,
+      hitRecoveryBoost: recoveryBoost,
+    },
+    carThrowVelocity,
   };
 }

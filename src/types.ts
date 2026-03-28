@@ -185,6 +185,56 @@ export enum GameMode
 }
 
 /**
+ * Behavioural archetype for a traffic car.
+ * Determines lane-selection bias and real-time reactive logic in updateTraffic.
+ */
+export enum TrafficBehavior
+{
+  /** Neutral — standard lane weave, no special logic. */
+  Standard   = 'standard',
+  /** Barney — flees the player's lane when approached closely. */
+  Evader     = 'evader',
+  /** GottaGo — high-speed profile, erratic lane changes. */
+  Speedster  = 'speedster',
+  /** Yoshi — prefers outer lanes, gentle and predictable. */
+  EdgeHugger = 'edge_hugger',
+  /** Banana — very short lane timer, micro-oscillation around target lane. */
+  Wanderer   = 'wanderer',
+  /** Mega — strongly prefers centre lanes, heavy and slow. */
+  RoadHog    = 'road_hog',
+}
+
+/**
+ * Per-type stat block used by the traffic system.
+ * Stored alongside each TrafficCar so lookups are O(1) after spawn.
+ */
+export interface TrafficProfile
+{
+  /** Minimum forward speed (world units / second). */
+  speedMin:     number;
+  /** Maximum forward speed (world units / second). */
+  speedMax:     number;
+  /** Lateral drift rate toward lane target (world units / second). */
+  weaveRate:    number;
+  /** Minimum seconds between lane-target changes. */
+  laneTimerMin: number;
+  /** Maximum seconds between lane-target changes. */
+  laneTimerMax: number;
+  /**
+   * Multiplier on TRAFFIC_HITBOX_X.
+   * < 1 = harder to hit (smaller effective hitbox).
+   * > 1 = easier to hit (larger effective hitbox).
+   */
+  hitboxMult:   number;
+  /**
+   * Collision mass multiplier.
+   * Affects how far the car flies when hit AND how much the player
+   * decelerates on impact.  Higher = heavier.
+   */
+  massMult:     number;
+}
+
+/**
  * Persisted user preferences, stored in localStorage between sessions.
  */
 export interface GameSettings

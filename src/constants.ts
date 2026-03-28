@@ -428,7 +428,9 @@ export const TRAFFIC_HIT_FLICK_BASE    = 0.35;
 export const TRAFFIC_HIT_FLICK_RESTITUTION = 0.80;
 
 /** Cooldown seconds after traffic hit before next collision registers. */
-export const TRAFFIC_HIT_COOLDOWN      = 1.50;
+export const TRAFFIC_HIT_COOLDOWN          = 1.50;
+/** Short cooldown during Barney afterburner — enables rapid chain hits. */
+export const TRAFFIC_HIT_COOLDOWN_BOOSTING = 0.15;
 
 /** Camera shake duration (seconds) for a traffic hit. */
 export const SHAKE_TRAFFIC_DURATION    = 0.35;
@@ -584,17 +586,23 @@ export const WU_PER_KM = PLAYER_MAX_SPEED * 3600 / DISPLAY_MAX_KMH;   // ≈ 132
 export interface RaceConfig
 {
   /** Fraction of PLAYER_MAX_SPEED allowed in this mode. */
-  maxSpeedRatio:   number;
+  maxSpeedRatio:    number;
   /** Number of traffic cars on the road simultaneously. */
-  trafficCount:    number;
+  trafficCount:     number;
   /** Race distance in km — tracked via cumulative distanceTravelled. */
-  raceLengthKm:    number;
+  raceLengthKm:     number;
   /** Multiplier applied to each segment's curve value when loading road data. */
-  curveScale:      number;
+  curveScale:       number;
   /** Multiplier applied to each segment's hill (Y-delta) when loading road data. */
-  hillScale:       number;
+  hillScale:        number;
   /** Multiplier applied to the throttle acceleration constants. */
-  accelMultiplier: number;
+  accelMultiplier:  number;
+  /**
+   * Traffic difficulty intensity [0..1].
+   * Scales per-type speed ranges and behavioural aggressiveness.
+   * 0 = gentlest (Easy), 1 = hardest (Hard).
+   */
+  trafficIntensity: number;
 }
 
 /**
@@ -634,6 +642,54 @@ export const SCORE_CRASH_PENALTY      = 500;
 /** Seconds deducted from the race clock on a traffic car hit (not Barney). */
 export const TIME_PENALTY_HIT         = 1;
 
+// ── Traffic personality system ────────────────────────────────────────────────
+
+/**
+ * At trafficIntensity = 1.0 (Hard), each per-type speed floor is multiplied by
+ * (1 + FLOOR_SCALE) and each ceiling by (1 + CEIL_SCALE).
+ * Interpolated linearly via trafficIntensity so Easy/Medium scale proportionally.
+ */
+export const TRAFFIC_SPEED_INTENSITY_FLOOR_SCALE = 0.60;
+export const TRAFFIC_SPEED_INTENSITY_CEIL_SCALE  = 0.40;
+
+/** Barney evasion: look-ahead distance (segments) that triggers evasion at intensity 0. */
+export const BARNEY_EVADE_SEGS_MIN    = 25;
+/** Barney evasion: look-ahead distance (segments) at intensity 1. */
+export const BARNEY_EVADE_SEGS_MAX    = 55;
+/** Barney evasion: lateral range (world units) within which evasion triggers. */
+export const BARNEY_EVADE_RANGE       = 1500;
+/** Barney evasion weave rate (world units / sec) at intensity 0. */
+export const BARNEY_EVADE_RATE_MIN    = 600;
+/** Barney evasion weave rate (world units / sec) at intensity 1. */
+export const BARNEY_EVADE_RATE_MAX    = 900;
+
+/** Mega road-hog: probability of choosing a centre lane (±500) at intensity 0. */
+export const MEGA_CENTER_BIAS_MIN     = 0.65;
+/** Mega road-hog: probability of choosing a centre lane (±500) at intensity 1. */
+export const MEGA_CENTER_BIAS_MAX     = 0.90;
+
+/** Banana wanderer: peak lateral wobble offset around targetX (world units). */
+export const BANANA_WOBBLE_AMP        = 100;
+/** Banana wanderer: world-units of forward travel per full wobble cycle. */
+export const BANANA_WOBBLE_WAVELENGTH = 600;
+
+/**
+ * Base lateral velocity (world units / sec) applied to a struck traffic car.
+ * Light cars (massMult < 1) fly further; heavy cars (massMult > 1) fly less far.
+ * Formula: hitVelX = bumpDir * TRAFFIC_CAR_THROW_BASE / car.massMult
+ */
+export const TRAFFIC_CAR_THROW_BASE   = 4500;
+
+// ── Player steering authority ─────────────────────────────────────────────────
+
+/**
+ * Steering authority scales down at high speed so the car feels planted at
+ * 400 km/h rather than twitchy.  Below STEER_AUTHORITY_MIN the reduction stops.
+ * Formula: steerAuthority = PLAYER_STEERING * max(MIN, 1 − speedRatio × FACTOR)
+ */
+export const STEER_AUTHORITY_SPEED_FACTOR = 0.30;
+export const STEER_AUTHORITY_MIN          = 0.70;
+
 /** Speed multiplier applied during the Barney afterburner boost. 1.5 = 50% over normal max. */
 export const BARNEY_BOOST_MULTIPLIER  = 1.5;
 
@@ -661,23 +717,25 @@ export const RACE_CONFIG: Record<GameMode, RaceConfig> =
   // no survival pressure.  One complete lap of the hard course (≈3.33 km).
   [GameMode.EASY]:
   {
-    maxSpeedRatio:   1.0,     // 293 km/h — authentic Testarossa top speed
-    trafficCount:    4,
-    raceLengthKm:    3.20,   // one loop of the hard road
-    curveScale:      1.00,
-    hillScale:       1.80,   // 1.8× — hills noticeably rise and drop
-    accelMultiplier: 1.00,
+    maxSpeedRatio:    1.0,     // 293 km/h — authentic Testarossa top speed
+    trafficCount:     4,
+    raceLengthKm:     3.20,   // one loop of the hard road
+    curveScale:       1.00,
+    hillScale:        1.80,   // 1.8× — hills noticeably rise and drop
+    accelMultiplier:  1.00,
+    trafficIntensity: 0.0,    // gentlest traffic — base speed ranges, minimal evasion
   },
   // MEDIUM — Hard course; boosted speed 358 km/h; 8 traffic; hills 2.6×.
   // The old Hard — crests now exceed CAMERA_HEIGHT.  Genuine blind hills.
   [GameMode.MEDIUM]:
   {
-    maxSpeedRatio:   1.222,   // ≈ 358 km/h
-    trafficCount:    8,
-    raceLengthKm:    3.20,
-    curveScale:      1.00,
-    hillScale:       2.60,   // 2.6× — crests exceed CAMERA_HEIGHT → blind hills
-    accelMultiplier: 1.25,
+    maxSpeedRatio:    1.222,   // ≈ 358 km/h
+    trafficCount:     8,
+    raceLengthKm:     3.20,
+    curveScale:       1.00,
+    hillScale:        2.60,   // 2.6× — crests exceed CAMERA_HEIGHT → blind hills
+    accelMultiplier:  1.25,
+    trafficIntensity: 0.5,    // midpoint — noticeably faster traffic, active Barney evasion
   },
   // HARD — THE CATHEDRAL: Spa-Francorchamps × Nürburgring Nordschleife.
   // A completely new 5.3 km circuit.  410 km/h.  12 traffic.  Hills 3.5×.
@@ -686,11 +744,12 @@ export const RACE_CONFIG: Record<GameMode, RaceConfig> =
   // No rest zones.  Every straight feeds directly into the hardest corner.
   [GameMode.HARD]:
   {
-    maxSpeedRatio:   1.40,    // ≈ 410 km/h — you are a missile
-    trafficCount:    12,
-    raceLengthKm:    5.20,   // one loop of The Cathedral
-    curveScale:      1.00,
-    hillScale:       3.50,   // 3.5× — summit drops exceed 2× CAMERA_HEIGHT
-    accelMultiplier: 1.50,
+    maxSpeedRatio:    1.40,    // ≈ 410 km/h — you are a missile
+    trafficCount:     12,
+    raceLengthKm:     5.20,   // one loop of The Cathedral
+    curveScale:       1.00,
+    hillScale:        3.50,   // 3.5× — summit drops exceed 2× CAMERA_HEIGHT
+    accelMultiplier:  1.50,
+    trafficIntensity: 1.0,    // maximum — near-player speeds, aggressive evasion
   },
 };

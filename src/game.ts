@@ -22,14 +22,15 @@ import { checkCollisions, getBlockingRadius, CollisionClass } from './collision'
 import {
   TrafficType,
   TrafficCar,
+  TrafficUpdateConfig,
   initTraffic,
   updateTraffic,
   checkTrafficCollision,
 } from './traffic';
 import { GamePhase, GameMode, GameSettings } from './types';
 import {
-  advancePhysics, applyCollisionResponse,
-  PhysicsState, InputSnapshot, PhysicsConfig,
+  advancePhysics, applyCollisionResponse, applyTrafficHitResponse,
+  PhysicsState, InputSnapshot, PhysicsConfig, TrafficHitDescriptor,
 } from './physics';
 import { Button, anyHovered }               from './ui';
 import { IntroController }                  from './intro-controller';
@@ -61,11 +62,6 @@ import
   NEAR_MISS_WOBBLE,
   COLLISION_MIN_OFFSET, ROAD_WIDTH,
   COLLISION_WINDOW, MAX_FRAME_DT,
-  TRAFFIC_HIT_SPEED_CAP,
-  TRAFFIC_HIT_FLICK_BASE, TRAFFIC_HIT_FLICK_RESTITUTION,
-  TRAFFIC_HIT_COOLDOWN,
-  SHAKE_TRAFFIC_DURATION, SHAKE_TRAFFIC_INTENSITY,
-  TRAFFIC_HIT_RECOVERY_TIME, TRAFFIC_HIT_RECOVERY_BOOST,
   RACE_CONFIG, WU_PER_KM,
   RACE_TIME_LIMIT,
   SCORE_BASE_PER_SEC, SCORE_SPEED_PER_SEC, SCORE_CRASH_PENALTY,
@@ -460,7 +456,7 @@ export class Game
 
     const cfg = RACE_CONFIG[this.intro.settings.mode];
     this.effectiveMaxSpeed = PLAYER_MAX_SPEED * cfg.maxSpeedRatio;
-    this.trafficCars = initTraffic(this.road.count, cfg.trafficCount);
+    this.trafficCars = initTraffic(this.road.count, cfg.trafficCount, cfg.trafficIntensity);
 
     // Reset physics
     this.playerZ = 0;
@@ -894,7 +890,15 @@ export class Game
 
     // ── Traffic ───────────────────────────────────────────────────────────
 
-    updateTraffic(this.trafficCars, this.playerZ, this.road.count, dt);
+    const trafficCfg: TrafficUpdateConfig = {
+      playerZ:      this.playerZ,
+      playerX:      this.playerX,
+      playerSpeed:  this.speed,
+      segmentCount: this.road.count,
+      intensity:    RACE_CONFIG[this.intro.settings.mode].trafficIntensity,
+      dt,
+    };
+    updateTraffic(this.trafficCars, trafficCfg);
 
     // ── Engine audio ──────────────────────────────────────────────────────
 
@@ -987,40 +991,20 @@ export class Game
 
       if (trafficHit)
       {
-        const boosting    = this.barneyBoostTimer > 0;
-        const preHitRatio = this.speed / this.effectiveMaxSpeed;
+        const isBoosting = this.barneyBoostTimer > 0;
+        const hit: TrafficHitDescriptor = {
+          bumpDir:     trafficHit.bumpDir,
+          isBoosting,
+          carMassMult: trafficHit.hitCar.massMult,
+        };
+        const { state: hitState, carThrowVelocity } = applyTrafficHitResponse(
+          this.capturePhysicsState(), hit, this.effectiveMaxSpeed,
+        );
+        this.applyPhysicsState(hitState);
 
-        if (boosting)
-        {
-          // ── Afterburner: bulldoze through — no speed penalty, no lateral bump ──
-          // Short cooldown (0.15 s) prevents re-detecting the SAME car this frame;
-          // fast enough to chain into the next car immediately after.
-          // Struck car launches harder (proportional to boost speed).
-          this.shakeTimer     = SHAKE_TRAFFIC_DURATION * 0.4;
-          this.shakeIntensity = SHAKE_TRAFFIC_INTENSITY * 0.5;
-          this.hitCooldown    = 0.15;
-          trafficHit.hitCar.hitVelX   = trafficHit.bumpDir * 9000;   // flung hard
-          trafficHit.hitCar.spinAngle = 0;
-          this.audio.playCrashCar();
-        }
-        else
-        {
-          // ── Normal hit: full speed penalty + lateral flick ──────────────────
-          this.speed = Math.min(this.speed, this.effectiveMaxSpeed * TRAFFIC_HIT_SPEED_CAP);
-          const bumpSign = -trafficHit.bumpDir;
-          const flick    = Math.max(TRAFFIC_HIT_FLICK_BASE, preHitRatio * TRAFFIC_HIT_FLICK_RESTITUTION);
-          this.slideVelocity    = bumpSign * Math.min(flick, 0.75);
-          this.shakeTimer       = SHAKE_TRAFFIC_DURATION;
-          this.shakeIntensity   = SHAKE_TRAFFIC_INTENSITY;
-          this.hitCooldown      = TRAFFIC_HIT_COOLDOWN;
-          this.hitRecoveryTimer = TRAFFIC_HIT_RECOVERY_TIME;
-          this.hitRecoveryBoost = TRAFFIC_HIT_RECOVERY_BOOST;
-          if (this.speed > 0)
-            this.speed = Math.max(this.speed, this.effectiveMaxSpeed * HIT_SPEED_FLOOR);
-          trafficHit.hitCar.hitVelX   = trafficHit.bumpDir * 4500;
-          trafficHit.hitCar.spinAngle = 0;
-          this.audio.playCrashCar();
-        }
+        trafficHit.hitCar.hitVelX   = carThrowVelocity;
+        trafficHit.hitCar.spinAngle = 0;
+        this.audio.playCrashCar();
 
         this.playerX = Math.max(-2, Math.min(2, this.playerX));
 
@@ -1031,7 +1015,7 @@ export class Game
           this.barneyBoostTimer = BARNEY_BOOST_DURATION;
           this.audio.playBarney();
         }
-        else if (!boosting)
+        else if (!isBoosting)
         {
           // Regular traffic hit outside afterburner: -1 second time penalty
           this.timeRemaining = Math.max(0, this.timeRemaining - TIME_PENALTY_HIT);
