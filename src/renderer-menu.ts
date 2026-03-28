@@ -110,18 +110,18 @@ export class MenuRenderer
     }
 
     // ── Barney billboard on the beach (right side of hero image) ─────────────
-    // BARNEY_OUTRUN_PALETTE = straight wooden board (right sprite in sheet).
-    // Bottom anchored to the background beach ground level (~71% down),
-    // well clear of the foreground cars which sit in the bottom ~38% of the image.
+    // BARNEY_METAL_TILLETIRE = metal-frame billboard (left sprite in sheet).
+    // Beach ground level is at ~56% of image height (pixel-sampled);
+    // foreground cars occupy y > 58%, so we stay safely above them.
     if (heroImage && heroImage.complete && heroImage.naturalWidth > 0 && this.barneySheet)
     {
-      const rect = BARNEY_RECTS.BARNEY_OUTRUN_PALETTE;
+      const rect = BARNEY_RECTS.BARNEY_METAL_TILLETIRE;
       if (rect)
       {
-        const bdH = Math.round(imgH * 0.24);
+        const bdH = Math.round(imgH * 0.20);
         const bdW = Math.round(bdH * rect.w / rect.h);
-        const cx  = Math.round(imgX + imgW * 0.895);
-        const top = Math.round(imgY + imgH * 0.71) - bdH;
+        const cx  = Math.round(imgX + imgW * 0.84);
+        const top = Math.round(imgY + imgH * 0.56) - bdH;
         this.barneySheet.draw(ctx, rect, cx - Math.round(bdW / 2), top, bdW, bdH);
       }
     }
