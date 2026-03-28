@@ -176,11 +176,11 @@ export enum GamePhase
  */
 export enum GameMode
 {
-  /** Gentle road, one traffic car, capped at ~195 km/h. */
+  /** Hard course, 293 km/h, 4 traffic cars. Sweeping corners and blind crests, no survival pressure. */
   EASY   = 'easy',
-  /** Full-strength hard course at 293 km/h with 4 traffic cars. */
+  /** Hard course, 358 km/h, 8 traffic cars. Genuine blind hills; active traffic AI. */
   MEDIUM = 'medium',
-  /** Hard course at 358 km/h with 8 traffic cars — survival mode. */
+  /** The Cathedral — a new 5.3 km circuit. 410 km/h, 12 traffic cars. Survival mode. */
   HARD   = 'hard',
 }
 
