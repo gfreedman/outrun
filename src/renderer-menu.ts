@@ -1,10 +1,14 @@
-import { Button } from './ui';
+import { Button }                         from './ui';
+import { SpriteLoader, BARNEY_RECTS }     from './sprites';
 
 // ── MenuRenderer ──────────────────────────────────────────────────────────────
 
 export class MenuRenderer
 {
-  constructor(private readonly ctx: CanvasRenderingContext2D) {}
+  constructor(
+    private readonly ctx:         CanvasRenderingContext2D,
+    private readonly barneySheet: SpriteLoader | null = null,
+  ) {}
 
   // ── Intro / menu screen ────────────────────────────────────────────────────
 
@@ -103,6 +107,20 @@ export class MenuRenderer
       imgH = Math.round(heroImage.naturalHeight * scale);
       imgX = Math.round((w - imgW) / 2);
       imgY = Math.round((h - imgH) / 2);
+    }
+
+    // ── Barney billboard on the beach (right side of hero image) ─────────────
+    if (heroImage && heroImage.complete && heroImage.naturalWidth > 0 && this.barneySheet)
+    {
+      const rect = BARNEY_RECTS.BARNEY_METAL_TILLETIRE;
+      if (rect)
+      {
+        const bdH = Math.round(imgH * 0.24);
+        const bdW = Math.round(bdH * rect.w / rect.h);
+        const cx  = Math.round(imgX + imgW * 0.855);
+        const top = Math.round(imgY + imgH * 0.77) - bdH;
+        this.barneySheet.draw(ctx, rect, cx - Math.round(bdW / 2), top, bdW, bdH);
+      }
     }
 
     // ── Sub-menus ────────────────────────────────────────────────────────────

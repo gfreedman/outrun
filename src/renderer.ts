@@ -679,7 +679,6 @@ export class Renderer
     if (!ctx) throw new Error('Could not get 2D context');
     this.ctx              = ctx;
     this.hud              = new HudRenderer(ctx);
-    this.menu             = new MenuRenderer(ctx);
     this.screens          = new ScreenRenderer(ctx);
     this.carSprites       = sprites.car       ?? null;
     for (const [type, loader] of Object.entries(sprites.trafficCars ?? {}))
@@ -689,6 +688,7 @@ export class Renderer
     this.cactusSprites    = sprites.cactus    ?? null;
     this.cookieSprites    = sprites.cookie    ?? null;
     this.barneySprites    = sprites.barney    ?? null;
+    this.menu             = new MenuRenderer(ctx, this.barneySprites);
     this.bigSprites       = sprites.big       ?? null;
     this.shrubSprites     = sprites.shrub     ?? null;
     this.signSprites      = sprites.sign      ?? null;
