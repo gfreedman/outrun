@@ -120,8 +120,8 @@ export class MenuRenderer
       {
         const bdH = Math.round(imgH * 0.20);
         const bdW = Math.round(bdH * rect.w / rect.h);
-        const cx  = Math.round(imgX + imgW * 0.895);
-        const top = Math.round(imgY + imgH * 0.67) - bdH;
+        const cx  = Math.round(imgX + imgW * 0.925);
+        const top = Math.round(imgY + imgH * 0.73) - bdH;
         this.barneySheet.draw(ctx, rect, cx - Math.round(bdW / 2), top, bdW, bdH);
       }
     }
