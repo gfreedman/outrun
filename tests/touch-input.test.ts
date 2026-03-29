@@ -20,8 +20,6 @@ interface CanvasStub extends Partial<HTMLCanvasElement>
   width:  number;
   height: number;
   _listeners: Listener[];
-  _rectLeft:  number;
-  _rectTop:   number;
 }
 
 function makeCanvas(
@@ -39,9 +37,7 @@ function makeCanvas(
   return {
     width,
     height,
-    _listeners:  listeners,
-    _rectLeft:   rectLeft,
-    _rectTop:    rectTop,
+    _listeners: listeners,
     addEventListener(type: string, handler: EventListener)
     {
       listeners.push({ type, handler });
@@ -195,6 +191,18 @@ describe('TouchInput', () =>
     const s = ti.toInputSnapshot();
     expect(s.steerRight).toBe(false);
     expect(s.steerLeft).toBe(false);
+  });
+
+  it('touch at exactly midX is assigned to right zone (strict < boundary)', () =>
+  {
+    // Zone condition is clientX < midX (strict less-than).
+    // A touch at exactly midX=200 must go to the RIGHT zone, not left.
+    dispatch(canvas, 'touchstart', [makeTouch(1, 200, 150)]);   // exactly midX
+    dispatch(canvas, 'touchmove',  [makeTouch(1, 200, 150 - TOUCH_DEADZONE - 1)]);  // slide up
+    const s = ti.toInputSnapshot();
+    expect(s.throttle).toBe(true);    // right zone: upward = throttle
+    expect(s.steerLeft).toBe(false);  // must NOT be left zone
+    expect(s.steerRight).toBe(false);
   });
 
   // ── Zone lock integrity ────────────────────────────────────────────────────
@@ -376,11 +384,11 @@ describe('TouchInput', () =>
     expect(ti.steerMagnitude()).toBe(0);
   });
 
-  it('steerMagnitude returns 0 at exactly TOUCH_DEADZONE (clamped floor)', () =>
+  it('steerMagnitude returns 0 at exactly TOUCH_DEADZONE', () =>
   {
     dispatch(canvas, 'touchstart', [makeTouch(1, 100, 150)]);
     dispatch(canvas, 'touchmove',  [makeTouch(1, 100 + TOUCH_DEADZONE, 150)]);
-    // (TOUCH_DEADZONE - TOUCH_DEADZONE) / TOUCH_STEER_RANGE = 0
+    // (|dx| - TOUCH_DEADZONE) / TOUCH_STEER_RANGE = (10-10)/60 = 0
     expect(ti.steerMagnitude()).toBe(0);
   });
 
@@ -418,6 +426,8 @@ describe('TouchInput', () =>
   it('reset clears active zones and pending tap', () =>
   {
     dispatch(canvas, 'touchstart', [makeTouch(1, 50, 150)]);
+    dispatch(canvas, 'touchmove',  [makeTouch(1, 50 - TOUCH_DEADZONE - 5, 150)]);
+    expect(ti.toInputSnapshot().steerLeft).toBe(true);  // confirm zone was active before reset
     ti.reset();
     expect(ti.toInputSnapshot()).toEqual({ throttle: false, brake: false, steerLeft: false, steerRight: false });
     expect(ti.consumeTap()).toBeNull();
