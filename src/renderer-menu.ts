@@ -142,7 +142,7 @@ export class MenuRenderer
       // START RACE stays centered; GAME MODE sits left, SETTINGS sits right.
       const startFs = Math.round(imgW * 0.060);
       const sideFs  = Math.round(imgW * 0.045);
-      const baseY   = Math.round(h * 0.978);   // shared baseline — START RACE anchor
+      const baseY   = Math.round(h * 0.978) - (this.isMobile ? 50 : 0);   // shared baseline — START RACE anchor
 
       ctx.lineJoin = 'round';
 
