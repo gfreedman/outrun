@@ -34,6 +34,7 @@ import {
 } from './physics';
 import { Button, anyHovered }               from './ui';
 import { IntroController }                  from './intro-controller';
+import { TouchInput }                        from './touch-input';
 import
 {
   PLAYER_MAX_SPEED,
@@ -91,7 +92,9 @@ export class Game
   /** Stateless renderer -- receives all state as params to render(). */
   private renderer: Renderer;
   /** Keyboard/touch input polling manager. */
-  private input:    InputManager;
+  private input:      InputManager;
+  /** Mobile touch controller; null on desktop. */
+  private touchInput: TouchInput | null = null;
   /** Web Audio API manager for engine, screech, crash, and music. */
   private audio:    AudioManager;
 
@@ -170,6 +173,19 @@ export class Game
   private stageNameTimer    = 0;
   /** True once the car has fully stopped after a TIME UP. */
   private timeUpDecelDone   = false;
+
+  // ── Mobile state ──────────────────────────────────────────────────────────
+
+  /** Whether mobile touch controls are active. */
+  private readonly isMobile: boolean = false;
+  /** Safe-area insets (CSS px = canvas px on mobile) for pill positioning. */
+  private safeL = 0;
+  private safeR = 0;
+  private safeB = 0;
+  /** True while the portrait-rotate overlay is showing mid-race. */
+  private _pausedForPortrait = false;
+  /** True for one tick after a resize, to skip the physics dt spike. */
+  private _resizePaused = false;
   /** Seconds left of Barney afterburner speed boost. */
   private barneyBoostTimer  = 0;
   /** Number of Barney cars destroyed this race (bonus at finish). */
@@ -271,11 +287,13 @@ export class Game
    * @param canvas           - The HTML canvas element to render into.
    * @param initialSettings  - Optional settings override (e.g. from tests).
    *                           Falls back to localStorage, then defaults.
+   * @param isMobile         - Enable touch controls and mobile layout.
    */
-  constructor(canvas: HTMLCanvasElement, initialSettings?: GameSettings)
+  constructor(canvas: HTMLCanvasElement, initialSettings?: GameSettings, isMobile: boolean = false)
   {
-    this.canvas = canvas;
-    this.intro  = new IntroController(canvas, () => this.beginRace(), initialSettings);
+    this.canvas   = canvas;
+    this.isMobile = isMobile;
+    this.intro    = new IntroController(canvas, () => this.beginRace(), initialSettings, isMobile);
 
     // Road is built once at construction time (EASY default).
     // It is rebuilt with the chosen mode when the player hits START.
@@ -297,9 +315,10 @@ export class Game
       shrub:     new SpriteLoader('sprites/assets/shrub_sheet.png'),
       sign:      new SpriteLoader('sprites/assets/sign_sheet.png'),
       house:     new SpriteLoader('sprites/assets/house_sheet.png'),
-    });
+    }, isMobile);
 
     this.input = new InputManager();
+    if (isMobile) this.touchInput = new TouchInput(canvas);
     this.audio = new AudioManager();
     this.canvas.addEventListener('mousemove', this.onMouseMove);
     this.canvas.addEventListener('mousedown', this.onMouseDown);
@@ -368,7 +387,51 @@ export class Game
    * @param w - New canvas width in CSS pixels.
    * @param h - New canvas height in CSS pixels.
    */
-  resize(w: number, h: number): void { this.w = w; this.h = h; }
+  resize(w: number, h: number): void
+  {
+    this.pauseOnResize();
+    this.w = w;
+    this.h = h;
+  }
+
+  /**
+   * Called at the top of resize() before canvas dimensions are updated.
+   *
+   * On mobile:
+   *   - Sets _resizePaused so the next physics tick skips advancePhysics
+   *     (prevents a dt spike from the settle gap after orientationchange).
+   *   - Calls TouchInput.reset() to clear stale zone anchors.
+   *
+   * On desktop: returns immediately (no-op).
+   */
+  private pauseOnResize(): void
+  {
+    if (!this.isMobile) return;
+    if (this.phase === GamePhase.PLAYING || this.phase === GamePhase.COUNTDOWN)
+      this._resizePaused = true;
+    this.touchInput?.reset();
+  }
+
+  /**
+   * Called when the orientation media query changes.
+   * Suspends advancePhysics and the race timer while the portrait overlay is visible.
+   * Cleared when the device returns to landscape so the race resumes seamlessly.
+   */
+  setPortraitPaused(paused: boolean): void
+  {
+    this._pausedForPortrait = paused;
+  }
+
+  /**
+   * Updates safe-area insets read by main.ts via the zero-div technique.
+   * Called on DOMContentLoaded and after each orientationchange.
+   */
+  setSafeInsets(l: number, r: number, b: number): void
+  {
+    this.safeL = l;
+    this.safeR = r;
+    this.safeB = b;
+  }
 
   /**
    * Stops the loop and removes all event listeners.
@@ -395,6 +458,18 @@ export class Game
   {
     const dt = Math.min((timestamp - this.lastTimestamp) / 1000, MAX_FRAME_DT);
     this.lastTimestamp = timestamp;
+
+    // Consume any pending touch tap and inject into mouse state so all
+    // Button.tick() calls across every phase receive synthesised clicks.
+    const tap = this.touchInput?.consumeTap() ?? null;
+    if (tap)
+    {
+      this.mouseClick = true;
+      this.clickX     = tap.x;
+      this.clickY     = tap.y;
+      this.mouseX     = tap.x;
+      this.mouseY     = tap.y;
+    }
 
     switch (this.phase)
     {
@@ -506,7 +581,8 @@ export class Game
     // stylesheet override (width:100%; height:100%) to the fullscreen element,
     // which corrupts getBoundingClientRect() and breaks mouse coordinate mapping.
     // Fullscreening the document root avoids this — our resize() handles sizing.
-    if (document.fullscreenEnabled && !document.fullscreenElement)
+    // iOS Safari has no Fullscreen API — skip entirely on mobile.
+    if (!this.isMobile && document.fullscreenEnabled && !document.fullscreenElement)
       document.documentElement.requestFullscreen().catch(() => { /* permission denied — stay windowed */ });
   }
 
@@ -522,7 +598,7 @@ export class Game
     this.audio.stopRumble();
     this.audio.stopMusic();
     this.phase = GamePhase.INTRO;
-    if (document.fullscreenElement)
+    if (!this.isMobile && document.fullscreenElement)
       document.exitFullscreen().catch(() => {});
   }
 
@@ -539,34 +615,42 @@ export class Game
    */
   private tickCountdown(dt: number): void
   {
-    this.countdownTimer += dt;
-
-    const prev = this.countdownValue;
-
-    if (this.countdownTimer < 1.0)      this.countdownValue = 3;
-    else if (this.countdownTimer < 2.0) this.countdownValue = 2;
-    else if (this.countdownTimer < 3.0) this.countdownValue = 1;
-    else if (this.countdownTimer < 3.7) this.countdownValue = 'GO!';
-    else
+    if (!this._pausedForPortrait)
     {
-      this.phase = GamePhase.PLAYING;
-      return;
-    }
+      if (!this._resizePaused)
+      {
+        this.countdownTimer += dt;
 
-    // Beep on each new number
-    if (this.countdownValue !== prev)
-    {
-      if      (this.countdownValue === 3)    this.audio.playBeep(220, 0.18);
-      else if (this.countdownValue === 2)    this.audio.playBeep(330, 0.18);
-      else if (this.countdownValue === 1)    this.audio.playBeep(440, 0.18);
-      else if (this.countdownValue === 'GO!') this.audio.playBeep(880, 0.40);
+        const prev = this.countdownValue;
+
+        if (this.countdownTimer < 1.0)       this.countdownValue = 3;
+        else if (this.countdownTimer < 2.0)  this.countdownValue = 2;
+        else if (this.countdownTimer < 3.0)  this.countdownValue = 1;
+        else if (this.countdownTimer < 3.7)  this.countdownValue = 'GO!';
+        else
+        {
+          this.phase = GamePhase.PLAYING;
+          return;
+        }
+
+        // Beep on each new number
+        if (this.countdownValue !== prev)
+        {
+          if      (this.countdownValue === 3)     this.audio.playBeep(220, 0.18);
+          else if (this.countdownValue === 2)     this.audio.playBeep(330, 0.18);
+          else if (this.countdownValue === 1)     this.audio.playBeep(440, 0.18);
+          else if (this.countdownValue === 'GO!') this.audio.playBeep(880, 0.40);
+        }
+      }
+      this._resizePaused = false;
     }
 
     this.audio.tickMusic();
 
-    // Draw road scene + countdown overlay
+    // Draw road scene + countdown overlay + pills (no interactive buttons in COUNTDOWN)
     this.drawRace();
     this.renderer.renderCountdown(this.w, this.h, this.countdownValue);
+    if (this.isMobile) this.drawTouchPills();
   }
 
   // ── Phase: PLAYING ─────────────────────────────────────────────────────────
@@ -586,19 +670,28 @@ export class Game
    */
   private tickPlaying(dt: number): void
   {
-    this.raceTimer        += dt;
-    this.timeRemaining     = Math.max(0, this.timeRemaining - dt);
-    this.stageNameTimer    = Math.max(0, this.stageNameTimer - dt);
-    // barneyBoostTimer is now decremented inside advancePhysics() so that all
-    // player timer ticks are owned by the single pure physics state machine.
+    if (!this._pausedForPortrait)
+    {
+      if (!this._resizePaused)
+      {
+        this.raceTimer        += dt;
+        this.timeRemaining     = Math.max(0, this.timeRemaining - dt);
+        this.stageNameTimer    = Math.max(0, this.stageNameTimer - dt);
+        // barneyBoostTimer is now decremented inside advancePhysics() so that all
+        // player timer ticks are owned by the single pure physics state machine.
 
-    // Score: base rate + speed bonus (pts/sec)
-    const speedRatio = this.speed / this.effectiveMaxSpeed;
-    this.score += Math.round((SCORE_BASE_PER_SEC + SCORE_SPEED_PER_SEC * speedRatio) * dt);
+        // Score: base rate + speed bonus (pts/sec)
+        const speedRatio = this.speed / this.effectiveMaxSpeed;
+        this.score += Math.round((SCORE_BASE_PER_SEC + SCORE_SPEED_PER_SEC * speedRatio) * dt);
 
-    this.audio.tickMusic();
-    this.update(dt);
+        this.audio.tickMusic();
+        this.update(dt);
+      }
+      this._resizePaused = false;
+    }
+
     this.drawRace();
+    if (this.isMobile) this.drawTouchPills();
 
     // ── Quit button hover + click ─────────────────────────────────────────
     this.btnQuit.tick(this.mouseX, this.mouseY, this.clickX, this.clickY, this.mouseClick);
@@ -714,6 +807,7 @@ export class Game
     );
 
     renderer.renderConfetti(w, h, this.finishingTimer);
+    if (this.isMobile) this.drawTouchPills();
 
     if (this.finishingTimer >= FINISHING_DURATION)
       this.phase = GamePhase.GOAL;
@@ -856,14 +950,35 @@ export class Game
     this.distanceTravelled = s.distanceTravelled;
   }
 
+  /** Draws touch pill affordances on top of the current frame. */
+  private drawTouchPills(): void
+  {
+    if (!this.touchInput) return;
+    const snap = this.touchInput.toInputSnapshot();
+    this.renderer.renderTouchPills(
+      this.w, this.h,
+      snap.steerLeft, snap.steerRight, snap.throttle, snap.brake,
+      this.safeL, this.safeR, this.safeB,
+    );
+  }
+
   private update(dt: number): void
   {
     const playerSegment = this.road.findSegment(this.playerZ);
-    const input: InputSnapshot = {
+    // Merge keyboard + touch input (OR — either source activates the action).
+    const kbRaw = {
       throttle:   this.input.isDown('ArrowUp'),
       brake:      this.input.isDown('ArrowDown') || this.input.isDown(' '),
       steerLeft:  this.input.isDown('ArrowLeft'),
       steerRight: this.input.isDown('ArrowRight'),
+    };
+    const touchRaw = this.touchInput?.toInputSnapshot()
+      ?? { throttle: false, brake: false, steerLeft: false, steerRight: false };
+    const input: InputSnapshot = {
+      throttle:   kbRaw.throttle   || touchRaw.throttle,
+      brake:      kbRaw.brake      || touchRaw.brake,
+      steerLeft:  kbRaw.steerLeft  || touchRaw.steerLeft,
+      steerRight: kbRaw.steerRight || touchRaw.steerRight,
     };
     const cfg: PhysicsConfig = {
       maxSpeed:        this.effectiveMaxSpeed,

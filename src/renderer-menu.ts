@@ -8,6 +8,7 @@ export class MenuRenderer
   constructor(
     private readonly ctx:         CanvasRenderingContext2D,
     private readonly barneySheet: SpriteLoader | null = null,
+    private readonly isMobile:    boolean = false,
   ) {}
 
   // ── Intro / menu screen ────────────────────────────────────────────────────
@@ -173,8 +174,52 @@ export class MenuRenderer
       ctx.fillStyle = 'rgba(0,0,0,0.30)';
       ctx.fillRect(imgX, rectTop, imgW, rectBot - rectTop);
 
-      // ── Controls hint — OutRun 1986 arcade style, below title ───────────────
+      // ── Controls hint ──────────────────────────────────────────────────────
+      if (this.isMobile)
       {
+        // Touch hint — pill icons for left (steer) and right (gas/brake) zones
+        const hintCx = imgX + imgW / 2;
+        const panH   = Math.round(h * 0.066);
+        const panW   = Math.round(w * 0.52);
+        const panX   = Math.round(hintCx - panW / 2);
+        const panY   = imgY + Math.round(imgH * 0.23) + 50;
+        const radius = Math.round(panH * 0.30);
+
+        ctx.beginPath();
+        ctx.roundRect(panX, panY, panW, panH, radius);
+        ctx.fillStyle = 'rgba(0,0,0,0.42)';
+        ctx.fill();
+
+        const pillFs = Math.round(h * 0.020);
+        const subFs  = Math.round(pillFs * 0.82);
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Left: steer
+        ctx.font      = `bold ${pillFs}px Impact, sans-serif`;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('◀ SLIDE ▶', panX + panW * 0.25, panY + panH * 0.38);
+        ctx.font      = `${subFs}px Impact, sans-serif`;
+        ctx.fillStyle = 'rgba(255,255,255,0.60)';
+        ctx.fillText('STEER', panX + panW * 0.25, panY + panH * 0.75);
+
+        // Divider
+        ctx.fillStyle = 'rgba(255,170,0,0.50)';
+        ctx.fillRect(Math.round(panX + panW / 2 - 1), Math.round(panY + panH * 0.15), 2, Math.round(panH * 0.70));
+
+        // Right: gas/brake
+        ctx.font      = `bold ${pillFs}px Impact, sans-serif`;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('▲ SLIDE ▼', panX + panW * 0.75, panY + panH * 0.38);
+        ctx.font      = `${subFs}px Impact, sans-serif`;
+        ctx.fillStyle = 'rgba(255,255,255,0.60)';
+        ctx.fillText('GAS / BRAKE', panX + panW * 0.75, panY + panH * 0.75);
+
+        ctx.textBaseline = 'alphabetic';
+      }
+      else
+      {
+        // Keyboard hint — OutRun 1986 arcade style
         const hintCx  = imgX + imgW / 2;
         const keyFs   = Math.round(h * 0.026);
         const keyPad  = Math.round(keyFs * 0.32);
@@ -408,11 +453,14 @@ export class MenuRenderer
     });
 
     // Nav hint below bands — centred within hero image
+    const navHint = this.isMobile
+      ? 'Tap to select'
+      : '↑ ↓ or hover  ·  ENTER or click to confirm  ·  ESC to cancel';
     ctx.font      = `${Math.round(h * 0.024)}px monospace`;
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     ctx.textAlign = 'center';
     ctx.fillText(
-      '↑ ↓ or hover  ·  ENTER or click to confirm  ·  ESC to cancel',
+      navHint,
       imgX + imgW / 2,
       bandTop + totalH + Math.round(h * 0.05),
     );
@@ -553,7 +601,10 @@ export class MenuRenderer
     ctx.font      = `${Math.round(h * 0.022)}px monospace`;
     ctx.fillStyle = 'rgba(255,255,255,0.20)';
     ctx.textAlign = 'center';
-    ctx.fillText('ENTER / CLICK to toggle sound  ·  ESC to close', px + pw / 2, py + ph - 14);
+    const settingsHint = this.isMobile
+      ? 'Tap to toggle  ·  tap ✕ to close'
+      : 'ENTER / CLICK to toggle sound  ·  ESC to close';
+    ctx.fillText(settingsHint, px + pw / 2, py + ph - 14);
   }
 
   // ── Stage name announcement ────────────────────────────────────────────────

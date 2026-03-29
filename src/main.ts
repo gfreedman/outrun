@@ -11,6 +11,44 @@ import { GameMode, GameSettings }   from './types';
 /** The single <canvas> element where the entire game is rendered. */
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 
+// ── Mobile detection ──────────────────────────────────────────────────────────
+
+/**
+ * True when running on a touch-primary device (phone / tablet).
+ * Three-condition check: UA string, ontouchstart presence, maxTouchPoints.
+ * Computed once at startup; never changes.
+ */
+const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  || ('ontouchstart' in window)
+  || (navigator.maxTouchPoints > 1);
+
+/**
+ * True when running on iOS Safari specifically.
+ * Used to skip screen.orientation.lock() (silently ignored on iOS).
+ */
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+// ── Safe-area insets ──────────────────────────────────────────────────────────
+
+/**
+ * Reads env(safe-area-inset-*) from the #safe-probe zero-div.
+ * Called once at startup and again on every orientationchange.
+ * Results are passed to game.setSafeInsets() so the pill renderer can
+ * keep affordances clear of the notch and home-bar swipe zone.
+ */
+function readSafeInsets(): void
+{
+  const probe = document.getElementById('safe-probe');
+  if (!probe) return;
+  const cs = getComputedStyle(probe);
+  game.setSafeInsets(
+    parseFloat(cs.paddingLeft)   || 0,
+    parseFloat(cs.paddingRight)  || 0,
+    parseFloat(cs.paddingBottom) || 0,
+  );
+}
+
 /**
  * Attempts to read previously saved GameSettings from localStorage.
  * Returns undefined if nothing was stored, the value was malformed, or
@@ -34,7 +72,7 @@ function loadPersistedSettings(): GameSettings | undefined
   return undefined;
 }
 
-const game = new Game(canvas, loadPersistedSettings());
+const game = new Game(canvas, loadPersistedSettings(), isMobile);
 
 /** Maximum windowed canvas width in CSS pixels (matches 720p). */
 const MAX_CANVAS_W = 1280;
@@ -46,22 +84,31 @@ const ASPECT       = MAX_CANVAS_W / MAX_CANVAS_H;   // 16 / 9
 /**
  * Resizes the canvas to fill the window while preserving a 16:9 aspect ratio.
  *
- * In fullscreen: expands to the raw display size (no cap, letterbox removed).
- * Windowed: capped at 1280×720 with letter/pillar-boxing via CSS margin.
+ * Mobile: fills the viewport completely (no 1280×720 cap, no fullscreen check).
+ * Desktop fullscreen: expands to the raw display size.
+ * Desktop windowed: capped at 1280×720 with letter/pillar-boxing via CSS margin.
  *
  * The canvas logical size (canvas.width / height) equals the CSS pixel size —
- * no DPR scaling is applied.  This gives a deliberate retina "upscale" on
- * high-DPI displays, which suits the chunky pixel-art aesthetic.
+ * no DPR scaling is applied.
  */
 function resize(): void
 {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
 
-  // In fullscreen: fill the entire screen (no 1280×720 cap).
-  // Windowed: cap at 1280×720 and letter/pillar-box.
-  const maxW = document.fullscreenElement ? vw : MAX_CANVAS_W;
-  const maxH = document.fullscreenElement ? vh : MAX_CANVAS_H;
+  let maxW: number, maxH: number;
+  if (isMobile)
+  {
+    // Mobile: always fill the full viewport — no windowed cap.
+    maxW = vw;
+    maxH = vh;
+  }
+  else
+  {
+    // Desktop: cap at 1280×720 windowed; expand to viewport in fullscreen.
+    maxW = document.fullscreenElement ? vw : MAX_CANVAS_W;
+    maxH = document.fullscreenElement ? vh : MAX_CANVAS_H;
+  }
 
   let w: number, h: number;
   if (vw / vh >= ASPECT)
@@ -85,12 +132,57 @@ function resize(): void
 
 resize();
 window.addEventListener('resize', resize);
-// fullscreenchange fires when entering/exiting fullscreen.
-// Some browsers update window.innerWidth/Height asynchronously after the event,
-// so we resize immediately AND one frame later to catch the settled dimensions.
-document.addEventListener('fullscreenchange', () =>
+
+if (isMobile)
 {
-  resize();
-  requestAnimationFrame(resize);
-});
+  // ── visualViewport listener ──────────────────────────────────────────────
+  // iOS Safari fires visualViewport resize when the address bar animates but
+  // not reliably on window.resize.  The equality guard prevents 60 Hz calls
+  // during scroll-momentum animation when the address bar is animating.
+  if (window.visualViewport)
+  {
+    window.visualViewport.addEventListener('resize', () =>
+    {
+      if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight)
+        resize();
+    });
+  }
+
+  // ── Orientation change ───────────────────────────────────────────────────
+  // 300 ms: pragmatic settle window; visualViewport fires again as correction.
+  window.addEventListener('orientationchange', () =>
+  {
+    setTimeout(resize, 300);
+    readSafeInsets();   // notch insets swap left↔right on rotate
+    // TouchInput.reset() is called inside game.resize() via pauseOnResize()
+  });
+
+  // ── Portrait pause wiring ─────────────────────────────────────────────────
+  // Suspends race timer and physics while the rotate overlay is showing.
+  const portraitMql = window.matchMedia('(orientation: portrait)');
+  portraitMql.addEventListener('change', () => game.setPortraitPaused(portraitMql.matches));
+
+  // ── Android orientation lock ──────────────────────────────────────────────
+  // screen.orientation.lock is silently ignored on iOS; only attempt on Android.
+  if (!isIOS && (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock)
+  {
+    (screen.orientation as ScreenOrientation & { lock: (o: string) => Promise<void> })
+      .lock('landscape').catch(() => {});
+  }
+}
+else
+{
+  // Desktop only: fullscreenchange listener.
+  // On mobile fullscreen is not used; calling requestFullscreen on iOS logs a
+  // rejected-promise error in DevTools on every race start.
+  document.addEventListener('fullscreenchange', () =>
+  {
+    resize();
+    requestAnimationFrame(resize);
+  });
+}
+
+// Read safe-area insets once DOM is ready (also re-read on orientationchange above).
+document.addEventListener('DOMContentLoaded', readSafeInsets);
+
 game.start();

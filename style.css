@@ -20,4 +20,51 @@ canvas {
   image-rendering: pixelated;
   /* Width and height are set in px by main.ts resize() to match canvas.width/height
      exactly — no CSS scaling, so mouse coordinates always equal canvas coordinates. */
+  /* Prevents double-tap zoom, scroll, pull-to-refresh on mobile */
+  touch-action: none;
+}
+
+/* Portrait-rotate overlay — hidden by default; shown only when phone is portrait */
+#rotate-prompt {
+  display: none;
+  position: fixed;
+  width: 100dvw;
+  height: 100dvh;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  background: #000;
+  color: #fff;
+  font-family: Impact, sans-serif;
+  font-size: 1.3rem;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 1rem;
+  text-align: center;
+}
+
+.rotate-icon {
+  font-size: 3rem;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Show overlay on portrait mobile (hover:none = touchscreen) */
+@media (orientation: portrait) and (hover: none) and (pointer: coarse) {
+  #rotate-prompt { display: flex; }
+}
+
+/* Zero-div for safe-area inset reading in JS */
+#safe-probe {
+  position: fixed;
+  pointer-events: none;
+  padding: 0;
+  padding-left:   env(safe-area-inset-left,   0px);
+  padding-right:  env(safe-area-inset-right,  0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }

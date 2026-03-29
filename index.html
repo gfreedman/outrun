@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Outrun</title>
@@ -10,6 +10,13 @@
 </head>
 <body>
   <canvas id="game"></canvas>
-  <script src="dist/script.js?v=7" defer></script>
+  <!-- Portrait-rotate overlay — shown via CSS media query on mobile portrait only -->
+  <div id="rotate-prompt">
+    <div class="rotate-icon">⟳</div>
+    <div>Rotate to landscape to play</div>
+  </div>
+  <!-- Zero-div: reads env(safe-area-inset-*) into padding so JS can read them -->
+  <div id="safe-probe"></div>
+  <script src="dist/script.js?v=8" defer></script>
 </body>
 </html>

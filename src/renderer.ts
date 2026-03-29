@@ -671,8 +671,9 @@ export class Renderer
    *                  sheets are added or rearranged (M9).
    */
   constructor(
-    canvas:  HTMLCanvasElement,
-    sprites: Partial<SpriteSheetMap> = {},
+    canvas:   HTMLCanvasElement,
+    sprites:  Partial<SpriteSheetMap> = {},
+    isMobile: boolean = false,
   )
   {
     const ctx = canvas.getContext('2d');
@@ -688,7 +689,7 @@ export class Renderer
     this.cactusSprites    = sprites.cactus    ?? null;
     this.cookieSprites    = sprites.cookie    ?? null;
     this.barneySprites    = sprites.barney    ?? null;
-    this.menu             = new MenuRenderer(ctx, this.barneySprites);
+    this.menu             = new MenuRenderer(ctx, this.barneySprites, isMobile);
     this.bigSprites       = sprites.big       ?? null;
     this.shrubSprites     = sprites.shrub     ?? null;
     this.signSprites      = sprites.sign      ?? null;
@@ -1322,6 +1323,131 @@ export class Renderer
 
   renderConfetti(w: number, h: number, t: number): void
     { this.screens.renderConfetti(w, h, t); }
+
+  /**
+   * Draws white pill-outline affordances over the canvas for mobile thumb zones.
+   * Left pill (horizontal) = steer; right pill (vertical) = gas/brake.
+   * Half-highlights when the corresponding input is active.
+   *
+   * Must be called AFTER render() so pills sit on top of the HUD.
+   *
+   * @param w          - Canvas width.
+   * @param h          - Canvas height.
+   * @param steerLeft  - Steer-left input active.
+   * @param steerRight - Steer-right input active.
+   * @param throttle   - Throttle active.
+   * @param brake      - Brake active.
+   * @param safeL      - Left safe-area inset (CSS px, equals canvas px on mobile).
+   * @param safeR      - Right safe-area inset.
+   * @param safeB      - Bottom safe-area inset.
+   */
+  renderTouchPills(
+    w: number, h: number,
+    steerLeft: boolean, steerRight: boolean,
+    throttle:  boolean, brake:      boolean,
+    safeL: number, safeR: number, safeB: number,
+  ): void
+  {
+    const { ctx } = this;
+    ctx.save();
+
+    const leftPillCx  = w * 0.18 + safeL;
+    const rightPillCx = w * 0.82 - safeR;
+    const pillCy      = h * 0.80 - safeB;
+
+    const pillW = w * 0.22;
+    const pillH = pillW * 0.45;
+
+    // ── Left pill — horizontal (steer) ──────────────────────────────────────
+    {
+      const pw = pillW;
+      const ph = pillH;
+      const px = Math.round(leftPillCx - pw / 2);
+      const py = Math.round(pillCy     - ph / 2);
+      const pr = Math.round(ph / 2);
+
+      // Base fill
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, pr);
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fill();
+
+      // Half-highlight clipped to pill shape
+      if (steerLeft || steerRight)
+      {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(px, py, pw, ph, pr);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(255,255,255,0.32)';
+        if (steerLeft)  ctx.fillRect(px,          py, pw / 2, ph);
+        if (steerRight) ctx.fillRect(px + pw / 2, py, pw / 2, ph);
+        ctx.restore();
+      }
+
+      // Outline
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, pr);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+
+      // Label
+      const labelFs = Math.round(ph * 0.45);
+      ctx.font         = `${labelFs}px sans-serif`;
+      ctx.fillStyle    = 'rgba(255,255,255,0.80)';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('◀  ▶', px + pw / 2, py + ph / 2);
+    }
+
+    // ── Right pill — vertical (throttle/brake) ───────────────────────────────
+    {
+      const pw = pillH;          // narrow
+      const ph = pillW;          // tall
+      const px = Math.round(rightPillCx - pw / 2);
+      const py = Math.round(pillCy      - ph / 2);
+      const pr = Math.round(pw / 2);
+
+      // Base fill
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, pr);
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fill();
+
+      // Half-highlight clipped to pill shape
+      if (throttle || brake)
+      {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(px, py, pw, ph, pr);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(255,255,255,0.32)';
+        if (throttle) ctx.fillRect(px, py,          pw, ph / 2);
+        if (brake)    ctx.fillRect(px, py + ph / 2, pw, ph / 2);
+        ctx.restore();
+      }
+
+      // Outline
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, pr);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+
+      // Labels
+      const labelFs = Math.round(pw * 0.55);
+      ctx.font         = `${labelFs}px sans-serif`;
+      ctx.fillStyle    = 'rgba(255,255,255,0.80)';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('▲', px + pw / 2, py + ph * 0.25);
+      ctx.fillText('▼', px + pw / 2, py + ph * 0.75);
+    }
+
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
 
   // ── Procedural gate drawing ────────────────────────────────────────────────
 

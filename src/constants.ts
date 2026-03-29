@@ -710,6 +710,13 @@ export const SCORE_TIME_BONUS_PER_SEC = 1_000;
 /** Deceleration (WU/s²) when time runs out — stops the car quickly. */
 export const TIMEUP_DECEL = 19_800;   // ≈ 3 × OFFROAD_DECEL
 
+// ── Touch input ───────────────────────────────────────────────────────────────
+
+/** Minimum finger movement (CSS px) before steer or throttle/brake activates. */
+export const TOUCH_DEADZONE    = 10;
+/** Steer drag range (CSS px) over which magnitude scales from 0→1. */
+export const TOUCH_STEER_RANGE = 60;
+
 export const RACE_CONFIG: Record<GameMode, RaceConfig> =
 {
   // EASY — Hard course at full speed; 293 km/h; 4 traffic cars; hills 1.8×.

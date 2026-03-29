@@ -116,14 +116,16 @@ export class IntroController
   private readonly onStartRace:  () => void;
 
   /**
-   * @param canvas        - Canvas element; used only for cursor style changes.
-   * @param onStartRace   - Called when the user confirms START.
+   * @param canvas          - Canvas element; used only for cursor style changes.
+   * @param onStartRace     - Called when the user confirms START.
    * @param initialSettings - Optional override; defaults to localStorage then defaults.
+   * @param isMobile        - Whether to show touch hint instead of keyboard hint.
    */
   constructor(
     canvas:           HTMLCanvasElement,
     onStartRace:      () => void,
     initialSettings?: GameSettings,
+    readonly isMobile: boolean = false,
   )
   {
     this.canvas      = canvas;
