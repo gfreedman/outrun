@@ -36,6 +36,27 @@ function emptyZone(): ZoneState
 
 // ── TouchInput ────────────────────────────────────────────────────────────────
 
+/**
+ * Two-zone touch controller that translates finger gestures into an
+ * {@link InputSnapshot} compatible with the keyboard input path.
+ *
+ * **Zone layout** (determined at touchstart, locked for that touch's lifetime):
+ * ```
+ * ┌─────────────────────┬─────────────────────┐
+ * │   LEFT ZONE         │   RIGHT ZONE        │
+ * │   slide ←  steer L  │   slide ↑  throttle │
+ * │   slide →  steer R  │   slide ↓  brake    │
+ * └─────────────────────┴─────────────────────┘
+ *          clientX < midX     clientX ≥ midX
+ * ```
+ *
+ * **Tap synthesis** — a touchend with total displacement < 15 px produces a
+ * pending tap (canvas-pixel coords) that game.ts injects as a mouseClick so
+ * all {@link Button} hit-areas work without special touch handling.
+ *
+ * Instantiated only when `isMobile === true`; the desktop input path
+ * ({@link InputManager}) is completely unaffected.
+ */
 export class TouchInput
 {
   private left:       ZoneState = emptyZone();
