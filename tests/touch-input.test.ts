@@ -167,13 +167,12 @@ describe('TouchInput', () =>
     expect(tap!.y).toBeCloseTo(151, 0);
   });
 
-  it('does not synthesise a tap when drag exceeds threshold', () =>
+  it('does not synthesise a tap when drag exceeds threshold (no touchmove required)', () =>
   {
-    // Tap threshold checks slot.currentX (last touchmove), not the touchend position.
-    // Must fire a touchmove to register the drift before the touchend.
+    // Tap check uses the touchend client position directly, so coalesced fast
+    // drags (no touchmove fired) are correctly rejected.
     dispatch(canvas, 'touchstart', [makeTouch(1, 100, 150)]);
-    dispatch(canvas, 'touchmove',  [makeTouch(1, 120, 150)]);  // 20 px drift recorded
-    dispatch(canvas, 'touchend',   [makeTouch(1, 120, 150)]);
+    dispatch(canvas, 'touchend',   [makeTouch(1, 120, 150)]);  // 20 px — no prior touchmove
     expect(ti.consumeTap()).toBeNull();
   });
 

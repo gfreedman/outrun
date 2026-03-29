@@ -176,8 +176,11 @@ export class TouchInput
 
           if (!slot.cancelled)
           {
-            const dx = slot.currentX - slot.startX;
-            const dy = slot.currentY - slot.startY;
+            // Use touchend position as the final position — coalesced fast drags
+            // may fire no touchmove events, so slot.currentX could still equal
+            // startX even if the finger travelled far.
+            const dx = t.clientX - slot.startX;
+            const dy = t.clientY - slot.startY;
             // Tap: minimal movement — synthesise a click at the lift position.
             // 15 px is wider than TOUCH_DEADZONE to forgive natural lift drift.
             if (Math.abs(dx) < 15 && Math.abs(dy) < 15)
