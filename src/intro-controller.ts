@@ -138,7 +138,9 @@ export class IntroController
     const img = new Image();
     img.onload  = () => { this.heroImage = img; };
     img.onerror = () => { /* graceful fallback — heroImage stays null */ };
-    img.src = 'sprites/source_for_sprites/hero.jpg';
+    img.src = isMobile
+      ? 'sprites/source_for_sprites/mobile_hero.png'
+      : 'sprites/source_for_sprites/hero.jpg';
   }
 
   /**

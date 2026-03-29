@@ -1351,98 +1351,84 @@ export class Renderer
     const { ctx } = this;
     ctx.save();
 
-    const leftPillCx  = w * 0.18 + safeL;
-    const rightPillCx = w * 0.82 - safeR;
-    const pillCy      = h * 0.80 - safeB;
+    // Pills sized relative to the shorter screen dimension so they scale
+    // sensibly across phone sizes.  pillThick is the narrow dimension shared
+    // by both pills — used as the font size reference so arrows are identical.
+    const pillThick = Math.round(Math.min(w, h) * 0.14);
+    const pillLong  = Math.round(pillThick * 2.6);
+    const arrowFs   = Math.round(pillThick * 0.65);
+    // Flat radius so both pills look like one container, not two bubbles joined.
+    const pillRadius = Math.round(pillThick * 0.18);
 
-    const pillW = w * 0.22;
-    const pillH = pillW * 0.45;
+    // Anchored to bottom corners, clear of safe-area zones.
+    // pillCy is the CENTER of both pills — use pillLong/2 to ensure the taller
+    // vertical pill never clips above the canvas top.
+    const pillCy      = h - safeB - pillLong / 2 - Math.round(h * 0.04);
+    const leftPillCx  = safeL + pillLong / 2 + Math.round(w * 0.03);
+    const rightPillCx = w - safeR - pillLong / 2 - Math.round(w * 0.03);
 
-    // ── Left pill — horizontal (steer) ──────────────────────────────────────
+    // Shared draw helper
+    const drawPill = (
+      px: number, py: number, pw: number, ph: number,
+      highlightLeft: boolean, highlightRight: boolean,
+      highlightTop: boolean,  highlightBottom: boolean,
+    ): void =>
     {
-      const pw = pillW;
-      const ph = pillH;
-      const px = Math.round(leftPillCx - pw / 2);
-      const py = Math.round(pillCy     - ph / 2);
-      const pr = Math.round(ph / 2);
+      const pr = pillRadius;
 
-      // Base fill
       ctx.beginPath();
       ctx.roundRect(px, py, pw, ph, pr);
       ctx.fillStyle = 'rgba(255,255,255,0.10)';
       ctx.fill();
 
-      // Half-highlight clipped to pill shape
-      if (steerLeft || steerRight)
+      if (highlightLeft || highlightRight || highlightTop || highlightBottom)
       {
         ctx.save();
         ctx.beginPath();
         ctx.roundRect(px, py, pw, ph, pr);
         ctx.clip();
-        ctx.fillStyle = 'rgba(255,255,255,0.32)';
-        if (steerLeft)  ctx.fillRect(px,          py, pw / 2, ph);
-        if (steerRight) ctx.fillRect(px + pw / 2, py, pw / 2, ph);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        if (highlightLeft)   ctx.fillRect(px,          py, pw / 2, ph);
+        if (highlightRight)  ctx.fillRect(px + pw / 2, py, pw / 2, ph);
+        if (highlightTop)    ctx.fillRect(px, py,          pw, ph / 2);
+        if (highlightBottom) ctx.fillRect(px, py + ph / 2, pw, ph / 2);
         ctx.restore();
       }
 
-      // Outline
       ctx.beginPath();
       ctx.roundRect(px, py, pw, ph, pr);
-      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-      ctx.lineWidth   = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.70)';
+      ctx.lineWidth   = 3;
       ctx.stroke();
+    };
 
-      // Label
-      const labelFs = Math.round(ph * 0.45);
-      ctx.font         = `${labelFs}px sans-serif`;
-      ctx.fillStyle    = 'rgba(255,255,255,0.80)';
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('◀  ▶', px + pw / 2, py + ph / 2);
+    ctx.fillStyle    = 'rgba(255,255,255,0.90)';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = `${arrowFs}px sans-serif`;
+
+    // ── Left pill — horizontal (steer) ──────────────────────────────────────
+    {
+      const pw = pillLong;
+      const ph = pillThick;
+      const px = Math.round(leftPillCx - pw / 2);
+      const py = Math.round(pillCy     - ph / 2);
+      drawPill(px, py, pw, ph, steerLeft, steerRight, false, false);
+      ctx.fillStyle = 'rgba(255,255,255,0.90)';   // restore after drawPill overwrites it
+      ctx.fillText('◀\uFE0E', px + pw * 0.25, py + ph / 2);
+      ctx.fillText('▶\uFE0E', px + pw * 0.75, py + ph / 2);
     }
 
     // ── Right pill — vertical (throttle/brake) ───────────────────────────────
     {
-      const pw = pillH;          // narrow
-      const ph = pillW;          // tall
+      const pw = pillThick;
+      const ph = pillLong;
       const px = Math.round(rightPillCx - pw / 2);
       const py = Math.round(pillCy      - ph / 2);
-      const pr = Math.round(pw / 2);
-
-      // Base fill
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, pr);
-      ctx.fillStyle = 'rgba(255,255,255,0.10)';
-      ctx.fill();
-
-      // Half-highlight clipped to pill shape
-      if (throttle || brake)
-      {
-        ctx.save();
-        ctx.beginPath();
-        ctx.roundRect(px, py, pw, ph, pr);
-        ctx.clip();
-        ctx.fillStyle = 'rgba(255,255,255,0.32)';
-        if (throttle) ctx.fillRect(px, py,          pw, ph / 2);
-        if (brake)    ctx.fillRect(px, py + ph / 2, pw, ph / 2);
-        ctx.restore();
-      }
-
-      // Outline
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, pr);
-      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-      ctx.lineWidth   = 2;
-      ctx.stroke();
-
-      // Labels
-      const labelFs = Math.round(pw * 0.55);
-      ctx.font         = `${labelFs}px sans-serif`;
-      ctx.fillStyle    = 'rgba(255,255,255,0.80)';
-      ctx.textAlign    = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('▲', px + pw / 2, py + ph * 0.25);
-      ctx.fillText('▼', px + pw / 2, py + ph * 0.75);
+      drawPill(px, py, pw, ph, false, false, throttle, brake);
+      ctx.fillStyle = 'rgba(255,255,255,0.90)';   // restore after drawPill overwrites it
+      ctx.fillText('▲\uFE0E', px + pw / 2, py + ph * 0.25);
+      ctx.fillText('▼\uFE0E', px + pw / 2, py + ph * 0.75);
     }
 
     ctx.textBaseline = 'alphabetic';

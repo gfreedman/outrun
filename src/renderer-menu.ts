@@ -179,8 +179,8 @@ export class MenuRenderer
       {
         // Touch hint — pill icons for left (steer) and right (gas/brake) zones
         const hintCx = imgX + imgW / 2;
-        const panH   = Math.round(h * 0.066);
-        const panW   = Math.round(w * 0.52);
+        const panH   = Math.round(h * 0.155);
+        const panW   = Math.round(w * 0.68);
         const panX   = Math.round(hintCx - panW / 2);
         const panY   = imgY + Math.round(imgH * 0.23) + 50;
         const radius = Math.round(panH * 0.30);
@@ -190,7 +190,7 @@ export class MenuRenderer
         ctx.fillStyle = 'rgba(0,0,0,0.42)';
         ctx.fill();
 
-        const pillFs = Math.round(h * 0.020);
+        const pillFs = Math.round(h * 0.048);
         const subFs  = Math.round(pillFs * 0.82);
         ctx.textAlign    = 'center';
         ctx.textBaseline = 'middle';
@@ -198,7 +198,7 @@ export class MenuRenderer
         // Left: steer
         ctx.font      = `bold ${pillFs}px Impact, sans-serif`;
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillText('◀ SLIDE ▶', panX + panW * 0.25, panY + panH * 0.38);
+        ctx.fillText('◀\uFE0E SLIDE ▶\uFE0E', panX + panW * 0.25, panY + panH * 0.38);
         ctx.font      = `${subFs}px Impact, sans-serif`;
         ctx.fillStyle = 'rgba(255,255,255,0.60)';
         ctx.fillText('STEER', panX + panW * 0.25, panY + panH * 0.75);
@@ -210,7 +210,7 @@ export class MenuRenderer
         // Right: gas/brake
         ctx.font      = `bold ${pillFs}px Impact, sans-serif`;
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillText('▲ SLIDE ▼', panX + panW * 0.75, panY + panH * 0.38);
+        ctx.fillText('▲\uFE0E SLIDE ▼\uFE0E', panX + panW * 0.75, panY + panH * 0.38);
         ctx.font      = `${subFs}px Impact, sans-serif`;
         ctx.fillStyle = 'rgba(255,255,255,0.60)';
         ctx.fillText('GAS / BRAKE', panX + panW * 0.75, panY + panH * 0.75);
