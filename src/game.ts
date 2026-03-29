@@ -95,6 +95,8 @@ export class Game
   private input:      InputManager;
   /** Mobile touch controller; null on desktop. */
   private touchInput: TouchInput | null = null;
+  /** Touch snapshot refreshed once per frame; reused by drawTouchPills and update. */
+  private touchSnapshot: InputSnapshot = { throttle: false, brake: false, steerLeft: false, steerRight: false };
   /** Web Audio API manager for engine, screech, crash, and music. */
   private audio:    AudioManager;
 
@@ -441,6 +443,7 @@ export class Game
   {
     this.stop();
     this.input.destroy();
+    this.touchInput?.destroy();
     this.canvas.removeEventListener('mousemove', this.onMouseMove);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
   }
@@ -458,6 +461,11 @@ export class Game
   {
     const dt = Math.min((timestamp - this.lastTimestamp) / 1000, MAX_FRAME_DT);
     this.lastTimestamp = timestamp;
+
+    // Refresh touch snapshot once per frame so drawTouchPills and update
+    // both read the same state without calling toInputSnapshot() twice.
+    if (this.touchInput)
+      this.touchSnapshot = this.touchInput.toInputSnapshot();
 
     // Consume any pending touch tap and inject into mouse state so all
     // Button.tick() calls across every phase receive synthesised clicks.
@@ -615,34 +623,30 @@ export class Game
    */
   private tickCountdown(dt: number): void
   {
-    if (!this._pausedForPortrait)
+    if (!this.skipPhysicsThisFrame())
     {
-      if (!this._resizePaused)
+      this.countdownTimer += dt;
+
+      const prev = this.countdownValue;
+
+      if (this.countdownTimer < 1.0)       this.countdownValue = 3;
+      else if (this.countdownTimer < 2.0)  this.countdownValue = 2;
+      else if (this.countdownTimer < 3.0)  this.countdownValue = 1;
+      else if (this.countdownTimer < 3.7)  this.countdownValue = 'GO!';
+      else
       {
-        this.countdownTimer += dt;
-
-        const prev = this.countdownValue;
-
-        if (this.countdownTimer < 1.0)       this.countdownValue = 3;
-        else if (this.countdownTimer < 2.0)  this.countdownValue = 2;
-        else if (this.countdownTimer < 3.0)  this.countdownValue = 1;
-        else if (this.countdownTimer < 3.7)  this.countdownValue = 'GO!';
-        else
-        {
-          this.phase = GamePhase.PLAYING;
-          return;
-        }
-
-        // Beep on each new number
-        if (this.countdownValue !== prev)
-        {
-          if      (this.countdownValue === 3)     this.audio.playBeep(220, 0.18);
-          else if (this.countdownValue === 2)     this.audio.playBeep(330, 0.18);
-          else if (this.countdownValue === 1)     this.audio.playBeep(440, 0.18);
-          else if (this.countdownValue === 'GO!') this.audio.playBeep(880, 0.40);
-        }
+        this.phase = GamePhase.PLAYING;
+        return;
       }
-      this._resizePaused = false;
+
+      // Beep on each new number
+      if (this.countdownValue !== prev)
+      {
+        if      (this.countdownValue === 3)     this.audio.playBeep(220, 0.18);
+        else if (this.countdownValue === 2)     this.audio.playBeep(330, 0.18);
+        else if (this.countdownValue === 1)     this.audio.playBeep(440, 0.18);
+        else if (this.countdownValue === 'GO!') this.audio.playBeep(880, 0.40);
+      }
     }
 
     this.audio.tickMusic();
@@ -670,24 +674,20 @@ export class Game
    */
   private tickPlaying(dt: number): void
   {
-    if (!this._pausedForPortrait)
+    if (!this.skipPhysicsThisFrame())
     {
-      if (!this._resizePaused)
-      {
-        this.raceTimer        += dt;
-        this.timeRemaining     = Math.max(0, this.timeRemaining - dt);
-        this.stageNameTimer    = Math.max(0, this.stageNameTimer - dt);
-        // barneyBoostTimer is now decremented inside advancePhysics() so that all
-        // player timer ticks are owned by the single pure physics state machine.
+      this.raceTimer        += dt;
+      this.timeRemaining     = Math.max(0, this.timeRemaining - dt);
+      this.stageNameTimer    = Math.max(0, this.stageNameTimer - dt);
+      // barneyBoostTimer is now decremented inside advancePhysics() so that all
+      // player timer ticks are owned by the single pure physics state machine.
 
-        // Score: base rate + speed bonus (pts/sec)
-        const speedRatio = this.speed / this.effectiveMaxSpeed;
-        this.score += Math.round((SCORE_BASE_PER_SEC + SCORE_SPEED_PER_SEC * speedRatio) * dt);
+      // Score: base rate + speed bonus (pts/sec)
+      const speedRatio = this.speed / this.effectiveMaxSpeed;
+      this.score += Math.round((SCORE_BASE_PER_SEC + SCORE_SPEED_PER_SEC * speedRatio) * dt);
 
-        this.audio.tickMusic();
-        this.update(dt);
-      }
-      this._resizePaused = false;
+      this.audio.tickMusic();
+      this.update(dt);
     }
 
     this.drawRace();
@@ -950,14 +950,26 @@ export class Game
     this.distanceTravelled = s.distanceTravelled;
   }
 
+  /**
+   * True when physics and timers should be skipped this frame.
+   * Covers both a sustained portrait-pause and the one-frame resize skip.
+   * Always clears _resizePaused so it never persists beyond one frame.
+   */
+  private skipPhysicsThisFrame(): boolean
+  {
+    const skip = this._pausedForPortrait || this._resizePaused;
+    this._resizePaused = false;
+    return skip;
+  }
+
   /** Draws touch pill affordances on top of the current frame. */
   private drawTouchPills(): void
   {
     if (!this.touchInput) return;
-    const snap = this.touchInput.toInputSnapshot();
+    const s = this.touchSnapshot;
     this.renderer.renderTouchPills(
       this.w, this.h,
-      snap.steerLeft, snap.steerRight, snap.throttle, snap.brake,
+      s.steerLeft, s.steerRight, s.throttle, s.brake,
       this.safeL, this.safeR, this.safeB,
     );
   }
@@ -966,19 +978,12 @@ export class Game
   {
     const playerSegment = this.road.findSegment(this.playerZ);
     // Merge keyboard + touch input (OR — either source activates the action).
-    const kbRaw = {
-      throttle:   this.input.isDown('ArrowUp'),
-      brake:      this.input.isDown('ArrowDown') || this.input.isDown(' '),
-      steerLeft:  this.input.isDown('ArrowLeft'),
-      steerRight: this.input.isDown('ArrowRight'),
-    };
-    const touchRaw = this.touchInput?.toInputSnapshot()
-      ?? { throttle: false, brake: false, steerLeft: false, steerRight: false };
+    const touch = this.touchSnapshot;
     const input: InputSnapshot = {
-      throttle:   kbRaw.throttle   || touchRaw.throttle,
-      brake:      kbRaw.brake      || touchRaw.brake,
-      steerLeft:  kbRaw.steerLeft  || touchRaw.steerLeft,
-      steerRight: kbRaw.steerRight || touchRaw.steerRight,
+      throttle:   this.input.isDown('ArrowUp')    || touch.throttle,
+      brake:      (this.input.isDown('ArrowDown') || this.input.isDown(' ')) || touch.brake,
+      steerLeft:  this.input.isDown('ArrowLeft')  || touch.steerLeft,
+      steerRight: this.input.isDown('ArrowRight') || touch.steerRight,
     };
     const cfg: PhysicsConfig = {
       maxSpeed:        this.effectiveMaxSpeed,

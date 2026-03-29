@@ -42,15 +42,25 @@ export class TouchInput
   private right:      ZoneState = emptyZone();
   private pendingTap: { x: number; y: number } | null = null;
 
+  private readonly handler: EventListener;
+
   constructor(private readonly canvas: HTMLCanvasElement)
   {
-    const handler = (e: TouchEvent): void =>
+    this.handler = ((e: TouchEvent): void =>
     {
       e.preventDefault();
       this.handleEvent(e);
-    };
+    }) as EventListener;
     (['touchstart', 'touchmove', 'touchend', 'touchcancel'] as const).forEach(type =>
-      canvas.addEventListener(type, handler as EventListener, { passive: false }),
+      canvas.addEventListener(type, this.handler, { passive: false }),
+    );
+  }
+
+  /** Removes all touch event listeners. Call when the game is torn down. */
+  destroy(): void
+  {
+    (['touchstart', 'touchmove', 'touchend', 'touchcancel'] as const).forEach(type =>
+      this.canvas.removeEventListener(type, this.handler),
     );
   }
 

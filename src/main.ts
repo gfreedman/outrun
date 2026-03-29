@@ -5,8 +5,8 @@
  * and starts the animation loop.
  */
 
-import { Game }                     from './game';
-import { GameMode, GameSettings }   from './types';
+import { Game }          from './game';
+import { loadSettings }  from './intro-controller';
 
 /** The single <canvas> element where the entire game is rendered. */
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -49,30 +49,7 @@ function readSafeInsets(): void
   );
 }
 
-/**
- * Attempts to read previously saved GameSettings from localStorage.
- * Returns undefined if nothing was stored, the value was malformed, or
- * localStorage is unavailable (private browsing / quota error).
- */
-function loadPersistedSettings(): GameSettings | undefined
-{
-  try
-  {
-    const raw = localStorage.getItem('outrun_settings');
-    if (raw)
-    {
-      const s = JSON.parse(raw) as Partial<GameSettings>;
-      const mode = Object.values(GameMode).includes(s.mode as GameMode)
-        ? s.mode as GameMode
-        : GameMode.MEDIUM;
-      return { mode, soundEnabled: s.soundEnabled !== false };
-    }
-  }
-  catch { /* ignore quota / private-mode errors */ }
-  return undefined;
-}
-
-const game = new Game(canvas, loadPersistedSettings(), isMobile);
+const game = new Game(canvas, loadSettings(), isMobile);
 
 /** Maximum windowed canvas width in CSS pixels (matches 720p). */
 const MAX_CANVAS_W = 1280;
