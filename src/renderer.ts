@@ -537,6 +537,15 @@ export function drawLaneDashes(
  * @param pool  - Pre-populated projection pool.
  * @param count - Number of valid entries.
  */
+// Module-level constant — [side, outerFrac, innerFrac] for each of the 4 edge stripes.
+// Defined once to avoid allocating a new array on every lane-on run.
+const EDGE_STRIPES: readonly [number, number, number][] = [
+  [-1, MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC],   // left outer
+  [-1, MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC],   // left inner
+  [+1, MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC],   // right outer
+  [+1, MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC],   // right inner
+];
+
 export function drawEdgeMarks(
   ctx:   CanvasRenderingContext2D,
   pool:  readonly ProjectedSeg[],
@@ -556,14 +565,7 @@ export function drawEdgeMarks(
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
 
-    // Each entry: [side, outerFrac, innerFrac]
-    // Fractions are named constants from constants.ts for designer-friendliness.
-    const stripes: [number, number, number][] = [
-      [-1, MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC],   // left outer
-      [-1, MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC],   // left inner
-      [+1, MARK_ET_OUTER_FRAC, MARK_ET_INNER_FRAC],   // right outer
-      [+1, MARK_EN_OUTER_FRAC, MARK_EN_INNER_FRAC],   // right inner
-    ];
+    const stripes = EDGE_STRIPES;
 
     for (const [side, oFrac, iFrac] of stripes)
     {

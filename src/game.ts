@@ -97,6 +97,20 @@ export class Game
   private touchInput: TouchInput | null = null;
   /** Touch snapshot refreshed once per frame; reused by drawTouchPills and update. */
   private touchSnapshot: InputSnapshot = { throttle: false, brake: false, steerLeft: false, steerRight: false };
+  /** Reusable input snapshot — mutated each frame to avoid per-frame allocation. */
+  private inputBuf: InputSnapshot = { throttle: false, brake: false, steerLeft: false, steerRight: false };
+  /** Reusable physics config — mutated each frame to avoid per-frame allocation. */
+  private cfgBuf: PhysicsConfig = { maxSpeed: 0, accelMultiplier: 1, trackLength: 0, segmentCurve: 0 };
+  /** Reusable traffic update config — mutated each frame to avoid per-frame allocation. */
+  private trafficCfgBuf: TrafficUpdateConfig = { playerZ: 0, playerX: 0, playerSpeed: 0, segmentCount: 0, intensity: 0, dt: 0 };
+  /** Reusable physics state buffer for capturePhysicsState — avoids 3 allocs/frame. */
+  private physicsStateBuf: PhysicsState = {
+    speed: 0, playerX: 0, playerZ: 0, steerAngle: 0, steerVelocity: 0,
+    brakeHeld: 0, offRoad: false, offRoadRecovery: 0, slideVelocity: 0,
+    jitterY: 0, hitCooldown: 0, grindTimer: 0, hitRecoveryTimer: 0,
+    hitRecoveryBoost: 0, shakeTimer: 0, shakeIntensity: 0,
+    barneyBoostTimer: 0, distanceTravelled: 0,
+  };
   /** Web Audio API manager for engine, screech, crash, and music. */
   private audio:    AudioManager;
 
@@ -650,14 +664,13 @@ export class Game
 
       // Keep traffic moving during 3-2-1-GO so cars don't freeze for 3.7 s
       // and then teleport to new positions the instant PLAYING begins.
-      const trafficCfg: TrafficUpdateConfig = {
-        playerZ:      this.playerZ,
-        playerX:      this.playerX,
-        playerSpeed:  0,
-        segmentCount: this.road.count,
-        intensity:    RACE_CONFIG[this.intro.settings.mode].trafficIntensity,
-        dt,
-      };
+      const trafficCfg = this.trafficCfgBuf;
+      trafficCfg.playerZ      = this.playerZ;
+      trafficCfg.playerX      = this.playerX;
+      trafficCfg.playerSpeed  = 0;
+      trafficCfg.segmentCount = this.road.count;
+      trafficCfg.intensity    = RACE_CONFIG[this.intro.settings.mode].trafficIntensity;
+      trafficCfg.dt           = dt;
       updateTraffic(this.trafficCars, trafficCfg);
     }
 
@@ -914,29 +927,29 @@ export class Game
    * @param dt - Frame delta-time in seconds (already capped at MAX_FRAME_DT).
    */
 
-  /** Reads all 17 physics fields from `this` into a PhysicsState snapshot. */
+  /** Reads all 17 physics fields from `this` into the reusable physicsStateBuf. */
   private capturePhysicsState(): PhysicsState
   {
-    return {
-      speed:             this.speed,
-      playerX:           this.playerX,
-      playerZ:           this.playerZ,
-      steerAngle:        this.steerAngle,
-      steerVelocity:     this.steerVelocity,
-      brakeHeld:         this.brakeHeld,
-      offRoad:           this.offRoad,
-      offRoadRecovery:   this.offRoadRecovery,
-      slideVelocity:     this.slideVelocity,
-      jitterY:           this.jitterY,
-      hitCooldown:       this.hitCooldown,
-      grindTimer:        this.grindTimer,
-      hitRecoveryTimer:  this.hitRecoveryTimer,
-      hitRecoveryBoost:  this.hitRecoveryBoost,
-      shakeTimer:        this.shakeTimer,
-      shakeIntensity:    this.shakeIntensity,
-      barneyBoostTimer:  this.barneyBoostTimer,
-      distanceTravelled: this.distanceTravelled,
-    };
+    const s = this.physicsStateBuf;
+    s.speed             = this.speed;
+    s.playerX           = this.playerX;
+    s.playerZ           = this.playerZ;
+    s.steerAngle        = this.steerAngle;
+    s.steerVelocity     = this.steerVelocity;
+    s.brakeHeld         = this.brakeHeld;
+    s.offRoad           = this.offRoad;
+    s.offRoadRecovery   = this.offRoadRecovery;
+    s.slideVelocity     = this.slideVelocity;
+    s.jitterY           = this.jitterY;
+    s.hitCooldown       = this.hitCooldown;
+    s.grindTimer        = this.grindTimer;
+    s.hitRecoveryTimer  = this.hitRecoveryTimer;
+    s.hitRecoveryBoost  = this.hitRecoveryBoost;
+    s.shakeTimer        = this.shakeTimer;
+    s.shakeIntensity    = this.shakeIntensity;
+    s.barneyBoostTimer  = this.barneyBoostTimer;
+    s.distanceTravelled = this.distanceTravelled;
+    return s;
   }
 
   /** Writes all 17 physics fields from a PhysicsState back to `this`. */
@@ -991,18 +1004,16 @@ export class Game
     const playerSegment = this.road.findSegment(this.playerZ);
     // Merge keyboard + touch input (OR — either source activates the action).
     const touch = this.touchSnapshot;
-    const input: InputSnapshot = {
-      throttle:   this.input.isDown('ArrowUp')    || touch.throttle,
-      brake:      (this.input.isDown('ArrowDown') || this.input.isDown(' ')) || touch.brake,
-      steerLeft:  this.input.isDown('ArrowLeft')  || touch.steerLeft,
-      steerRight: this.input.isDown('ArrowRight') || touch.steerRight,
-    };
-    const cfg: PhysicsConfig = {
-      maxSpeed:        this.effectiveMaxSpeed,
-      accelMultiplier: RACE_CONFIG[this.intro.settings.mode].accelMultiplier,
-      trackLength:     this.road.count * SEGMENT_LENGTH,
-      segmentCurve:    playerSegment.curve,
-    };
+    const input = this.inputBuf;
+    input.throttle   = this.input.isDown('ArrowUp')    || touch.throttle;
+    input.brake      = (this.input.isDown('ArrowDown') || this.input.isDown(' ')) || touch.brake;
+    input.steerLeft  = this.input.isDown('ArrowLeft')  || touch.steerLeft;
+    input.steerRight = this.input.isDown('ArrowRight') || touch.steerRight;
+    const cfg = this.cfgBuf;
+    cfg.maxSpeed        = this.effectiveMaxSpeed;
+    cfg.accelMultiplier = RACE_CONFIG[this.intro.settings.mode].accelMultiplier;
+    cfg.trackLength     = this.road.count * SEGMENT_LENGTH;
+    cfg.segmentCurve    = playerSegment.curve;
 
     const prevOffRoad = this.offRoad;
     const physIn      = this.capturePhysicsState();
@@ -1023,14 +1034,13 @@ export class Game
 
     // ── Traffic ───────────────────────────────────────────────────────────
 
-    const trafficCfg: TrafficUpdateConfig = {
-      playerZ:      this.playerZ,
-      playerX:      this.playerX,
-      playerSpeed:  this.speed,
-      segmentCount: this.road.count,
-      intensity:    RACE_CONFIG[this.intro.settings.mode].trafficIntensity,
-      dt,
-    };
+    const trafficCfg = this.trafficCfgBuf;
+    trafficCfg.playerZ      = this.playerZ;
+    trafficCfg.playerX      = this.playerX;
+    trafficCfg.playerSpeed  = this.speed;
+    trafficCfg.segmentCount = this.road.count;
+    trafficCfg.intensity    = RACE_CONFIG[this.intro.settings.mode].trafficIntensity;
+    trafficCfg.dt           = dt;
     updateTraffic(this.trafficCars, trafficCfg);
 
     // ── Engine audio ──────────────────────────────────────────────────────
