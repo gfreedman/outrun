@@ -52,7 +52,7 @@ BG_TOL = 80
 
 # Chroma threshold.  Background pixels are achromatic (|R-G|+|G-B|+|R-B| < 8).
 # Car pixels have colour.  30 gives ample headroom.
-BG_CHROMA = 30
+BG_CHROMA = 55   # background has a slight blue cast (~chroma 40 at corners); 55 clears it safely
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -225,6 +225,61 @@ def chroma_crop(arr: np.ndarray, min_chroma: int = 60, min_pixels: int = 10,
     return arr[y1:y2, :, :]
 
 
+def road_crop(arr: np.ndarray,
+              cx_frac: float = 0.4,
+              road_chroma_max: float = 15,
+              road_lum_min: float = 60,
+              road_lum_max: float = 160,
+              margin: int = 5) -> np.ndarray:
+    """
+    Crops away the road surface that appears below the car's tyres.
+
+    The source image is a scene render: the car sits on a simulated road plane
+    that fills the full image width below the tyres.  That road is achromatic
+    (grey asphalt, chroma < 15) and medium-luminance (60–160).  Scanning the
+    centre columns — well clear of the left/right tyre positions — finds the
+    first (topmost) road row from the bottom.  Everything at and below that
+    row (minus a small margin) is road and is cropped out.
+
+    Args:
+        arr:             RGBA image array (H, W, 4).
+        cx_frac:         Fraction of image width to use as the centre window
+                         (avoids the tyre columns on the left and right).
+        road_chroma_max: Maximum mean chroma to qualify a row as road.
+        road_lum_min:    Minimum mean luminance to qualify a row as road.
+        road_lum_max:    Maximum mean luminance to qualify a row as road.
+        margin:          Rows to keep below the detected road top as a safety
+                         buffer so the tyre bottoms are not clipped.
+
+    Returns:
+        Vertically cropped array with the road surface removed.
+    """
+    H, W = arr.shape[:2]
+    # Centre window: the horizontal band between the two tyres.
+    cx1 = int(W * (0.5 - cx_frac / 2))
+    cx2 = int(W * (0.5 + cx_frac / 2))
+    centre = arr[:, cx1:cx2, :3]
+
+    r  = centre[:, :, 0].astype(np.int32)
+    g  = centre[:, :, 1].astype(np.int32)
+    b  = centre[:, :, 2].astype(np.int32)
+    ch = (np.abs(r - g) + np.abs(g - b) + np.abs(r - b)).mean(axis=1)
+    lm = ((r + g + b) / 3).mean(axis=1)
+
+    road_top = H  # default: no road found, keep everything
+    for y in range(H - 1, 0, -1):
+        if ch[y] < road_chroma_max and road_lum_min < lm[y] < road_lum_max:
+            road_top = y
+        else:
+            if road_top < H:
+                break   # first non-road row scanning up → road band found
+
+    cut = max(0, road_top - margin)
+    if cut < H:
+        print(f"  Road surface detected at row {road_top}; cropping to row {cut}")
+    return arr[:cut, :, :]
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 print(f"Loading {SRC}")
@@ -247,7 +302,8 @@ print(f"  Background ≈ R={bg[0]:.0f} G={bg[1]:.0f} B={bg[2]:.0f}")
 # would otherwise block the BFS flood-fill from reaching the background strip
 # between the dashes and the car body (see chroma_crop docstring for details).
 arr = chroma_crop(arr, margin=0)
-print(f"  After chroma crop: {arr.shape[1]}×{arr.shape[0]} px")
+arr = road_crop(arr)
+print(f"  After chroma+road crop: {arr.shape[1]}×{arr.shape[0]} px")
 
 # Pipeline
 arr = flood_fill_bg(arr, bg)

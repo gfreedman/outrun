@@ -73,7 +73,7 @@ export interface TrafficCarSpec
 
 export const TRAFFIC_CAR_SPECS: Record<TrafficType, TrafficCarSpec> =
 {
-  [TrafficType.Car]:     { frameW: 1401, frameH: 509, worldH: 700, assetPath: 'sprites/assets/cars/yellow_car_sprites.png'  },
+  [TrafficType.Car]:     { frameW: 1111, frameH: 481, worldH: 700, assetPath: 'sprites/assets/cars/yellow_car_sprites.png'  },
   [TrafficType.Barney]:  { frameW: 166, frameH: 148, worldH: 700, assetPath: 'sprites/assets/cars/barney_car_sprites.png'  },
   [TrafficType.GottaGo]: { frameW: 211, frameH: 145, worldH: 700, assetPath: 'sprites/assets/cars/gottago_car_sprites.png' },
   [TrafficType.Yoshi]:   { frameW: 149, frameH: 144, worldH: 700, assetPath: 'sprites/assets/cars/yoshi_car_sprites.png'   },
