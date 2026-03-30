@@ -293,7 +293,7 @@ export const HIT_GLANCE_SPEED_MULT    = 0.87;
 /** Lateral bump magnitude (road-widths) applied on cactus impact. */
 export const HIT_GLANCE_BUMP          = 0.04;
 /** Collision cooldown (seconds) after a cactus hit before next detection. */
-export const HIT_GLANCE_COOLDOWN      = 0.30;
+export const HIT_GLANCE_COOLDOWN      = 0.10;
 
 // ── Smack (palm / billboard) ──────────────────────────────────────────────────
 
@@ -304,7 +304,7 @@ export const HIT_SMACK_SPEED_CAP      = 0.55;
 /** Lateral bump magnitude (road-widths) applied on smack impact. */
 export const HIT_SMACK_BUMP           = 0.14;
 /** Collision cooldown (seconds) after a smack before next detection. */
-export const HIT_SMACK_COOLDOWN       = 0.85;
+export const HIT_SMACK_COOLDOWN       = 0.30;
 /** Acceleration multiplier during the post-smack recovery window. */
 export const HIT_SMACK_RECOVERY_BOOST = 1.5;
 /** Duration (seconds) of boosted acceleration after a smack. */
@@ -321,7 +321,7 @@ export const HIT_CRUNCH_GRIND_TIME     = 2.0;
 /** Lateral bump magnitude (road-widths) applied on house crunch. */
 export const HIT_CRUNCH_BUMP           = 0.22;
 /** Collision cooldown (seconds) after a house crunch before next detection. */
-export const HIT_CRUNCH_COOLDOWN       = 1.50;
+export const HIT_CRUNCH_COOLDOWN       = 0.50;
 /** Acceleration multiplier during the post-crunch recovery window. */
 export const HIT_CRUNCH_RECOVERY_BOOST = 2.0;
 /** Duration (seconds) of boosted acceleration after a house crunch. */
@@ -428,7 +428,7 @@ export const TRAFFIC_HIT_FLICK_BASE    = 0.35;
 export const TRAFFIC_HIT_FLICK_RESTITUTION = 0.80;
 
 /** Cooldown seconds after traffic hit before next collision registers. */
-export const TRAFFIC_HIT_COOLDOWN          = 1.50;
+export const TRAFFIC_HIT_COOLDOWN          = 0.50;
 /** Short cooldown during Barney afterburner — enables rapid chain hits. */
 export const TRAFFIC_HIT_COOLDOWN_BOOSTING = 0.15;
 
