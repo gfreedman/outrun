@@ -24,7 +24,12 @@ export class Button
    *
    * mx / my    — current mouse position (for hover detection)
    * cx / cy    — snapshotted position from the last mousedown event
-   *              (never overwritten by mousemove)
+   *              (never overwritten by mousemove).  Using the mousedown
+   *              coordinate — not the live mouse position — means a click
+   *              fires only when the pointer was already over the button at
+   *              the moment of press, preventing accidental activations from
+   *              the user dragging the mouse onto a button while holding down
+   *              the button.
    * mouseClick — true when a pending click exists this frame
    *
    * Returns true if this button was clicked this frame.

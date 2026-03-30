@@ -43,6 +43,17 @@ function easeIn(a: number, b: number, percent: number): number
  * Uses a cosine curve — the smoothest possible S-shaped transition.
  * Used for both curve and hill height changes so bends feel gradual.
  *
+ * WHY smoothstep (cosine) rather than plain linear interpolation?
+ *   Linear interpolation produces a constant rate of change, so when the road
+ *   transitions from a flat section (curve=0) into a bend, the curvature jumps
+ *   instantaneously.  At typical road speeds that step is visible as a jarring
+ *   "snap" — the steering force appears and disappears without warning.
+ *
+ *   The cosine S-curve has a ZERO derivative at both endpoints (percent=0 and
+ *   percent=1), so the curvature rate starts at zero, peaks mid-transition, then
+ *   eases back to zero.  The result is perceptually smooth: curves "come in" the
+ *   way they do on real roads and in the original 1986 arcade hardware.
+ *
  * @param a       - Start value.
  * @param b       - End value.
  * @param percent - Progress from 0 (at a) to 1 (at b).
@@ -74,18 +85,28 @@ function makeProjectedPoint(worldZ: number, worldY: number = 0): ProjectedPoint
 /**
  * Computes the colour set for segment number i.
  *
- * The road uses two alternating colour bands (groups of 8 segments each).
- * Within each band, the grass and rumble strip share the same light/dark state,
- * while the centre-line lane dash alternates twice as fast (groups of 4)
- * to give the classic dashed-line look as the road scrolls past.
+ * WHY period = 8 for grass and rumble?
+ *   At typical play speed (~40–60 segments/sec visible scroll rate) an 8-segment
+ *   band takes ~130–200 ms to pass the player — just long enough for the eye to
+ *   register green/sand alternation without the strips becoming a blur.  This
+ *   closely matches the stripe cadence visible in the original OutRun PCB video
+ *   captures: the grass rhythm is readable at any speed without strobing.
+ *
+ * WHY period = 4 for lane dashes (half the grass period)?
+ *   The dashed centre line must look like distinct marks, not a solid stripe.
+ *   Halving the period (4 segments on, 4 off) doubles the frequency so the
+ *   dashes remain clearly separated even at high speed, matching the arcade.
+ *   The grass/rumble period stays at 8 — their larger area needs a slower
+ *   rhythm to read as "chunks" rather than flicker.
  *
  * @param i - Segment index (0-based).
  * @returns SegmentColor with road, grass, rumble, and lane colours.
  */
 function makeColor(i: number): SegmentColor
 {
-  // Every COLOR_BAND_PERIOD segments forms one colour band (alternating 0/1).
-  // Road, grass, rumble, and lane dashes all alternate at the same period.
+  // Every COLOR_BAND_PERIOD (8) segments forms one colour band (alternating 0/1).
+  // Grass and rumble share this period; lane dashes use period/2 (4) so they
+  // appear as distinct marks at speed rather than blending into a solid line.
   const band = Math.floor(i / COLOR_BAND_PERIOD) % 2 === 0;
   return {
     road:   band ? COLORS.ROAD_LIGHT  : COLORS.ROAD_DARK,
@@ -209,7 +230,17 @@ export class Road
     else                         this.resetRoad();
   }
 
-  /** Total number of segments in the track. Used for wrap-around maths. */
+  /**
+   * Total number of segments in the current track.  Used for modulo wrap-around
+   * maths in the renderer (e.g. `segIdx = absIdx % road.count`).
+   *
+   * WHY a dynamic getter rather than a constant?
+   *   Different track variants (default / hard / legendary) have different segment
+   *   counts, and the count also changes whenever resetRoad / resetHardRoad /
+   *   resetLegendaryRoad is called.  Caching it as a constant would go stale the
+   *   moment the road is rebuilt.  The getter always reads the live array length,
+   *   so callers never need to know which variant is active.
+   */
   get count(): number
   {
     return this._segments.length;
@@ -224,6 +255,25 @@ export class Road
    * p2 is the FAR  edge of the strip (worldZ = (i+1) * SEGMENT_LENGTH, y = y).
    *
    * After adding, lastY is updated so the next segment starts at this segment's far end.
+   *
+   * ── World-unit coordinate convention ────────────────────────────────────────
+   *   All positions in the segment array use the same world-space unit system:
+   *
+   *   • Z axis — depth along the road.  Increases away from the player.
+   *     One segment = SEGMENT_LENGTH (200) world units deep.
+   *     ROAD_WIDTH = 2000 world units → the road is 10 segments wide in Z terms.
+   *
+   *   • Y axis — height above the flat baseline (y = 0).
+   *     Positive Y = above ground (uphill crest), negative Y = below (valley).
+   *     CAMERA_HEIGHT = 1000 world units above the road surface.
+   *     A HIGH hill (ROAD_HILL.HIGH = 60) raises the road 60 units — just 6% of
+   *     camera height, which produces a convincing but not extreme crest.
+   *
+   *   • X axis — lateral offset from road centre.
+   *     Sprite worldX values use the same units: a palm at worldX = ±1200 sits
+   *     600 units beyond the road edge (road half-width = 1000).  The renderer
+   *     converts worldX → screen pixels via:  sprX = sx1 + worldX * sc1 * halfW
+   *     where sc1 = CAMERA_DEPTH / cameraZ is the perspective scale at that segment.
    *
    * @param curve - Horizontal bend strength for this segment (0 = straight, 6 = hard).
    * @param y     - World-space height of this segment's far edge.

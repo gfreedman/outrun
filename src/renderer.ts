@@ -135,6 +135,13 @@ export interface ColorRun
 /**
  * Splits projPool[0..count-1] into contiguous same-colour runs.
  *
+ * NOTE — exported for unit tests only.
+ *   Production rendering does NOT call buildColorRuns at runtime.  The render
+ *   passes (drawRumble, drawLaneDashes, drawEdgeMarks, etc.) inline an equivalent
+ *   loop directly for performance: avoiding the extra array allocation and the
+ *   function-call overhead of the callback on the hot path at 60 fps.
+ *   If you change this function's grouping logic, update those inlined copies too.
+ *
  * @param projPool  - Pre-allocated projection pool (only [0..count-1] are valid).
  * @param count     - Number of valid entries in projPool.
  * @param getColor  - Callback that returns the colour string for a segment.
@@ -851,6 +858,25 @@ export class Renderer
     // Any later segment whose near edge (sy1) is ABOVE horizonCeiling (sy1 < horizonCeiling)
     // is behind the crest — completely hidden — and is skipped.
     //
+    // WHY initialise horizonCeiling to halfH (the horizon line)?
+    //   halfH is the lowest screen-Y at which a segment can ever be "above the
+    //   horizon".  On flat ground every segment's upper edge (sy2) equals exactly
+    //   halfH for the farthest visible segment.  Starting here means: on a flat
+    //   road no segment is ever culled, because sy1 < halfH only if the near edge
+    //   projects above the horizon — physically impossible for ground-level geometry.
+    //   Initialising to a smaller value would cull valid near-horizon segments;
+    //   initialising to a larger value (or +Infinity) would accept segments that
+    //   are actually hidden above a hill crest on the first iteration.
+    //
+    // WHY update with Math.min (take the smaller value)?
+    //   Each segment's far edge (sy2) is the screen-Y of its upper boundary.
+    //   "Upper" in world space means SMALLER screen-Y (nearer the top of canvas).
+    //   The ceiling can only be raised (lowered numerically) as we encounter taller
+    //   geometry farther along.  Taking the minimum ensures the ceiling tracks the
+    //   HIGHEST point yet seen: once a hill crest at sy2=200 is recorded, the
+    //   ceiling stays ≤200 regardless of later lower-crested segments, correctly
+    //   occluding everything geometrically above that crest.
+    //
     // ── Why a pre-allocated pool? ──────────────────────────────────────────
     //
     // At 60 fps with 200 draw-distance segments, a naive implementation would
@@ -898,7 +924,19 @@ export class Renderer
       const sx1 = Math.round(halfW - projX1 * halfW);
       const sx2 = Math.round(halfW - projX2 * halfW);
 
-      // Vertical projection: camera tracks road Y so hills produce genuine crests/dips
+      // Vertical projection — derivation:
+      //   The basic perspective formula maps a world-Y height to screen-Y as:
+      //     screenY = halfH + (cameraY - worldY) * perspScale * halfH
+      //   where perspScale = CAMERA_DEPTH / cameraZ.
+      //
+      //   At the horizon (cameraY == worldY) the term is zero → screenY = halfH.  ✓
+      //   Above the horizon (worldY < cameraY, e.g. flat ground far away):
+      //     the term is positive → screenY > halfH (below horizon on canvas).  ✓
+      //   A hill crest (worldY > cameraY):
+      //     the term is negative → screenY < halfH (above horizon on canvas).  ✓
+      //
+      //   sc1 / sc2 already equal CAMERA_DEPTH/cz1 and CAMERA_DEPTH/cz2 respectively,
+      //   so we substitute directly rather than re-dividing.
       const sy1 = Math.round(halfH + (cameraY - seg.p1.world.y) * sc1 * halfH);
       const sy2 = Math.round(halfH + (cameraY - seg.p2.world.y) * sc2 * halfH);
 
@@ -922,6 +960,13 @@ export class Renderer
     }
 
     // ── Pass 2: render back-to-front — six batched colour groups ──────────
+    //
+    // WHY back-to-front (painter's algorithm)?
+    //   Canvas 2D has no depth buffer.  Each fillRect / fill() simply paints over
+    //   whatever is already on the canvas.  Drawing far segments first means near
+    //   segments automatically cover them — exactly the effect a depth buffer would
+    //   produce, at zero extra cost.  Reversing the order would cause near grass
+    //   and rumble strips to vanish under far ones.
     //
     // Instead of one beginPath/fill per trapezoid (~1 000+ API calls/frame),
     // we group all trapezoids of the same colour into a single batched path.
@@ -1056,6 +1101,17 @@ export class Renderer
         if (!sheet?.isReady()) continue;
         if (!rect || !worldH) continue;
 
+        // Sprite height derivation:
+        //   The road half-width projects to halfW pixels at scale sc1:
+        //     ROAD_WIDTH * sc1 == sw1 (pixels)  →  sc1 = sw1 / ROAD_WIDTH
+        //   We want to convert worldH (world units tall) into pixels.
+        //   The road half-width maps ROAD_WIDTH world units → halfW screen pixels,
+        //   so the pixel-per-world-unit ratio at this depth is:
+        //     pxPerUnit = sc1 * halfH       (sc1 for depth, halfH for vertical scale)
+        //   Therefore:
+        //     sprH = worldH * scale * sc1 * halfH
+        //   (scale is the per-instance override; sc1 and halfH together encode the
+        //    perspective shrink at this segment's distance from the camera.)
         const sprH = worldH * (si.scale ?? 1) * sc1 * halfH;
         if (sprH < 4) continue;   // C8: raised from 2 — tiny sprites are invisible
 

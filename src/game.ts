@@ -707,7 +707,11 @@ export class Game
       // barneyBoostTimer is now decremented inside advancePhysics() so that all
       // player timer ticks are owned by the single pure physics state machine.
 
-      // Score: base rate + speed bonus (pts/sec)
+      // Score: base rate + speed bonus (pts/sec).
+      // SCORE_BASE_PER_SEC is earned just for surviving (time-on-road reward).
+      // SCORE_SPEED_PER_SEC is a multiplier on speed ratio — going fast nearly
+      // doubles the per-second rate, incentivising full-throttle play without
+      // making slow survival scores feel meaningless.
       const speedRatio = this.speed / this.effectiveMaxSpeed;
       this.score += Math.round((SCORE_BASE_PER_SEC + SCORE_SPEED_PER_SEC * speedRatio) * dt);
 
@@ -754,6 +758,13 @@ export class Game
     }
 
     // ── Time up ───────────────────────────────────────────────────────────
+    // Transition sequence: PLAYING → TIMEUP → (user presses Continue) → INTRO.
+    // tickTimeUp() takes over immediately: it decelerates the car via TIMEUP_DECEL
+    // (bypassing advancePhysics so throttle/brake input is ignored), fades the
+    // engine audio with speed, overlays the TIME UP screen, and calls exitToMenu()
+    // when the player dismisses it.  The finish-line check above runs first, so a
+    // simultaneous finish-and-time-expiry always resolves as FINISHING (the win
+    // state), never TIMEUP.
     if (this.timeRemaining <= 0)
     {
       this.phase = GamePhase.TIMEUP;
@@ -1153,7 +1164,14 @@ export class Game
 
         if (trafficHit.hitCar.type === TrafficType.Barney)
         {
-          // Barney kill: start/chain afterburner + kill tally, no penalty ever
+          // Barney kill: start/chain afterburner + kill tally, no penalty ever.
+          // The short TRAFFIC_HIT_COOLDOWN_BOOSTING window (set inside
+          // applyTrafficHitResponse when isBoosting=true) is intentional —
+          // it allows the player to chain rapid Barney kills during an active
+          // boost without being blocked by the normal 0.5 s cooldown.
+          // Resetting barneyBoostTimer to the full BARNEY_BOOST_DURATION here
+          // (rather than adding to it) caps the boost so a chain can't stack
+          // indefinitely; each kill just refreshes the timer.
           this.barneyKillCount++;
           this.barneyBoostTimer = BARNEY_BOOST_DURATION;
           this.audio.playBarney();

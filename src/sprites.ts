@@ -101,10 +101,16 @@ export function carFrameRect(index: number): SpriteRect
  * shifts left or right as the car steers), a raw centre-of-cell placement
  * makes the rear axle wobble left and right across the screen.
  *
- * Positive offset → the pivot is to the LEFT of the cell centre →
+ * Each value is the pixel distance from the cell's horizontal midpoint to the
+ * car's visual ground-contact centre (the midpoint of the rear axle as it
+ * appears in the sprite).  The renderer subtracts this offset when computing
+ * the draw X so the axle stays locked to the player's worldX position across
+ * all 37 animation frames.
+ *
+ * Positive offset → the visual centre is to the LEFT of the cell centre →
  *   the renderer shifts the draw position rightward to compensate.
  *
- * Generated offline by sprites/build_sprite_sheet.py.
+ * Generated offline by sprites/build_sprite_sheet.py — do not edit by hand.
  */
 export const CAR_PIVOT_OFFSETS: number[] = [
   3, -13, -12, -41, -41, -32, -31, -29, -33, -36, -36, -25, -28,
@@ -488,7 +494,16 @@ export const CACTUS_RECTS: Partial<Record<SpriteId, SpriteRect>> =
   CACTUS_C22:   { x: 2645, y:  91, w: 118, h: 181 },
 };
 
-/** Real-world height of each cactus in world units. */
+/**
+ * Real-world height of each cactus in world units.
+ *
+ * All 22 varieties share 700 wu because they represent the same physical scale
+ * in the game world — desert cacti roughly 1–2 m tall rendered at the same
+ * perspective size.  The variation between varieties comes from the source art
+ * (different pixel heights), not from world-unit differences.  Using a single
+ * value keeps the roadside silhouette consistent: no cactus towers over another
+ * unless a different worldH is explicitly assigned.
+ */
 export const CACTUS_WORLD_HEIGHT: Partial<Record<SpriteId, number>> =
 {
   CACTUS_C1:    700,

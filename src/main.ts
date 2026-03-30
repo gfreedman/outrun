@@ -36,6 +36,14 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
  * Called once at startup and again on every orientationchange.
  * Results are passed to game.setSafeInsets() so the pill renderer can
  * keep affordances clear of the notch and home-bar swipe zone.
+ *
+ * CSS `env(safe-area-inset-*)` values cannot be read directly from
+ * JavaScript — there is no JS API that exposes them.  Instead, the
+ * #safe-probe element in index.html has its padding set to those env()
+ * values in CSS (`padding: env(safe-area-inset-top) env(safe-area-inset-right)
+ * env(safe-area-inset-bottom) env(safe-area-inset-left)`).  Reading the
+ * element's computed padding via getComputedStyle() is therefore the
+ * standard workaround for extracting env() values into JS.
  */
 function readSafeInsets(): void
 {
@@ -126,7 +134,14 @@ if (isMobile)
   }
 
   // ── Orientation change ───────────────────────────────────────────────────
-  // 300 ms: pragmatic settle window; visualViewport fires again as correction.
+  // The 300 ms delay is an empirical settle window: after the device rotates,
+  // the browser needs time to complete its reflow before window.innerWidth /
+  // innerHeight reflect the new orientation.  Calling resize() synchronously
+  // inside orientationchange returns stale dimensions on some iOS versions
+  // (particularly Safari on iPhone < iOS 16), where values below ~200 ms
+  // still report the pre-rotation size.  300 ms is the widely accepted safe
+  // floor; the subsequent visualViewport 'resize' event fires as a correction
+  // if the first call still landed early.
   window.addEventListener('orientationchange', () =>
   {
     setTimeout(resize, 300);

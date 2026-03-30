@@ -167,8 +167,19 @@ export class AudioManager
   // ── Engine ────────────────────────────────────────────────────────────────
 
   /**
-   * Returns a soft-clipping distortion curve.
-   * `amount` controls saturation intensity (50 = light, 200 = heavy).
+   * Returns a soft-clipping distortion (waveshaping) curve.
+   * `amount` controls saturation drive intensity (50 = light, 200 = heavy).
+   *
+   * Algorithm: y = (π + k) · x / (π + k · |x|)
+   * This is a rational soft-clip approximating tanh — it compresses peaks
+   * smoothly rather than hard-clipping them.  The denominator grows with |x|,
+   * so louder input gets progressively more gain reduction (like a tube amp).
+   * The (π + k) numerator offsets ensure the curve passes through ±1 at ±∞,
+   * preserving maximum output level regardless of k.
+   *
+   * The k parameter (== amount) sets the drive amount: higher k → steeper
+   * slope in the mid-range → stronger odd-harmonic saturation (growl, bite)
+   * without the harsh aliasing artefacts of a hard-clip step function.
    */
   private makeDistortionCurve(amount: number): Float32Array<ArrayBuffer>
   {
@@ -196,6 +207,10 @@ export class AudioManager
     const filt = ctx.createBiquadFilter();
     filt.type            = 'lowpass';
     filt.frequency.value = 150;  // very dark at idle
+    // Q controls resonance: the filter boosts frequencies near its cutoff by a
+    // factor of Q before rolling off.  Q = 1.6 gives a gentle presence peak
+    // that adds warmth and tracks RPM without ringing (Q > 5 would introduce an
+    // audible whistle on filter sweeps, which is distracting on an engine sound).
     filt.Q.value         = 1.6;
     this.engFilter = filt;
 
@@ -268,7 +283,10 @@ export class AudioManager
     const cutoff = 150 + speedRatio * speedRatio * 500;  // 150 → 650 Hz
     this.engFilter!.frequency.setTargetAtTime(cutoff, now, T * 2);
 
-    // Master volume — gentle ramp from quiet idle to solid driving level
+    // Master volume — maps the full speed range to the audible gain range:
+    // idle (speedRatio ≈ 0) → 0.05 (barely audible background hum),
+    // redline (speedRatio = 1) → 0.30 (full driving level).
+    // The linear ramp gives a perceptually smooth throttle response.
     const vol = 0.05 + speedRatio * 0.25;
     this.engMasterGain!.gain.setTargetAtTime(vol, now, T);
 
@@ -307,12 +325,19 @@ export class AudioManager
   startRumble(): void
   {
     if (!this.initialized || !this.ctx) return;
+    // setTargetAtTime uses an exponential time constant (τ), not a linear
+    // duration.  The gain reaches ~63% of target after 1τ and ~95% after 3τ.
+    // Attack τ = 0.05 s (~15 ms to first audible level) — fast enough to
+    // respond instantly but avoids a click from a discontinuous step change.
     this.rumbleGain!.gain.setTargetAtTime(0.06, this.ctx.currentTime, 0.05);
   }
 
   stopRumble(): void
   {
     if (!this.initialized || !this.ctx) return;
+    // Release τ = 0.08 s — slightly slower than attack so the rumble fades
+    // out naturally rather than cutting off abruptly when the car re-joins
+    // the road surface.
     this.rumbleGain!.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
   }
 
@@ -484,6 +509,14 @@ export class AudioManager
   /**
    * Must be called each frame while music is playing.
    * Schedules upcoming bars to keep the buffer ahead of playback.
+   *
+   * Scheduling pattern: bars are pre-scheduled up to 2 bars ahead of the
+   * current AudioContext clock (now + BAR * 2 ≈ 3.4 s lookahead).
+   * This lookahead absorbs JavaScript GC pauses and requestAnimationFrame
+   * jank — if the main thread stalls for 50–200 ms the audio graph continues
+   * uninterrupted because the Web Audio clock runs off-thread.  Without this
+   * buffer, a single dropped frame at a bar boundary causes an audible glitch.
+   * Two bars is enough headroom without wasting memory on excessive pre-computation.
    */
   tickMusic(): void
   {
@@ -520,9 +553,11 @@ export class AudioManager
 
       const et = t + i * EIGHTH;
       g.gain.setValueAtTime(0,    et);
+      // 3 ms attack: short enough to sound percussive (no audible click because
+      // the ramp is linear, not a discontinuous step), long enough to avoid aliasing.
       g.gain.linearRampToValueAtTime(0.22, et + 0.003);  // snappy 3 ms attack
-      g.gain.setValueAtTime(0.22, et + EIGHTH * 0.48);   // hard staccato cut
-      g.gain.linearRampToValueAtTime(0,   et + EIGHTH * 0.68);
+      g.gain.setValueAtTime(0.22, et + EIGHTH * 0.48);   // hard staccato cut at 48% of note duration
+      g.gain.linearRampToValueAtTime(0,   et + EIGHTH * 0.68);  // release by 68% — dead silence before next note
 
       osc.connect(filt); filt.connect(g); g.connect(gain);
       osc.start(et); osc.stop(et + EIGHTH + 0.01);
@@ -544,8 +579,11 @@ export class AudioManager
 
       const et = t + i * EIGHTH;
       g.gain.setValueAtTime(0,    et);
+      // 6 ms attack: slightly longer than the lead (2× the ramp) to give the
+      // bass a slapped-string character — the brief transient softening sits
+      // just below the click threshold so it punches without popping.
       g.gain.linearRampToValueAtTime(0.38, et + 0.006);  // very fast slap attack
-      g.gain.setValueAtTime(0.38, et + EIGHTH * 0.38);   // staccato
+      g.gain.setValueAtTime(0.38, et + EIGHTH * 0.38);   // tight staccato: cut at 38% of note duration
       g.gain.linearRampToValueAtTime(0,   et + EIGHTH * 0.62);
 
       osc.connect(filt); filt.connect(g); g.connect(gain);
@@ -569,8 +607,10 @@ export class AudioManager
         filt.frequency.value = freq * 1.8;
         filt.Q.value         = 0.7;
         g.gain.setValueAtTime(0,    et);
+        // 4 ms attack: short enough to be percussive; the exponential release
+        // over 110 ms gives the stab its characteristic sharp-then-decay envelope.
         g.gain.linearRampToValueAtTime(0.09, et + 0.004);
-        g.gain.exponentialRampToValueAtTime(0.001, et + 0.11);
+        g.gain.exponentialRampToValueAtTime(0.001, et + 0.11);  // full decay by 110 ms
         osc.connect(filt); filt.connect(g); g.connect(gain);
         osc.start(et); osc.stop(et + 0.13);
       });

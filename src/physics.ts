@@ -182,6 +182,11 @@ export function advancePhysics(
     speed = Math.min(boostMax, speed + maxSpeed * 2.0 * dt);
   }
 
+  // Speed floor guard — first application, post-acceleration/boost.
+  // Clamps speed to [0, cap] after the throttle, brake, coast, and Barney
+  // boost passes.  A second identical clamp appears after the off-road and
+  // grind passes because those deceleration paths can independently re-violate
+  // this invariant without re-entering this block.
   speed = Math.max(0, Math.min(speed,
     barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
 
@@ -231,6 +236,13 @@ export function advancePhysics(
   playerX = Math.max(-2, Math.min(2, playerX));
 
   // ── Centrifugal force ────────────────────────────────────────────────
+  // Applied AFTER steering so the new playerX (post-steer) is what gets
+  // written back into PhysicsState.  The renderer reads playerX on the
+  // NEXT frame to look up the road segment curve for the camera offset,
+  // so the drift seen on screen is always one frame behind the physics —
+  // applying centrifugal after steering prevents an additional one-frame
+  // lag that would otherwise make the car appear to steer into the curve
+  // for a frame before the centrifugal push begins.
 
   playerX -= segmentCurve * speedRatio * CENTRIFUGAL * dt;
 
@@ -242,6 +254,11 @@ export function advancePhysics(
     const availGrip = PLAYER_STEERING * effectiveGrip;
     if (centForce > availGrip * DRIFT_ONSET)
     {
+      // excess is the portion of centripetal demand that lies above the drift
+      // onset threshold (DRIFT_ONSET × availGrip).  Only this surplus drives
+      // slide accumulation — forces below the threshold are absorbed by grip
+      // and produce no drift.  This gives a progressive onset: light overspeed
+      // builds drift slowly; severe overspeed builds it rapidly.
       const excess   = centForce - availGrip * DRIFT_ONSET;
       const slideDir = segmentCurve > 0 ? -1 : 1;
       slideVelocity += slideDir * excess * DRIFT_RATE * dt;
@@ -257,6 +274,12 @@ export function advancePhysics(
   slideVelocity *= Math.exp(-decayRate * dt);
 
   // ── Screech ratio ────────────────────────────────────────────────────
+  // screechRatio = centripetal demand / available grip.
+  // ratio < 1.0 → tyres have headroom; no audible squeal.
+  // ratio = 1.0 → tyre is exactly at the adhesion limit (onset of squeal).
+  // ratio > 1.0 → full tyre slip: centripetal demand exceeds available grip;
+  //               the tyre is sliding, not rolling — screech at maximum volume.
+  // Passed directly to AudioManager.updateScreech() for gain mapping.
 
   let screechRatio = 0;
   if (speedRatio > 0.4 && Math.abs(segmentCurve) > 0)
@@ -302,6 +325,11 @@ export function advancePhysics(
     jitterY *= Math.exp(-OFFROAD_JITTER_DECAY * dt);
   }
 
+  // Speed floor guard — second application.  The first clamp (after the Barney
+  // boost section) handles the acceleration/boost path; this one re-applies
+  // after the off-road decel and grind passes, either of which can independently
+  // push speed below zero or above the cap.  Two separate passes are required
+  // because each branch may violate the invariant on its own.
   speed = Math.max(0, Math.min(speed,
     barneyBoostTimer > 0 ? maxSpeed * BARNEY_BOOST_MULTIPLIER : maxSpeed));
 
@@ -522,6 +550,12 @@ export function applyTrafficHitResponse(
   // Heavy traffic car (high carMassMult) → larger penalty fraction → more speed lost.
   const penaltyFraction = Math.min(1.0, TRAFFIC_HIT_SPEED_CAP * hit.carMassMult / playerMass);
   let speed = state.speed * Math.max(0, 1.0 - penaltyFraction);
+  // HIT_SPEED_FLOOR invariant guard: the penalty fraction can reduce speed to
+  // an arbitrarily small positive value.  This re-clamps to the minimum
+  // drivable speed so the car never becomes unresponsive after a hit.
+  // Note: this function may be called with pre-boost state mid-frame (i.e.,
+  // barneyBoostTimer was set in game.ts before advancePhysics runs), so the
+  // floor is checked here independently — it cannot be deferred to advancePhysics.
   if (speed > 0)
     speed = Math.max(speed, maxSpeed * HIT_SPEED_FLOOR);
 

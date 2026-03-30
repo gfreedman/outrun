@@ -162,8 +162,12 @@ export class TouchInput
 
       if (type === 'touchstart')
       {
-        // Zone locked at touchstart — never changes for this touch id.
+        // Assign this new touch to whichever half of the screen it landed on and
+        // record its start position.  The assignment is permanent for this touch id —
+        // crossing the midline during a drag never reassigns the zone.
         const zoneKey: 'left' | 'right' = t.clientX < midX ? 'left' : 'right';
+        // Prevent a second simultaneous touch on the same side from hijacking the
+        // already-active zone — the first finger's drag vector must not be reset.
         if (this[zoneKey].active) continue;   // zone occupied — ignore extra touches
         this[zoneKey] = {
           id:        t.identifier,
@@ -177,6 +181,8 @@ export class TouchInput
       }
       else if (type === 'touchmove')
       {
+        // Update the running position for whichever zone owns this touch id so
+        // that toInputSnapshot() always reflects the latest finger position.
         if (this.left.active  && this.left.id  === t.identifier)
         {
           this.left.currentX  = t.clientX;
@@ -204,6 +210,10 @@ export class TouchInput
             const dy = t.clientY - slot.startY;
             // Tap: minimal movement — synthesise a click at the lift position.
             // 15 px is wider than TOUCH_DEADZONE to forgive natural lift drift.
+            // We use t.clientX/Y (the touchend coordinates) rather than the
+            // cached slot.currentX/Y because the touch may have drifted slightly
+            // between the last touchmove and lift; the final finger position is
+            // the authoritative location for tap-target hit testing.
             if (Math.abs(dx) < 15 && Math.abs(dy) < 15)
               this.pendingTap = this.touchToCanvas(t.clientX, t.clientY);
           }
@@ -212,7 +222,9 @@ export class TouchInput
       }
       else if (type === 'touchcancel')
       {
-        // A cancelled touch (system interrupt, phone call, etc.) never becomes a tap.
+        // System interrupt (incoming call, notification overlay, etc.) — release
+        // the zone so the next touchstart can reclaim it.  A cancelled touch
+        // never becomes a tap because the intent was interrupted mid-gesture.
         for (const zoneKey of ['left', 'right'] as const)
         {
           if (this[zoneKey].active && this[zoneKey].id === t.identifier)

@@ -171,6 +171,21 @@ export class IntroController
     mouseClick: boolean,
   ): boolean
   {
+    // ── Menu sub-state machine ─────────────────────────────────────────────
+    // Three mutually exclusive branches, selected by menuSubMenu:
+    //
+    //   null          → main menu: ArrowUp/Down cycle focus among mode / settings / start;
+    //                   Enter/Space or click opens the focused item's sub-menu, or
+    //                   fires onStartRace() if 'start' is focused.
+    //
+    //   'mode'        → difficulty picker overlay: ArrowLeft/Right (or ArrowUp/Down)
+    //                   shift the highlighted card; Enter/Escape or card click commits
+    //                   and returns to the main menu (menuSubMenu = null).
+    //
+    //   'settings'    → settings panel overlay: Enter/Space or sound button toggles
+    //                   soundEnabled; Escape, the × button, or a click outside the
+    //                   panel rect (left=0.18 w, top=0.16 h, right=0.82 w, bottom=0.78 h)
+    //                   returns to the main menu (menuSubMenu = null).
     this.pulseClock += dt;
 
     const MODES = [GameMode.EASY, GameMode.MEDIUM, GameMode.HARD] as const;
@@ -193,6 +208,13 @@ export class IntroController
       }
       if (input.wasPressed('Escape')) this.menuSubMenu = null;
 
+      // ── Mode-picker input paths ─────────────────────────────────────────
+      // 1. Keyboard navigation: ArrowUp/Left / ArrowDown/Right shift the
+      //    highlighted card index; handled above with wasPressed().
+      // 2. Button hover: mousing over a card highlights it immediately so
+      //    the user gets instant visual feedback before committing.
+      // 3. Button click: commits the hovered card, saves settings, and
+      //    closes the overlay — same outcome as pressing Enter on a focused card.
       const modeButtons = [this.btnEasy, this.btnMedium, this.btnHard] as const;
       modeButtons.forEach(btn => btn.tick(mouseX, mouseY, clickX, clickY, mouseClick));
       modeButtons.forEach((btn, i) => { if (btn.hovered) this.menuSubMode = MODES[i]; });
@@ -232,7 +254,12 @@ export class IntroController
       if (this.btnGithub.clicked)
         window.open('https://github.com/gfreedman/outrun', '_blank', 'noopener');
 
-      // Close on X, Escape, or click outside the panel rect
+      // Close on X, Escape, or click outside the panel rect.
+      // The four multipliers are normalized [0..1] canvas fractions:
+      //   0.18 = panel left edge  (18% of canvas width from the left)
+      //   0.16 = panel top edge   (16% of canvas height from the top)
+      //   0.64 = panel width      (spans from 18% to 82% of canvas width)
+      //   0.62 = panel height     (spans from 16% to 78% of canvas height)
       const px = Math.round(w * 0.18), py = Math.round(h * 0.16);
       const pw = Math.round(w * 0.64), ph = Math.round(h * 0.62);
       const inPanel = mouseX >= px && mouseX <= px + pw

@@ -157,6 +157,7 @@ const LANES        = [-1200, -500, 500, 1200] as const;
 const CENTRE_LANES = [-500,  500 ] as const;
 const OUTER_LANES  = [-1200, 1200] as const;
 
+/** Returns one of the four lane centres uniformly at random. */
 function randomLane(): number
 {
   return LANES[Math.floor(Math.random() * LANES.length)];
@@ -209,6 +210,10 @@ function randomType(): TrafficType
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
+/**
+ * Linear interpolation between a and b by factor t.
+ * t = 0 → a, t = 1 → b.  No clamping — callers must ensure t ∈ [0..1].
+ */
 function lerp(a: number, b: number, t: number): number
 {
   return a + (b - a) * t;
@@ -237,6 +242,13 @@ function profileLaneTimer(type: TrafficType): number
 /**
  * Signed distance from playerZ to car.worldZ along the shortest arc of the
  * looping track.  Positive = car is ahead of the player.
+ *
+ * WHY wrap?
+ *   The track is a closed loop.  worldZ values wrap modulo trackLength.  A
+ *   car that has just lapped the player can have a raw worldZ close to 0 while
+ *   the player is near trackLength — a naïve subtraction gives a huge negative
+ *   number instead of the correct small positive distance.  The two wrap
+ *   corrections ensure we always return the distance along the shorter arc.
  */
 function relativeZ(carWorldZ: number, playerZ: number, trackLength: number): number
 {
@@ -315,6 +327,14 @@ export function updateTraffic(
   const playerWorldX = playerX * ROAD_WIDTH;
 
   // Intensity-scaled parameters computed once per frame (not per car).
+  //
+  // WHY does intensity scale evadeDepth and evadeRate but NOT base speeds?
+  //   evadeDepth and evadeRate control Barney's REACTIVE BEHAVIOUR — how early
+  //   he detects the player and how fast he steers away.  These are difficulty
+  //   levers: on Easy, Barney barely reacts; on Hard, he spots you far out and
+  //   darts away instantly.  Base speeds are fundamental car physics that stay
+  //   consistent regardless of difficulty; scaling them would break the feel of
+  //   each car type's personality (a slow Barney should always feel slow).
   const barneyEvadeDepth = lerp(BARNEY_EVADE_SEGS_MIN, BARNEY_EVADE_SEGS_MAX, intensity)
                            * SEGMENT_LENGTH;
   const barneyEvadeRate  = lerp(BARNEY_EVADE_RATE_MIN, BARNEY_EVADE_RATE_MAX, intensity);
@@ -387,6 +407,10 @@ export function updateTraffic(
             car.targetX   = randomLane();
             car.laneTimer = profileLaneTimer(TrafficType.Banana);
           }
+          // Phase is derived from worldZ so the wobble is SPATIALLY coherent:
+          // a car at a given road position always has the same sine value,
+          // regardless of how fast it is moving.  This prevents the wobble
+          // frequency from scaling with speed (which would look mechanical).
           const phase         = car.worldZ / BANANA_WOBBLE_WAVELENGTH;
           const wobbledTarget = car.targetX + Math.sin(phase) * BANANA_WOBBLE_AMP;
           const profile       = TRAFFIC_PROFILE[TrafficType.Banana];
