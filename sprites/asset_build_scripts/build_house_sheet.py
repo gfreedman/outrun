@@ -68,9 +68,15 @@ sheet_w = sum(img.width + 2 * PAD for _, _, img in images)
 
 sheet = Image.new("RGBA", (sheet_w, sheet_h), (0, 0, 0, 0))
 
+# Maps sprite name → (x, y, w, h, worldH): top-left corner and unpadded
+# dimensions in the output sheet, plus the game world-unit height used by
+# the renderer for perspective scaling — taller worldH values make the sprite
+# appear larger at a given road depth.
 rects = {}
 x = 0
 for name, worldH, img in images:
+    # Vertically centre shorter sprites so all sprites share a common bottom
+    # baseline — shorter images sit higher by exactly half the height difference.
     iy = (sheet_h - img.height) // 2
     sheet.paste(img, (x + PAD, iy), img)
     rects[name] = (x + PAD, iy, img.width, img.height, worldH)

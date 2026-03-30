@@ -28,6 +28,9 @@ SRC       = "source_for_sprites/signz.png"
 PAD       = 6
 TOLERANCE = 70
 
+# Each tuple is (output_filename, left, top, right, bottom) where left/top/right/bottom
+# are pixel coordinates (inclusive left & top, exclusive right & bottom, matching
+# numpy array slice convention) within the full source image.
 CELLS = [
     ("sign_turn_right", 0,   0, 73,  141),
     ("sign_turn_left",  105, 0, 174, 141),
@@ -89,6 +92,10 @@ print("Loading", SRC)
 src_img = Image.open(SRC).convert("RGBA")
 src_arr = np.array(src_img)
 
+# Sample pixels from all four image edges (top row, bottom row, left column,
+# right column) and average them to build a robust background colour estimate.
+# Using the full image perimeter rather than a single corner avoids bias from
+# any one edge that happens to contain non-background content.
 edges = np.concatenate([src_arr[0,:,:3], src_arr[-1,:,:3], src_arr[:,0,:3], src_arr[:,-1,:3]])
 bg    = edges.mean(axis=0)
 print(f"  {src_img.width}×{src_img.height}  BG: R={bg[0]:.0f} G={bg[1]:.0f} B={bg[2]:.0f}")

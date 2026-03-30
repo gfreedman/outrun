@@ -132,26 +132,34 @@ def remove_interior_bg(arr: np.ndarray, bg: np.ndarray) -> np.ndarray:
     arr  = arr.copy()
     H, W = arr.shape[:2]
 
-    # Candidate interior-bg pixels: alpha=255 AND bg-coloured
+    # Pass 1 of the two-pass logic: build the candidate mask.
+    # Only pixels that are BOTH fully opaque (alpha=255, meaning flood_fill_bg
+    # has not already cleared them) AND bg-coloured qualify as candidates.
+    # This avoids re-examining content pixels or already-transparent holes.
     opaque = arr[:, :, 3] == 255
     bg_col = is_bg(arr, bg)
     cand   = opaque & bg_col
 
+    # Label every 4-connected group of candidate pixels into numbered blobs.
     labeled, n = sp_label(cand)
     if n == 0:
-        return arr
+        return arr  # no interior bg remaining — nothing to do
 
-    # A blob touches the border if any of its pixels sits on the outer ring
+    # Pass 2 of the two-pass logic: classify each blob as border-touching or interior.
+    # A blob that touches any edge pixel is exterior background that was somehow
+    # missed by flood_fill_bg (e.g. a pinched corner) — keep it by recording its label.
+    # A blob with no border contact is a fully enclosed interior pocket — zero it.
     border_mask = np.zeros((H, W), dtype=bool)
-    border_mask[0, :]  = True
-    border_mask[-1, :] = True
-    border_mask[:, 0]  = True
-    border_mask[:, -1] = True
+    border_mask[0, :]  = True   # top edge
+    border_mask[-1, :] = True   # bottom edge
+    border_mask[:, 0]  = True   # left edge
+    border_mask[:, -1] = True   # right edge
 
+    # Collect the label IDs of all blobs that have at least one pixel on the border
     border_labels = set(labeled[border_mask & cand])
-    border_labels.discard(0)
+    border_labels.discard(0)  # label 0 is the scipy background (non-candidate) — discard it
 
-    # Any labeled blob not touching the border is interior — kill it
+    # Any labeled blob not touching the border is interior — zero its alpha
     interior = cand & ~np.isin(labeled, list(border_labels))
     arr[interior, 3] = 0
     return arr
@@ -212,6 +220,11 @@ def trim_posts(arr: np.ndarray, max_post_px: int = 55) -> np.ndarray:
     alpha = arr[:, :, 3]
 
     row_widths = np.array([(alpha[y] > 10).sum() for y in range(H)])
+    # W * 0.4 masks the central 40% of the billboard width — rows where visible
+    # content spans more than 40% of the image width belong to the sign panel
+    # (which is wide), not to the narrow twin posts below it.  This threshold
+    # prevents the post-trimming logic from accidentally treating wide ad-content
+    # rows as post material and cutting the billboard face.
     wide_rows  = np.where(row_widths > W * 0.4)[0]
     if len(wide_rows) == 0:
         return arr

@@ -26,8 +26,10 @@ import os
 import subprocess
 import sys
 
-# Anchor working directory to sprites/ so all sibling scripts resolve asset
-# paths correctly regardless of where this file is invoked from.
+# All build scripts reference asset paths relative to the sprites/ directory
+# (e.g. "assets/palms/…", "source_for_sprites/…").  Changing to that directory
+# here ensures every sibling script resolves those paths correctly regardless
+# of where build_all.py itself is invoked from (repo root, IDE, CI, etc.).
 os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 
 SCRIPTS = [
@@ -41,6 +43,17 @@ SCRIPTS = [
     ]]
 
 def run(script: str) -> None:
+    """Run a single build script as a subprocess and abort the pipeline on failure.
+
+    Args:
+        script: Path to the Python script to execute, relative to the cwd set
+                by the os.chdir() call above (i.e. the sprites/ directory).
+
+    Returns:
+        None on success.  On failure, prints an error message and calls
+        sys.exit(result.returncode), terminating the entire pipeline with the
+        failing script's exit code so CI / shell callers can detect the error.
+    """
     print(f"\n{'=' * 60}")
     print(f"  {script}")
     print(f"{'=' * 60}")

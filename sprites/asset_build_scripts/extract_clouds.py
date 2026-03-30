@@ -113,7 +113,12 @@ def clean_jpeg_fringe(rgba: np.ndarray, bg_color: np.ndarray) -> np.ndarray:
     alpha = rgba[:, :, 3].copy()
     mask  = alpha > 0
     dist  = np.sum(np.abs(rgb - bg_color), axis=2)
-    # Fringe: still background-colored but survived BFS (interior-adjacent)
+    # Fringe: pixels that survived BFS (interior-adjacent, not reachable from the
+    # border) but are still very close to the background colour.  Using half the
+    # normal background tolerance (BG_TOL // 2) as a tighter threshold targets only
+    # the most background-like survivors — pixels closer to the background colour
+    # get a hard erasure here rather than a gradual alpha fade, removing JPEG ringing
+    # without eating into the bright cloud body.
     fringe = mask & (dist < BG_TOL // 2)
     alpha[fringe] = 0
     out = rgba.copy()
@@ -136,6 +141,9 @@ def label_blobs(alpha: np.ndarray) -> tuple[np.ndarray, int]:
                 labels[sy, sx] = current
                 while queue:
                     y, x = queue.popleft()
+                    # 8-connectivity (including diagonals) ensures cloud blobs
+                    # don't split at diagonal junctions — two cloud pixels that
+                    # touch only at a corner are still treated as one cloud.
                     for dy, dx in [(-1,0),(1,0),(0,-1),(0,1),
                                    (-1,-1),(-1,1),(1,-1),(1,1)]:
                         ny, nx = y + dy, x + dx

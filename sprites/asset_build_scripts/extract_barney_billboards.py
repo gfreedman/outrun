@@ -105,10 +105,13 @@ def remove_interior_bg(arr: np.ndarray, bg: np.ndarray) -> np.ndarray:
         return arr
 
     border = np.zeros((H, W), dtype=bool)
+    # Mark all four image borders as background-connected to seed the flood-fill
     border[0,:] = border[-1,:] = border[:,0] = border[:,-1] = True
     border_labels = set(labeled[border & cand])
     border_labels.discard(0)
 
+    # Zero alpha of any candidate pixel whose connected component does NOT touch
+    # the image border (i.e. it is an interior pocket, not exterior background)
     arr[cand & ~np.isin(labeled, list(border_labels)), 3] = 0
     return arr
 

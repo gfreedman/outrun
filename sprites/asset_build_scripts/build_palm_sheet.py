@@ -60,9 +60,13 @@ sheet_w = sum(img.width  + 2 * PAD for _, img in images)
 
 sheet = Image.new("RGBA", (sheet_w, sheet_h), (0, 0, 0, 0))
 
+# Maps sprite name → (x, y, w, h): top-left corner in the output sheet plus
+# the unpadded sprite dimensions, ready to emit as TypeScript SpriteRect values.
 rects = {}
 x = 0
 for name, img in images:
+    # Vertically centre shorter sprites so all sprites share a common bottom
+    # baseline — shorter images sit higher by exactly half the height difference.
     iy = (sheet_h - img.height) // 2   # centre vertically
     sheet.paste(img, (x + PAD, iy), img)
     rects[name] = (x + PAD, iy, img.width, img.height)

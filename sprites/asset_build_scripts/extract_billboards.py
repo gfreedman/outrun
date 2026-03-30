@@ -82,18 +82,42 @@ BLUE_TINT_MIN = 4   # blue channel must exceed red by at least this much
 #   8–11 = row 3  (tobacco)
 
 def _build_cells():
+    """
+    Build the list of (x1, y1, x2, y2) crop rectangles for all 12 billboard cells.
+
+    The source image is a 3-row × 4-column grid of billboard sprites.  Each row
+    is preceded by a section-header text band (e.g. "1. BEAGLE PROMOTIONS") that
+    must be excluded.  Column boundaries were measured empirically from the source
+    image by identifying gap columns (low-variance background strips) between
+    adjacent sprites.
+
+    Grid layout (row-major, left-to-right, top-to-bottom):
+      Index 0–3  : row 1 — Beagle Promotions billboards
+      Index 4–7  : row 2 — Frog Tavern billboards
+      Index 8–11 : row 3 — Tobacco Advertisement billboards
+
+    The function iterates over 3 row bands × 4 column spans and appends one
+    (x1, y1, x2, y2) tuple per cell, giving a flat 12-element list that maps
+    directly to the TARGETS index list.
+
+    Returns
+    -------
+    list of tuple(int, int, int, int)
+        Each tuple is (x1, y1, x2, y2) in source-image pixel coordinates,
+        covering one billboard cell including its post and base.
+    """
     # cy1 is set BELOW the section-header text to avoid any header bleed:
     #   Row 1 (full band y=4–302): title + "1. BEAGLE PROMOTIONS" ≈ 92 px  → start at y=96
     #   Row 2 (full band y=303–572): "2. FROG TAVERNS…" ≈ 27 px           → start at y=330
     #   Row 3 (full band y=576–848): "3. TOBACCO ADVERTISEMENTS" ≈ 27 px  → start at y=603
-    rows  = [(96, 302), (330, 572), (603, 848)]
+    rows  = [(96, 302), (330, 572), (603, 848)]  # (y1, y2) per row — measured from source image
 
     # cx2 for col 4 in rows 1 and 3 is clamped to 1108 to exclude the
     # right-margin annotation block ("TEXT ELEMENTS / AD / OPEN / TRY ONE").
     cols  = [
-        (19,  313, 608,  855, 1095),   # row 1: loyal_friendly left frame ~x=870, gap ends ~x=855
-        (19,  302, 585,  868, 1152),   # row 2: no right margin text
-        (35,  325, 616,  906, 1085),   # row 3: billboard 4 ends ~x=1082, annotation x=1113+
+        (19,  313, 608,  855, 1095),   # row 1: x boundaries measured from source; col 4 clamped before annotation block
+        (19,  302, 585,  868, 1152),   # row 2: no right-margin annotation text; full width used
+        (35,  325, 616,  906, 1085),   # row 3: billboard 4 ends ~x=1082, annotation block starts x=1113+
     ]
     cells = []
     for ri, (y1, y2) in enumerate(rows):

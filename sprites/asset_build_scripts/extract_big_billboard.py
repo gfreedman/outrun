@@ -46,17 +46,81 @@ os.makedirs("source_for_sprites/debug", exist_ok=True)
 # ── Pipeline ────────────────────────────────────────────────────────────────
 
 def detect_bg_color(arr):
+    """
+    Estimate the background colour from the image edge pixels.
+
+    Samples every pixel on all four outer edges (top row, bottom row, left
+    column, right column), concatenates them, and returns their per-channel
+    mean as a float32 RGB triplet.  Because the source image has a uniform
+    blue-grey background that dominates the outer border, the mean is a
+    reliable approximation of the true BG colour.
+
+    Parameters
+    ----------
+    arr : np.ndarray, shape (H, W, 4), dtype uint8
+        RGBA pixel array of the source image.
+
+    Returns
+    -------
+    np.ndarray, shape (3,), dtype float64
+        Estimated background colour as [R, G, B] channel means.
+    """
     edges = np.concatenate([arr[0,:,:3], arr[-1,:,:3], arr[:,0,:3], arr[:,-1,:3]])
     return edges.mean(axis=0)
 
 
 def is_bg(arr, bg):
+    """
+    Return a boolean mask that is True where a pixel matches the background.
+
+    Uses a two-condition test so that neutral-white/grey billboard content is
+    never falsely labelled as background:
+
+      (a) max per-channel distance from the estimated BG colour < TOLERANCE
+          — confirms the pixel is in the same colour family as the BG.
+      (b) blue channel − red channel > BLUE_TINT_MIN
+          — confirms the pixel is blue-tinted (BG specific), not neutral grey
+            or white (B − R ≈ 0) which belongs to billboard content.
+
+    Parameters
+    ----------
+    arr : np.ndarray, shape (H, W, 4), dtype uint8
+        RGBA pixel array to test.
+    bg : np.ndarray, shape (3,), dtype float64
+        Estimated background colour [R, G, B] from detect_bg_color().
+
+    Returns
+    -------
+    np.ndarray, shape (H, W), dtype bool
+        True at every pixel that satisfies both BG conditions.
+    """
     diff = np.abs(arr[:,:,:3].astype(np.float32) - bg).max(axis=2)
     bt   = arr[:,:,2].astype(np.int32) - arr[:,:,0].astype(np.int32)
     return (diff < TOLERANCE) & (bt > BLUE_TINT_MIN)
 
 
 def flood_fill_bg(arr, bg):
+    """
+    Zero the alpha channel of all background pixels reachable from the image edges.
+
+    Seeds a 4-connected BFS flood fill from every pixel on the four outer
+    edges that passes the is_bg() test, then expands to all contiguous BG
+    neighbours.  Only pixels connected to the image border are removed; BG
+    pockets fully enclosed by content (e.g. the gap between billboard posts)
+    are left untouched — those require a separate remove_interior_bg() pass.
+
+    Parameters
+    ----------
+    arr : np.ndarray, shape (H, W, 4), dtype uint8
+        RGBA pixel array to process.  Not modified in-place.
+    bg : np.ndarray, shape (3,), dtype float64
+        Estimated background colour from detect_bg_color().
+
+    Returns
+    -------
+    np.ndarray, shape (H, W, 4), dtype uint8
+        Copy of arr with exterior background pixels set to alpha = 0.
+    """
     arr     = arr.copy()
     H, W    = arr.shape[:2]
     bg_mask = is_bg(arr, bg)
@@ -82,6 +146,29 @@ def flood_fill_bg(arr, bg):
 
 
 def remove_interior_bg(arr, bg):
+    """
+    Zero the alpha of background-coloured blobs that do not touch the image border.
+
+    After flood_fill_bg() removes exterior background, some BG-coloured regions
+    remain fully enclosed by content (e.g. the sky area beneath the wrestling
+    billboard arch, or gaps between structural elements).  This function finds
+    every connected component of candidate BG pixels (opaque AND bg-coloured),
+    identifies which components touch the image border, and zeros the alpha of
+    all remaining interior components that have no border contact.
+
+    Parameters
+    ----------
+    arr : np.ndarray, shape (H, W, 4), dtype uint8
+        RGBA pixel array to process.  Typically the output of flood_fill_bg().
+        Not modified in-place.
+    bg : np.ndarray, shape (3,), dtype float64
+        Estimated background colour from detect_bg_color().
+
+    Returns
+    -------
+    np.ndarray, shape (H, W, 4), dtype uint8
+        Copy of arr with interior background blobs set to alpha = 0.
+    """
     from scipy.ndimage import label as sp_label
     arr  = arr.copy()
     H, W = arr.shape[:2]
@@ -89,8 +176,11 @@ def remove_interior_bg(arr, bg):
     labeled, n = sp_label(cand)
     if n == 0: return arr
     border = np.zeros((H, W), dtype=bool)
+    # Mark all four image borders as background-connected to seed the flood-fill
     border[0,:] = border[-1,:] = border[:,0] = border[:,-1] = True
     bl = set(labeled[border & cand]); bl.discard(0)
+    # Zero alpha of any candidate pixel whose connected component does NOT touch
+    # the image border (i.e. it is an interior pocket, not exterior background)
     arr[cand & ~np.isin(labeled, list(bl)), 3] = 0
     return arr
 
@@ -128,6 +218,9 @@ def extract(full_arr, bg, cx1, cy1, cx2, cy2):
     if len(xs) == 0:
         return Image.new("RGBA", (cx2-cx1, cy2-cy1), (0,0,0,0))
 
+    # Expand the tight bounding box by PAD pixels on every side so the crop
+    # does not clip the outermost sprite edge pixels (e.g. thin post tips,
+    # frame border anti-alias).  Clamped to the region bounds to stay in-array.
     x1 = max(0, xs.min()-PAD);  y1 = max(0, ys.min()-PAD)
     x2 = min(region.shape[1], xs.max()+PAD+1)
     y2 = min(region.shape[0], ys.max()+PAD+1)
@@ -144,6 +237,8 @@ def extract(full_arr, bg, cx1, cy1, cx2, cy2):
     ys2, xs2 = np.where(alpha2 > 10)
     if len(xs2) == 0:
         return Image.new("RGBA", (x2-x1, y2-y1), (0,0,0,0))
+    # Same PAD expansion as the first crop — preserves the sprite border after
+    # the second round of background removal may have trimmed edge pixels.
     ax1 = max(0, xs2.min()-PAD);  ay1 = max(0, ys2.min()-PAD)
     ax2 = min(cropped.shape[1], xs2.max()+PAD+1)
     ay2 = min(cropped.shape[0], ys2.max()+PAD+1)

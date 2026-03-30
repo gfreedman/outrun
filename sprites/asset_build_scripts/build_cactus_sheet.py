@@ -127,7 +127,11 @@ for idx in range(1, n2 + 1):
     groups.append((idx, area, int(cxs.min()), int(cys.min()),
                              int(cxs.max()), int(cys.max())))
 
-# Sort left-to-right, then top-to-bottom so numbering is predictable
+# Sort left-to-right, then top-to-bottom so numbering is predictable.
+# Dividing the x-coordinate by 200 groups shapes into ~200 px wide vertical
+# bands (coarse column buckets), then sorts within each band by x so the
+# final order reads naturally across each row before advancing to the next —
+# matching the visual layout of the source sheet.
 groups.sort(key=lambda g: (g[2] // 200, g[2]))   # coarse x-band first
 print(f"  Found {len(groups)} cactus sprites (area ≥ {GROUP_MIN_PX} px)")
 
@@ -149,7 +153,11 @@ for name, (label_idx, area, x0, y0, x1, y1) in zip(NAMES, groups):
     ry1 = min(H, y1 + PAD + 1)
 
     region = content[ry0:ry1, rx0:rx1].copy()
-    # Zero out pixels that don't belong to this group's dilation mask
+    # Zero out pixels that don't belong to this group's dilation mask.
+    # labeled2 assigns a unique integer to every merged region; comparing
+    # against label_idx produces a boolean mask that is True only for pixels
+    # belonging to this specific connected component, isolating it from any
+    # neighbouring cactus whose bounding box overlaps this crop region.
     group_crop = (labeled2[ry0:ry1, rx0:rx1] == label_idx)
     region[~group_crop, 3] = 0
 

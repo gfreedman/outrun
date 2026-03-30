@@ -38,6 +38,10 @@ TOLERANCE = 70   # grid lines R≈163–186 need generous headroom; plant greens
 # Row 1 spans y=0–265 (includes sprite + label band below it).
 # Column boundaries derived from image width 2107 / 10 columns.
 
+# Measured pixel width of the source shrub sprite sheet (2107 px) divided by
+# the known number of equally-spaced columns (10) to get the per-cell width.
+# Using floating-point division preserves sub-pixel accuracy; col_x() rounds
+# to the nearest integer boundary so adjacent cells share no gap or overlap.
 CW = 2107 / 10   # ≈ 210.7 px per column
 
 def col_x(c):
@@ -142,12 +146,18 @@ for name, col in TARGETS:
     # Use the full-image bg (more accurate — per-cell edges are skewed by plant pixels)
     bg = bg_full
 
+    # Stage 1: Flood-fill background from all four cell edges, making every
+    # contiguous background-coloured region reachable from the border transparent.
     region = flood_fill_bg(region, bg)
-    # Second pass: zero any remaining enclosed bg pockets (unreachable from edges).
+    # Stage 2: Zero any enclosed background pockets unreachable from the edges
+    # (e.g. the inside of a hollow trunk), caught by a global colour-threshold pass.
     bg_mask = is_bg(region, bg)
     region[bg_mask, 3] = 0
+    # Stage 3: Remove isolated fringe pixels — opaque pixels on the border of the
+    # transparent zone that still match the background colour (anti-alias residue).
     region = defringe(region, bg, passes=2)
-    # Blank the header text band at the top of the cell before tight-cropping.
+    # Stage 4: Blank the header text band at the top of the cell so label
+    # text cannot survive into the tight-crop output.
     region[:HEADER_ROWS, :, 3] = 0
 
     alpha  = region[:,:,3]

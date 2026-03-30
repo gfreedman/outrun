@@ -44,7 +44,12 @@ def flood_fill_bg(arr: np.ndarray, bg: np.ndarray, tol: int) -> np.ndarray:
         if is_bg_pixel[y, 0]:   seeds.append((y, 0))
         if is_bg_pixel[y, w-1]: seeds.append((y, w-1))
 
-    # BFS flood fill
+    # BFS flood fill: starting from the border seed pixels, expand outward to
+    # every 4-connected neighbour that (a) has not yet been visited and (b)
+    # matches the background colour within tolerance.  This guarantees that only
+    # regions physically connected to the image boundary are removed — interior
+    # background pockets surrounded by sprite pixels are left untouched and must
+    # be cleaned separately by a global colour-threshold pass.
     from collections import deque
     q = deque(seeds)
     for (y, x) in seeds:
@@ -92,7 +97,11 @@ def extract_sprite(arr: np.ndarray, bg: np.ndarray, tol: int, pad: int) -> Image
     bg_mask = flood_fill_bg(arr, bg, tol)
     result[bg_mask, 3] = 0  # zero alpha on background
 
-    # Find bounding box of opaque pixels
+    # Tight-crop: find the axis-aligned bounding box of all non-transparent pixels
+    # by collapsing the alpha mask along each axis.  np.any(opaque, axis=1) yields
+    # a 1-D boolean vector marking every row that contains at least one opaque pixel;
+    # np.where() then gives the first and last such row (and column), defining the
+    # minimal rectangle that encloses the sprite content before padding is applied.
     opaque = result[:, :, 3] > 10
     if not opaque.any():
         return None
