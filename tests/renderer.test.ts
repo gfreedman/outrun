@@ -3,14 +3,32 @@
  *
  * Tests for the module-level rendering functions extracted from renderer.ts.
  *
- * These tests protect the critical invariants of the batched polygon rendering
- * strategy introduced to eliminate hairline seams between adjacent road segments:
+ * Why batched rendering?
+ * ──────────────────────
+ * The naïve approach — one beginPath/fill per road segment — produces hairline
+ * seams between adjacent trapezoids due to sub-pixel anti-aliasing on the
+ * canvas 2D path rasteriser.  The fix is to batch all segments of the same
+ * colour into a SINGLE connected polygon path: one beginPath, one fill.
+ * Because all same-colour segments are part of the same path, the rasteriser
+ * fills them atomically with no inter-segment boundary.
+ *
+ * These tests protect the critical invariants of that batched strategy:
  *
  *   1. Road surface (Pass B): one beginPath/fill for ALL visible segments.
+ *      The polygon traces left-edge down then right-edge up in a single path.
+ *
  *   2. Rumble strips (Passes C+D): one fill per contiguous same-colour run.
+ *      buildColorRuns compresses the per-segment colour list into run-length
+ *      encoded ranges.  drawRumble calls fill once per run.
+ *
  *   3. Lane dashes (Pass E): one fill per lane-on run, zero for lane-off.
- *   4. Edge marks (Pass F): one fill per lane-on run, with 4 closePaths.
- *   5. addTrap winding: all trapezoids in a batched path wind clockwise.
+ *      Lane-off segments are completely skipped — no beginPath, no fill.
+ *
+ *   4. Edge marks (Pass F): one fill per lane-on run, with exactly 4 closePaths
+ *      per run (left-outer, left-inner, right-outer, right-inner).
+ *
+ *   5. addTrap winding: every trapezoid winds clockwise (screen Y-axis points
+ *      down) so the canvas non-zero fill rule fills the interior correctly.
  *
  * The tests use a minimal recording spy for CanvasRenderingContext2D — no
  * external libraries, no browser.  The spy records every draw call so tests
@@ -141,11 +159,18 @@ function makeProj(opts: {
 }
 
 // ── buildColorRuns ──────────────────────────────────────────────────────────
+//
+// buildColorRuns is a run-length encoder for per-segment colour values.  It
+// compresses a flat array of (colour, index) pairs into a list of
+// { color, startIdx, endIdx } spans.  drawRumble and drawLaneDashes then
+// iterate over runs rather than segments, issuing exactly one fill() per run.
 
 describe('buildColorRuns', () =>
 {
   /**
-   * An empty pool has no segments → no runs.
+   * An empty pool (projCount=0) must produce an empty run list.  If it
+   * returned a spurious run it would cause drawRumble to call beginPath/fill
+   * for an empty path, wasting a draw call every frame with zero segments.
    */
   it('empty pool → []', () =>
   {
@@ -154,7 +179,9 @@ describe('buildColorRuns', () =>
   });
 
   /**
-   * A single segment produces exactly one run covering [0, 0].
+   * A single-segment pool must produce one run spanning [0, 0].
+   * The startIdx and endIdx fields are used by drawRumble to slice the pool
+   * — a wrong value would cause the draw loop to skip or double-draw segments.
    */
   it('single segment → one run', () =>
   {
@@ -168,7 +195,10 @@ describe('buildColorRuns', () =>
 
   /**
    * Three red + two white → [{red,0,2},{white,3,4}].
-   * Verifies that run boundaries are detected correctly.
+   * Verifies that run boundaries are detected at the exact colour-change index.
+   * An off-by-one in the boundary detection would either merge the two runs
+   * (producing a wrong colour for some segments) or split one run into two
+   * (producing an extra fill call with the same colour).
    */
   it('three red + two white → 2 runs with correct boundaries', () =>
   {
@@ -186,9 +216,11 @@ describe('buildColorRuns', () =>
   });
 
   /**
-   * Strictly alternating [r,w,r,w] produces 4 separate runs of length 1 each.
-   * This is the "worst case" for the old per-segment draw approach but behaves
-   * correctly with buildColorRuns.
+   * Strictly alternating [r,w,r,w] is the "worst case" for run-length encoding:
+   * no two adjacent segments share a colour, so there are as many runs as
+   * segments.  The old per-segment approach had the same fill count in this
+   * case, but the batching approach must still handle it correctly rather than
+   * merging adjacent runs of different colours.
    */
   it('alternating r/w/r/w → 4 runs', () =>
   {
@@ -210,12 +242,18 @@ describe('buildColorRuns', () =>
 });
 
 // ── drawRoadSurface (Pass B) ────────────────────────────────────────────────
+//
+// drawRoadSurface draws the road asphalt colour as a single large polygon.
+// It traces: moveTo far-left corner, down the left edge (N lineTos), pivot
+// to near-right, up the right edge (N lineTos), closePath, fill.
+// One beginPath + one fill for ALL segments = zero seam artifacts.
 
 describe('drawRoadSurface — road surface polygon', () =>
 {
   /**
-   * With 0 segments the function must still call beginPath and fill once
-   * (an empty path), but issue no moveTo or lineTo.
+   * With 0 segments the function must still emit beginPath and fill (to avoid
+   * breaking the path state machine) but must NOT emit any moveTo or lineTo.
+   * Emitting path points with 0 segments would draw phantom geometry at (0,0).
    */
   it('0 segments → beginPath + fill called once, no moveTo/lineTo', () =>
   {
