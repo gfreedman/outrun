@@ -40,6 +40,7 @@ SCRIPTS = [
         "extract_barney_billboards.py",
         "extract_cookie_billboards.py",
         "extract_new_cars.py",
+        "extract_yellow_car.py",
     ]]
 
 def run(script: str) -> None:
