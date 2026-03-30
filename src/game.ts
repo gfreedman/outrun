@@ -1082,7 +1082,7 @@ export class Game
    *
    * Traffic collision handling distinguishes two cases:
    *   - Barney hit: triggers afterburner, no penalty.
-   *   - Regular hit: speed penalty + lateral flick + time penalty (−1 s).
+   *   - Regular hit: speed penalty + lateral flick + time penalty (−3 s).
    *   - Afterburner active: bulldoze through — no penalty, the struck car
    *     gets flung hard.
    *
@@ -1150,7 +1150,7 @@ export class Game
         }
         else if (!isBoosting)
         {
-          // Regular traffic hit outside afterburner: -1 second time penalty
+          // Regular traffic hit outside afterburner: -3 second time penalty
           this.timeRemaining = Math.max(0, this.timeRemaining - TIME_PENALTY_HIT);
         }
       }

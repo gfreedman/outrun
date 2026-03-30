@@ -612,9 +612,14 @@ export interface RaceConfig
  */
 export const RACE_TIME_LIMIT: Record<GameMode, number> =
 {
-  [GameMode.EASY]:   120,   // was 90 — now running the full hard course
-  [GameMode.MEDIUM]: 120,
-  [GameMode.HARD]:   165,   // longer track — The Cathedral is ~5.3 km
+  // Tuned for "achievable but tense" with a 3-second traffic-hit penalty.
+  // A clean run finishes with ~60-65s to spare; every hit is a noticeable cost.
+  // Easy:   105s — 4 cars, gentle traffic; 2-3 hits expected = 6-9s lost.
+  // Medium: 110s — 8 cars at 358 km/h; 4-6 hits expected = 12-18s lost.
+  // Hard:   155s — 12 cars at 410 km/h, 5.2 km; 6-10 hits expected = 18-30s lost.
+  [GameMode.EASY]:   105,
+  [GameMode.MEDIUM]: 110,
+  [GameMode.HARD]:   155,
 };
 
 // ── Finish-line cinematic (FINISHING phase) ────────────────────────────────────
@@ -640,7 +645,7 @@ export const SCORE_SPEED_PER_SEC      = 200;
 export const SCORE_CRASH_PENALTY      = 500;
 
 /** Seconds deducted from the race clock on a traffic car hit (not Barney). */
-export const TIME_PENALTY_HIT         = 1;
+export const TIME_PENALTY_HIT         = 3;   // seconds lost per traffic hit (outside afterburner)
 
 // ── Traffic personality system ────────────────────────────────────────────────
 
