@@ -661,6 +661,14 @@ export class Renderer
   private readonly trafficRect = { x: 0, y: 0, w: 0, h: 0 };
 
   /**
+   * Pre-allocated buffer for per-car effective projPool slot indices (Pass 4).
+   * Size 16 >> TRAFFIC_COUNT (3) — never needs reallocation.
+   * Cars whose segment was culled by horizonCeiling are mapped to the farthest
+   * visible slot so they render at the hill crest instead of vanishing.
+   */
+  private readonly carSlotBuf: Int16Array;
+
+  /**
    * Creates a Renderer attached to the given canvas and pre-allocates all
    * per-frame reusable buffers so the render loop makes zero heap allocations.
    *
@@ -705,6 +713,7 @@ export class Renderer
       sx1: 0, sy1: 0, sw1: 0,
       sx2: 0, sy2: 0, sw2: 0,
     }));
+    this.carSlotBuf = new Int16Array(16);
 
     // Set once here; ctx.save/restore preserves these settings each frame
     // so there is no need to repeat them inside renderCar every frame.
@@ -1118,24 +1127,43 @@ export class Renderer
 
     if (trafficCars.length > 0)
     {
-      // Pre-compute each car's segment index once — avoids repeating the
-      // floor/modulo inside the double loop.
-      const nCars = trafficCars.length;
-      const carSegIdxs: number[] = new Array(nCars);
-      for (let c = 0; c < nCars; c++)
-        carSegIdxs[c] = Math.floor(trafficCars[c].worldZ / SEGMENT_LENGTH) % segmentCount;
+      const nCars        = trafficCars.length;
+      const farthestSlot = this.projCount - 1;  // -1 when projCount=0; draw loop won't fire
 
-      // Iterate projPool from farthest slot (projCount−1) to nearest (0).
-      // This gives correct painter-order occlusion: far cars are drawn first,
-      // near cars are drawn on top.
+      // Assign each car to its effective projPool slot by scanning projPool.
+      //
+      // Why scan instead of an O(1) lookup array?
+      //   A lookup array indexed by seg.index must be sized to the maximum segment
+      //   count across all tracks.  Tracks range from 1225 (Easy) to 3764 (Legendary)
+      //   segments — a fixed-size array smaller than 3764 silently returns undefined
+      //   for out-of-range indices, causing every car on the affected segments to fall
+      //   back to farthestSlot and render as a ghost at the horizon.  A scan over
+      //   projPool (≤200 entries) × nCars (3) = ≤600 comparisons per frame is
+      //   negligible and requires no knowledge of the maximum segment count.
+      //
+      // HILL OCCLUSION FIX: if the car's segment was culled by horizonCeiling
+      //   (hidden behind a hill crest), it won't be found in projPool.  Fall back
+      //   to farthestSlot so the car renders at the hill crest rather than vanishing.
+      for (let c = 0; c < nCars; c++)
+      {
+        const segIdx = Math.floor(trafficCars[c].worldZ / SEGMENT_LENGTH) % segmentCount;
+        let   slot   = farthestSlot;   // default: hill-crest fallback
+        for (let s = 0; s < this.projCount; s++)
+        {
+          if (this.projPool[s].seg.index === segIdx) { slot = s; break; }
+        }
+        this.carSlotBuf[c] = slot;
+      }
+
+      // Iterate projPool far→near for correct painter's-algorithm draw order.
+      // carSlotBuf guarantees each car is matched to exactly one slot per frame.
       for (let slot = this.projCount - 1; slot >= 0; slot--)
       {
-        const p      = this.projPool[slot];
-        const segIdx = p.seg.index;
+        const p = this.projPool[slot];
 
         for (let c = 0; c < nCars; c++)
         {
-          if (carSegIdxs[c] !== segIdx) continue;
+          if (this.carSlotBuf[c] !== slot) continue;
 
           const car  = trafficCars[c];
           const spec = TRAFFIC_CAR_SPECS[car.type];
@@ -1152,6 +1180,10 @@ export class Renderer
           const scCar  = p.sc1 + (p.sc2 - p.sc1) * t;
           const syCar  = p.sy1 + (p.sy2 - p.sy1) * t;
           const sxCar  = p.sx1 + (p.sx2 - p.sx1) * t;
+
+          // Vertical cull: car foot above the horizon means it's in the sky.
+          // Mirrors the `if (sy1 < halfH) continue` guard in the Pass 3 sprite loop.
+          if (syCar < halfH) continue;
 
           const carScrX = sxCar + car.worldX * scCar * halfW;
           if (carScrX < -500 || carScrX > w + 500) continue;

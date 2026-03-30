@@ -371,16 +371,30 @@ export function updateTraffic(
 
         case TrafficBehavior.Wanderer:
         {
-          // Banana: update targetX normally but override worldX with a sine
-          // oscillation keyed to forward progress — gives a permanently
-          // unstable wobble with no position drift.
+          // Banana: lerp worldX toward the sine-wobble target each frame.
+          //
+          // WHY lerp instead of direct assignment?
+          // The old formula `worldX = targetX + sin(phase) × AMP` teleported the
+          // car by up to 2400 wu the instant laneTimer fired a new targetX.
+          // At 3–5 segments distance that is an 800+ pixel screen jump — the car
+          // appeared to flash off-screen and reappear ("flit and disappear").
+          //
+          // Lerping toward the wobble target caps lateral speed at weaveRate
+          // (2200 wu/s — fast enough to follow the wobble oscillation which peaks
+          // at speed/wavelength × AMP = 4000/600 × 100 ≈ 667 wu/s).
           if (car.laneTimer <= 0)
           {
             car.targetX   = randomLane();
             car.laneTimer = profileLaneTimer(TrafficType.Banana);
           }
-          const phase = car.worldZ / BANANA_WOBBLE_WAVELENGTH;
-          car.worldX  = car.targetX + Math.sin(phase) * BANANA_WOBBLE_AMP;
+          const phase         = car.worldZ / BANANA_WOBBLE_WAVELENGTH;
+          const wobbledTarget = car.targetX + Math.sin(phase) * BANANA_WOBBLE_AMP;
+          const profile       = TRAFFIC_PROFILE[TrafficType.Banana];
+          const step          = profile.weaveRate * dt;
+          const dx            = wobbledTarget - car.worldX;
+          car.worldX          = Math.abs(dx) <= step
+            ? wobbledTarget
+            : car.worldX + Math.sign(dx) * step;
           break;
         }
 
@@ -425,7 +439,11 @@ export function updateTraffic(
 
     if (relZ < trailLimit || relZ > maxAhead)
     {
-      const spawnSegs = DRAW_DISTANCE - 5 + Math.floor(Math.random() * 10);
+      // Spawn 15–24 segments inside the render window (max DRAW_DISTANCE).
+      // The previous range (DRAW_DISTANCE-5 to DRAW_DISTANCE+5) could place
+      // cars 1–5 segments beyond the render distance, causing a brief period
+      // of invisibility followed by a sudden pop-in as the player closed in.
+      const spawnSegs = DRAW_DISTANCE - 15 + Math.floor(Math.random() * 10);
       const type      = randomType();
       const behavior  = behaviorForType(type);
       const profile   = TRAFFIC_PROFILE[type];

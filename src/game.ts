@@ -647,6 +647,18 @@ export class Game
         else if (this.countdownValue === 1)     this.audio.playBeep(440, 0.18);
         else if (this.countdownValue === 'GO!') this.audio.playBeep(880, 0.40);
       }
+
+      // Keep traffic moving during 3-2-1-GO so cars don't freeze for 3.7 s
+      // and then teleport to new positions the instant PLAYING begins.
+      const trafficCfg: TrafficUpdateConfig = {
+        playerZ:      this.playerZ,
+        playerX:      this.playerX,
+        playerSpeed:  0,
+        segmentCount: this.road.count,
+        intensity:    RACE_CONFIG[this.intro.settings.mode].trafficIntensity,
+        dt,
+      };
+      updateTraffic(this.trafficCars, trafficCfg);
     }
 
     this.audio.tickMusic();

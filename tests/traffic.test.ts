@@ -191,27 +191,31 @@ describe('updateTraffic — Z advancement', () =>
 // ── Update — spawn horizon ────────────────────────────────────────────────────
 //
 // When a car falls behind the player beyond TRAFFIC_TRAIL_SEGS (25 segments),
-// it is recycled and re-spawned at DRAW_DISTANCE ± 5 segments ahead.  The ±5
-// band prevents all recycled cars from appearing at exactly the same distance,
-// which would create visible "waves" of traffic.
+// it is recycled and re-spawned in [DRAW_DISTANCE-15, DRAW_DISTANCE-6] segments
+// ahead — strictly inside the render window (DRAW_DISTANCE = 200).
+//
+// The spawn range was intentionally tightened from the original ±5 band around
+// DRAW_DISTANCE because that range could place cars 1–5 segments beyond the
+// render window.  Those cars were invisible until the player closed in, then
+// popped in suddenly.  The new range keeps all spawns inside the render window
+// so cars are always visible the moment they are recycled.
 
 describe('updateTraffic — recycle always spawns at horizon', () =>
 {
   /**
-   * This is the regression test for the original spawn bug: recycled cars
-   * previously spawned at random positions 20–195 segments ahead, causing
-   * them to "pop in" just ahead of the player with no warning.
+   * Regression guard for the spawn-boundary pop-in bug: recycled cars must
+   * always land strictly inside the render window ([DRAW_DISTANCE-15,
+   * DRAW_DISTANCE-6] segments ahead) so they are never invisible at spawn.
    *
-   * The test forces all cars far enough behind the player to trigger the
-   * recycle path (26 segs behind > TRAFFIC_TRAIL_SEGS of 25).  After one
-   * update tick, every car must land in [DRAW_DISTANCE-5, DRAW_DISTANCE+5]
-   * segments ahead — never closer, never further.
+   * The old range extended up to DRAW_DISTANCE+5 segments; cars in the last
+   * 5-segment band were in the pool but outside the renderer's projPool window,
+   * causing a brief invisible period followed by a sudden visual pop-in.
    *
-   * TRACK_LEN / 2 wrapping accounts for the circular track: a car at
-   * worldZ near 0 with playerZ near the end of the track has a large
-   * positive relZ when measured the "long way around".
+   * The test forces all cars 26 segs behind the player (> TRAFFIC_TRAIL_SEGS of
+   * 25) to trigger the recycle path, then verifies each car lands in the valid
+   * spawn band.  TRACK_LEN / 2 wrapping handles the circular track.
    */
-  it('recycled cars spawn at DRAW_DISTANCE ± 5 segs ahead, never closer', () =>
+  it('recycled cars spawn strictly within render distance (no pop-in band)', () =>
   {
     const cars    = initTraffic(SEG_COUNT);
     const playerZ = 5000;
@@ -223,8 +227,8 @@ describe('updateTraffic — recycle always spawns at horizon', () =>
     // Run enough frames for the recycle branch to fire
     updateTraffic(cars, { playerZ, playerX: 0, playerSpeed: 0, segmentCount: SEG_COUNT, intensity: 0, dt: 0.016 });
 
-    const minSegs = DRAW_DISTANCE - 5;
-    const maxSegs = DRAW_DISTANCE + 5;
+    const minSegs = DRAW_DISTANCE - 15;
+    const maxSegs = DRAW_DISTANCE - 6;   // DRAW_DISTANCE - 15 + 9 (rand max is exclusive)
 
     for (const car of cars)
     {
@@ -235,6 +239,8 @@ describe('updateTraffic — recycle always spawns at horizon', () =>
       const relSegs = relZ / SEGMENT_LENGTH;
       expect(relSegs).toBeGreaterThanOrEqual(minSegs - 0.5);   // tiny float slack
       expect(relSegs).toBeLessThanOrEqual(maxSegs + 0.5);
+      // Hard invariant: car must be within the render window, never outside it.
+      expect(relSegs).toBeLessThan(DRAW_DISTANCE);
     }
   });
 });
@@ -788,41 +794,45 @@ describe('updateTraffic — Mega ROAD_HOG behaviour', () =>
 // ── Behaviour: Banana wanderer ────────────────────────────────────────────────
 //
 // Banana is the "erratic driver" archetype.  Its worldX is offset from its
-// targetX by a sinusoidal wobble: worldX = targetX + sin(worldZ / λ) × AMP.
-// The wobble is pure function of worldZ so it is deterministic and testable:
-// at worldZ = π/2 × λ, sin = 1 and the offset is exactly +AMP.
+// targetX by a sinusoidal wobble: it lerps toward targetX + sin(worldZ / λ) × AMP
+// each frame at weaveRate speed.
+//
+// WHY lerp instead of direct assignment?
+//   The original formula `worldX = targetX + sin(phase) × AMP` teleported the
+//   car up to 2400 wu the instant laneTimer fired a new targetX.  At 3–5 seg
+//   distance this produced 800+ px screen jumps — the car flashed off-screen.
+//   Lerping at weaveRate (2200 wu/s) is fast enough to track the oscillation
+//   (max rate ≈ 667 wu/s) while eliminating lane-change teleportation.
 
 describe('updateTraffic — Banana WANDERER behaviour', () =>
 {
   /**
-   * The sinusoidal wobble formula is testable by solving backwards from
-   * the desired post-update Z to the required pre-update Z.
+   * The Banana car must lerp toward the wobble target, not teleport.
    *
-   * We want sin(arrivalZ / λ) = 1  →  arrivalZ = π/2 × λ.
-   * We set startZ = arrivalZ - speed × dt so that after one tick of Z advance,
-   * the car lands exactly at arrivalZ and produces worldX = targetX + AMP.
+   * Setup: place worldZ at exactly π/2 × λ so sin(phase) = 1 immediately,
+   * avoiding the need to Z-advance into phase.  Start worldX = targetX so
+   * there is a known 100 wu gap to the wobble target (targetX + AMP).
    *
-   * This test verifies the wobble formula is implemented as the spec says
-   * (sine wave, not cosine, correct amplitude).  A wrong formula would
-   * produce different offsets at this phase and cause the test to fail.
+   * After one tick at dt = 1/60 the car should have advanced by exactly
+   * weaveRate × dt ≈ 36.7 wu — NOT the full 100 wu to the target.
+   * If it equals targetX + AMP the implementation has regressed to the
+   * old direct-assign teleport formula.
    */
-  it('Banana worldX is offset from targetX by a sine of worldZ progress', () =>
+  it('Banana worldX lerps toward sine-wobble target at weaveRate (no teleport)', () =>
   {
-    // Set worldZ so that after Z advance (speed * dt) it lands at π/2 phase.
-    // sin(π/2) = 1.0 → worldX ≈ targetX + BANANA_WOBBLE_AMP
-    const dt      = 0.016;
-    const speed   = 3000;
     const targetX = 500;
-    const arrivalZ = (Math.PI / 2) * BANANA_WOBBLE_WAVELENGTH;
-    const startZ   = arrivalZ - speed * dt;
+    const dt      = 1 / 60;
+    // worldZ = π/2 × λ so sin(phase) = 1 immediately — wobble target = targetX + AMP.
+    // Using speed=0 keeps the phase constant for a clean single-frame measurement.
+    const worldZ  = (Math.PI / 2) * BANANA_WOBBLE_WAVELENGTH;
 
     const car: TrafficCar = {
       type:      TrafficType.Banana,
-      worldZ:    startZ > 0 ? startZ : startZ + SEG_COUNT * SEGMENT_LENGTH,
-      worldX:    targetX,
-      speed,
+      worldZ,
+      worldX:    targetX,   // starts at lane center, 100 wu from wobble target
+      speed:     0,
       targetX,
-      laneTimer: 5.0,   // won't expire
+      laneTimer: 99,        // no lane-change during this tick
       hitVelX:   0,
       spinAngle: 0,
       massMult:  0.9,
@@ -831,15 +841,17 @@ describe('updateTraffic — Banana WANDERER behaviour', () =>
     };
 
     updateTraffic([car], {
-      playerZ:     0,
-      playerX:     0,
-      playerSpeed: 0,
-      segmentCount: SEG_COUNT,
-      intensity:   0,
-      dt,
+      playerZ: 0, playerX: 0, playerSpeed: 0,
+      segmentCount: SEG_COUNT, intensity: 0, dt,
     });
 
-    // sin(π/2) * AMP = AMP, so worldX ≈ targetX + BANANA_WOBBLE_AMP
-    expect(car.worldX).toBeCloseTo(targetX + BANANA_WOBBLE_AMP, 0);
+    // The wobble target is targetX + BANANA_WOBBLE_AMP = 600.
+    // With weaveRate = 2200 wu/s, one step = 2200 × dt ≈ 36.7 wu.
+    // worldX should advance by exactly one step (not teleport the full 100 wu).
+    const expectedStep = 2200 * dt;
+    expect(car.worldX).toBeCloseTo(targetX + expectedStep, 1);
+    // Regression guard: if this equals targetX + AMP, the code has reverted to
+    // the direct-assign teleport formula that caused the brown car flicker bug.
+    expect(car.worldX).toBeLessThan(targetX + BANANA_WOBBLE_AMP);
   });
 });
