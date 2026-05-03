@@ -108,6 +108,8 @@ export class AudioManager
   private masterGain:  GainNode    | null = null;
   private enabled      = true;
   private initialized  = false;
+  private barneyDeck:  string[] = [];
+  private barneyLast:  string  = '';
 
   // ── Engine oscillators ──────────────────────────────────────────────────
   // Three harmonics: fundamental (f), 2f, 3f.
@@ -464,7 +466,23 @@ export class AudioManager
   {
     if (typeof speechSynthesis === 'undefined') return;
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance('Oh no!');
+    if (this.barneyDeck.length === 0) {
+      // Refill with all 4 phrases in a random order (Fisher-Yates shuffle).
+      this.barneyDeck = ['Oh no!', 'Killing Barney!', 'Barney will be avenged', 'One less Barney on the road!'];
+      for (let i = this.barneyDeck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [this.barneyDeck[i], this.barneyDeck[j]] = [this.barneyDeck[j], this.barneyDeck[i]];
+      }
+      // Prevent the same phrase playing twice in a row across cycle boundaries.
+      if (this.barneyDeck[this.barneyDeck.length - 1] === this.barneyLast) {
+        const swapIdx = Math.floor(Math.random() * (this.barneyDeck.length - 1));
+        const last = this.barneyDeck.length - 1;
+        [this.barneyDeck[last], this.barneyDeck[swapIdx]] = [this.barneyDeck[swapIdx], this.barneyDeck[last]];
+      }
+    }
+    const text = this.barneyDeck.pop()!;
+    this.barneyLast = text;
+    const u = new SpeechSynthesisUtterance(text);
     u.pitch  = 1.4;   // slightly goofy high pitch
     u.rate   = 0.85;  // slightly slower than normal — exaggerated cartoon delivery
     u.volume = 1.0;

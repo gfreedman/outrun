@@ -240,8 +240,19 @@ export class ScreenRenderer
 
     rows.forEach(({ label, value, color }, i) =>
     {
-      const y = row1Y + i * rowGap;
-      ctx.font      = `bold ${rowFs}px Impact, sans-serif`;
+      const y        = row1Y + i * rowGap;
+      const availW   = valX - rowX;
+      const minGap   = rowFs * 0.8;
+
+      // Measure at full size, then scale down only if label+gap+value overflows.
+      ctx.font = `bold ${rowFs}px Impact, sans-serif`;
+      const lw = ctx.measureText(label).width;
+      const vw = ctx.measureText(value).width;
+      const fs = (lw + minGap + vw > availW)
+        ? Math.floor(rowFs * availW / (lw + minGap + vw))
+        : rowFs;
+
+      ctx.font      = `bold ${fs}px Impact, sans-serif`;
       ctx.textAlign = 'left';
       ctx.fillStyle = 'rgba(255,255,255,0.50)';
       ctx.fillText(label, rowX, y);
