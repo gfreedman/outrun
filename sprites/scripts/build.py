@@ -92,31 +92,12 @@ EXTRACTIONS = [
     ("BIG_WRESTLING", 4, 4, 1089, 626, "parts/billboards/big_boards/billboard_wrestling.png"),
   ]),
 
-  # ── Cactuses ───────────────────────────────────────────────────────────────
-  ("dist/cactus_sheet.png", [
-    ("CACTUS_C1",     4, 119,  84, 125, "parts/cactuses/cactus_c1.png"),
-    ("CACTUS_C2",    96, 123,  64, 117, "parts/cactuses/cactus_c2.png"),
-    ("CACTUS_C3",   168, 106,  63, 150, "parts/cactuses/cactus_c3.png"),
-    ("CACTUS_C4",   239, 116, 121, 131, "parts/cactuses/cactus_c4.png"),
-    ("CACTUS_C5",   368, 100,  91, 163, "parts/cactuses/cactus_c5.png"),
-    ("CACTUS_C6",   467, 104, 147, 155, "parts/cactuses/cactus_c6.png"),
-    ("CACTUS_C7",   622,  94,  82, 175, "parts/cactuses/cactus_c7.png"),
-    ("CACTUS_C8",   712,  98, 129, 166, "parts/cactuses/cactus_c8.png"),
-    ("CACTUS_C9",   849, 109,  92, 145, "parts/cactuses/cactus_c9.png"),
-    ("CACTUS_C10",  949,  93, 100, 177, "parts/cactuses/cactus_c10.png"),
-    ("CACTUS_C11", 1057, 110, 131, 142, "parts/cactuses/cactus_c11.png"),
-    ("CACTUS_C12", 1196, 128, 100, 107, "parts/cactuses/cactus_c12.png"),
-    ("CACTUS_C13", 1304, 115, 144, 133, "parts/cactuses/cactus_c13.png"),
-    ("CACTUS_C14", 1456,   4, 137, 355, "parts/cactuses/cactus_c14.png"),
-    ("CACTUS_C15", 1601, 102, 140, 159, "parts/cactuses/cactus_c15.png"),
-    ("CACTUS_C16", 1749,  92,  70, 178, "parts/cactuses/cactus_c16.png"),
-    ("CACTUS_C17", 1827, 105, 175, 152, "parts/cactuses/cactus_c17.png"),
-    ("CACTUS_C18", 2010,  95, 148, 173, "parts/cactuses/cactus_c18.png"),
-    ("CACTUS_C19", 2166, 134, 166,  94, "parts/cactuses/cactus_c19.png"),
-    ("CACTUS_C20", 2340,  99, 155, 164, "parts/cactuses/cactus_c20.png"),
-    ("CACTUS_C21", 2503, 103, 134, 157, "parts/cactuses/cactus_c21.png"),
-    ("CACTUS_C22", 2645,  91, 118, 181, "parts/cactuses/cactus_c22.png"),
-  ]),
+  # Cactus is intentionally absent from EXTRACTIONS.
+  # build_cactus_sheet.py (step 2) re-derives every cactus sprite directly
+  # from source/cactus.png using its own flood-fill extraction pass, which
+  # overwrites parts/cactuses/ anyway.  Reverse-extracting here would just
+  # be wasted work.  To change a cactus, edit source/cactus.png and re-run
+  # build_cactus_sheet.py.
 
   # ── Shrubs ─────────────────────────────────────────────────────────────────
   ("dist/shrub_sheet.png", [

@@ -31,10 +31,14 @@ os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 # Currently all extract scripts are independent, so order is arbitrary.
 SCRIPTS = [
     os.path.join("scripts", s) for s in [
+        "extract_palms.py",             # source/palm_tree_source.png  → parts/palms/
         "extract_billboards.py",        # source/billboard sprites.png → parts/billboards/og_boards/
         "extract_big_billboard.py",     # source/big.png               → parts/billboards/big_boards/
         "extract_barney_billboards.py", # source/barney.png            → parts/billboards/barney_boards/
         "extract_cookie_billboards.py", # source/cookie.png            → parts/billboards/cookie_boards/
+        "extract_shrubs.py",            # source/shrubz.png            → parts/shrubs/
+        "extract_signs.py",             # source/signs.png             → parts/signs/
+        "extract_houses.py",            # source/houses*.png           → parts/houses/ + parts/buildings/
         "extract_new_cars.py",          # source/image.jpg             → dist/  (traffic cars)
         "extract_yellow_car.py",        # source/yellow.png            → dist/  (yellow traffic car)
     ]
