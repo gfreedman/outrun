@@ -143,7 +143,7 @@ TARGETS = [
     (11, "billboard_smoke_up"),
 ]
 
-os.makedirs("parts/billboards", exist_ok=True)
+os.makedirs("parts/billboards/og_boards", exist_ok=True)
 
 # ── Background detection ───────────────────────────────────────────────────────
 
@@ -327,7 +327,7 @@ for grid_idx, stem in TARGETS:
     if filled == 0:
         print(f"  WARN  {stem} — no visible pixels after extraction!")
     else:
-        out_path = f"parts/billboards/{stem}.png"
+        out_path = f"parts/billboards/og_boards/{stem}.png"
         billboard.save(out_path)
         print(f"  {stem}")
         print(f"    cell ({cx1},{cy1})–({cx2},{cy2})"

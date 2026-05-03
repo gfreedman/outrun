@@ -30,10 +30,7 @@ pipeline captures more than the nominal cell width to recover those pixels.
 
 ── Outputs ────────────────────────────────────────────────────────────────
 
-  dist/player_car_sprites_1x.png   raw resolution
-  dist/player_car_sprites_2x.png   2× nearest-neighbour upscale
-  dist/player_car_sprites_4x.png   4× nearest-neighbour upscale
-  dist/player_car_sprites.json     frame metadata + pivot offsets for sprites.ts
+  dist/player_car_sprites_1x.png     raw resolution (loaded by game)
   source/sprite_sheet_proof.png      visual QA sheet (all frames, green/red border)
   source/debug/right_frame_NN.png    individual extracted right frames (QA)
   source/debug/left_frame_NN.png     individual extracted left frames  (QA)
@@ -73,7 +70,6 @@ SRC_LEFT  = "source/left.png"
 GRID = [7, 6, 6]
 
 os.makedirs("source/debug", exist_ok=True)
-os.makedirs("dist/cars", exist_ok=True)
 
 # ── Colour helpers ─────────────────────────────────────────────────────────────
 
@@ -809,14 +805,8 @@ print("\n" + "="*60)
 print("Phase 6: Scaling")
 print("="*60)
 W1, H1   = strip_clean.size
-strip_2x = strip_clean.resize((W1*2, H1*2), Image.NEAREST)
-strip_4x = strip_clean.resize((W1*4, H1*4), Image.NEAREST)
 strip_clean.save("dist/player_car_sprites_1x.png")
-strip_2x.save("dist/player_car_sprites_2x.png")
-strip_4x.save("dist/player_car_sprites_4x.png")
 print(f"  dist/player_car_sprites_1x.png  {W1}×{H1}")
-print(f"  dist/player_car_sprites_2x.png  {W1*2}×{H1*2}")
-print(f"  dist/player_car_sprites_4x.png  {W1*4}×{H1*4}")
 
 # ── Phase 7: Metadata ─────────────────────────────────────────────────────────
 
@@ -847,9 +837,7 @@ meta = {
     "pivotOffsets": pivot_offsets,
     "frames":      frames_meta,
 }
-with open("dist/player_car_sprites.json", "w") as f:
-    json.dump(meta, f, indent=2)
-print("  Saved dist/player_car_sprites.json")
+print("  Metadata computed (rects hardcoded in src/sprites.ts)")
 
 # ── Phase 8: Proof image ──────────────────────────────────────────────────────
 #

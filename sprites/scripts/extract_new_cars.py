@@ -66,7 +66,6 @@ BOTTOM_EXT = {
     "gottago": 65,   # tires extend ~37px below cell + 28px more to clear them fully
 }
 
-os.makedirs("dist/cars",              exist_ok=True)
 os.makedirs("source/debug", exist_ok=True)
 
 

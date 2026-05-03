@@ -67,7 +67,7 @@ CELLS = {
     "billboard_cookie_monster_cig_reserves":   (1843,  0, 2093, 496),
 }
 
-os.makedirs("parts/billboards", exist_ok=True)
+os.makedirs("parts/billboards/cookie_boards", exist_ok=True)
 os.makedirs("source/debug", exist_ok=True)
 
 # ── Background helpers ───────────────────────────────────────────────────────
@@ -310,7 +310,7 @@ for stem, (cx1, cy1, cx2, cy2) in CELLS.items():
     if filled == 0:
         print(f"  WARN  {stem} — no visible pixels!")
     else:
-        out_path   = f"parts/billboards/{stem}.png"
+        out_path   = f"parts/billboards/cookie_boards/{stem}.png"
         debug_path = f"source/debug/{stem}.png"
         billboard.save(out_path)
         billboard.save(debug_path)

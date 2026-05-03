@@ -40,7 +40,7 @@ BLUE_TINT_MIN = 5
 # Full content band — keep_largest isolates the billboard from small items.
 CELL = (12, 54, 1415, 688)
 
-os.makedirs("parts/billboards",        exist_ok=True)
+os.makedirs("parts/billboards/big_boards", exist_ok=True)
 os.makedirs("source/debug", exist_ok=True)
 
 # ── Pipeline ────────────────────────────────────────────────────────────────
@@ -260,6 +260,6 @@ billboard = extract(src_arr, bg_color, cx1, cy1, cx2, cy2)
 filled = (np.array(billboard)[:,:,3] > 10).sum()
 print(f"\nbillboard_wrestling: {billboard.width}×{billboard.height}  ({filled:,} px)")
 
-billboard.save("parts/billboards/billboard_wrestling.png")
+billboard.save("parts/billboards/big_boards/billboard_wrestling.png")
 billboard.save("source/debug/billboard_wrestling.png")
-print("→ parts/billboards/billboard_wrestling.png")
+print("→ parts/billboards/big_boards/billboard_wrestling.png")
