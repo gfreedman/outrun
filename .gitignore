@@ -1,5 +1,5 @@
 node_modules/
-dist/
+/dist/
 .DS_Store
 
 # Scratch / working docs — design intent lives in OUTRUN_PLAN.md and inline comments

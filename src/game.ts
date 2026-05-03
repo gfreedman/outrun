@@ -316,21 +316,21 @@ export class Game
     this.road = Road.fromData(ROAD_DATA_HARD, GameMode.EASY);
 
     this.renderer = new Renderer(canvas, {
-      car:         new SpriteLoader('sprites/assets/cars/player_car_sprites_1x.png'),
+      car:         new SpriteLoader('sprites/dist/player_car_sprites_1x.png'),
       trafficCars: Object.fromEntries(
         Object.values(TrafficType).map(
           type => [type, new SpriteLoader(TRAFFIC_CAR_SPECS[type].assetPath)],
         ),
       ) as Record<TrafficType, SpriteLoader>,
-      road:      new SpriteLoader('sprites/assets/palm_sheet.png'),
-      billboard: new SpriteLoader('sprites/assets/billboard_sheet.png'),
-      cactus:    new SpriteLoader('sprites/assets/cactus_sheet.png'),
-      cookie:    new SpriteLoader('sprites/assets/cookie_sheet.png'),
-      barney:    new SpriteLoader('sprites/assets/barney_sheet.png'),
-      big:       new SpriteLoader('sprites/assets/big_sheet.png'),
-      shrub:     new SpriteLoader('sprites/assets/shrub_sheet.png'),
-      sign:      new SpriteLoader('sprites/assets/sign_sheet.png'),
-      house:     new SpriteLoader('sprites/assets/house_sheet.png'),
+      road:      new SpriteLoader('sprites/dist/palm_sheet.png'),
+      billboard: new SpriteLoader('sprites/dist/billboard_sheet.png'),
+      cactus:    new SpriteLoader('sprites/dist/cactus_sheet.png'),
+      cookie:    new SpriteLoader('sprites/dist/cookie_sheet.png'),
+      barney:    new SpriteLoader('sprites/dist/barney_sheet.png'),
+      big:       new SpriteLoader('sprites/dist/big_sheet.png'),
+      shrub:     new SpriteLoader('sprites/dist/shrub_sheet.png'),
+      sign:      new SpriteLoader('sprites/dist/sign_sheet.png'),
+      house:     new SpriteLoader('sprites/dist/house_sheet.png'),
     }, isMobile);
 
     this.input = new InputManager();
@@ -342,16 +342,16 @@ export class Game
     // Preload all sprite sheet assets.  The browser serves subsequent
     // SpriteLoader loads from cache, so there is no double-download.
     const allUrls = [
-      'sprites/assets/cars/player_car_sprites_1x.png',
-      'sprites/assets/palm_sheet.png',
-      'sprites/assets/billboard_sheet.png',
-      'sprites/assets/cactus_sheet.png',
-      'sprites/assets/cookie_sheet.png',
-      'sprites/assets/barney_sheet.png',
-      'sprites/assets/big_sheet.png',
-      'sprites/assets/shrub_sheet.png',
-      'sprites/assets/sign_sheet.png',
-      'sprites/assets/house_sheet.png',
+      'sprites/dist/player_car_sprites_1x.png',
+      'sprites/dist/palm_sheet.png',
+      'sprites/dist/billboard_sheet.png',
+      'sprites/dist/cactus_sheet.png',
+      'sprites/dist/cookie_sheet.png',
+      'sprites/dist/barney_sheet.png',
+      'sprites/dist/big_sheet.png',
+      'sprites/dist/shrub_sheet.png',
+      'sprites/dist/sign_sheet.png',
+      'sprites/dist/house_sheet.png',
       ...Object.values(TrafficType).map(t => TRAFFIC_CAR_SPECS[t].assetPath),
     ];
 
