@@ -169,4 +169,6 @@ Update the baseline after any intentional change to a dist/ atlas:
 cp sprites/dist/palm_sheet.png sprites/dist_bak/palm_sheet.png
 ```
 
-`dist_bak/` is not committed to git — it lives only on your local machine.
+`dist_bak/` **is committed to git** so the validation baseline is reproducible on
+any clone.  After any intentional atlas change, copy the updated file into
+`dist_bak/` and commit both together so the baseline stays in sync.

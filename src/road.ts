@@ -453,7 +453,6 @@ export class Road
     const CE = ROAD_CURVE.EASY;   // 2  — sweeper
     const CM = ROAD_CURVE.MEDIUM; // 4  — committed corner
     const CH = ROAD_CURVE.HARD;   // 6  — survival turn
-    const HL = ROAD_HILL.LOW;     // 20
     const HM = ROAD_HILL.MEDIUM;  // 40
     const HH = ROAD_HILL.HIGH;    // 60 — blind crest / big drop
 
@@ -1676,12 +1675,6 @@ export class Road
     const startSeg  = Math.max(0, gateIdx - spread);
     const endSeg    = Math.min(this._segments.length - 1, gateIdx + spread);
 
-    const BILLBOARDS: SpriteId[] = [
-      'BILLBOARD_BEAGLE_PETS', 'BILLBOARD_ADOPT_BEAGLE', 'BILLBOARD_BEAGLE_POWER',
-      'BILLBOARD_FROG_TAVERN', 'BILLBOARD_RED_BOX', 'BILLBOARD_FINE_TOBACCO',
-      'BILLBOARD_WRESTLING', 'BILLBOARD_SMOOTH_TASTE', 'BILLBOARD_ALE_CROAK',
-    ];
-    const BIGS: SpriteId[]  = ['BIG_WRESTLING'];
     const PALMS: SpriteId[] = [
       'PALM_T1_STRAIGHT', 'PALM_T10_LARGE', 'PALM_T6_LUXURIANT',
       'PALM_T2_BENT_LEFT', 'PALM_T2_BENT_RIGHT',

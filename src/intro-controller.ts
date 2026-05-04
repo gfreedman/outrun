@@ -28,6 +28,7 @@ import { Button, anyHovered }   from './ui';
 // ── Settings persistence ───────────────────────────────────────────────────────
 
 const STORAGE_KEY = 'outrun_settings';
+const REPO_URL    = 'https://github.com/gfreedman/outrun';
 
 /**
  * Reads persisted GameSettings from localStorage.
@@ -252,7 +253,7 @@ export class IntroController
       }
 
       if (this.btnGithub.clicked)
-        window.open('https://github.com/gfreedman/outrun', '_blank', 'noopener');
+        window.open(REPO_URL, '_blank', 'noopener');
 
       // Close on X, Escape, or click outside the panel rect.
       // The four multipliers are normalized [0..1] canvas fractions:

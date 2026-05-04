@@ -41,14 +41,14 @@
  *     recomputed when the canvas dimensions change (resize events only).
  */
 
-import { RoadSegment, SpriteFamily } from './types';
+import { RoadSegment } from './types';
 import { TrafficCar, TrafficType }  from './traffic';
 import { Button }                   from './ui';
 import
 {
   CAMERA_HEIGHT, CAMERA_DEPTH, ROAD_WIDTH,
   SEGMENT_LENGTH, COLORS,
-  PLAYER_MAX_SPEED, DISPLAY_MAX_KMH,
+  PLAYER_MAX_SPEED,
   PARALLAX_SKY, DRAW_DISTANCE,
   RUMBLE_OUTER_FRAC, RUMBLE_INNER_FRAC,
   LANE_OUTER_FRAC, LANE_INNER_FRAC,
@@ -166,44 +166,6 @@ export function buildColorRuns(
     runs.push({ color, startIdx: runStart, endIdx: j - 1 });
   }
   return runs;
-}
-
-// ── Helper: drawTrapezoid ─────────────────────────────────────────────────────
-
-/**
- * Fills a four-sided polygon (trapezoid) between two horizontal scan-lines.
- *
- * Used for every road band: asphalt, grass, rumble strips, and lane dashes.
- *   Bottom edge: centred at (x1, y1), half-width w1.
- *   Top edge:    centred at (x2, y2), half-width w2.
- *
- * When w1 > w2 (near wider than far) the result is the classic perspective shape.
- *
- * @param ctx   - Canvas 2D context.
- * @param x1    - Screen X of near (bottom) edge centre.
- * @param y1    - Screen Y of near (bottom) edge.
- * @param w1    - Half-width of near edge in pixels.
- * @param x2    - Screen X of far (top) edge centre.
- * @param y2    - Screen Y of far (top) edge.
- * @param w2    - Half-width of far edge in pixels.
- * @param color - CSS colour string; empty string = no-op.
- */
-function drawTrapezoid(
-  ctx: CanvasRenderingContext2D,
-  x1: number, y1: number, w1: number,
-  x2: number, y2: number, w2: number,
-  color: string,
-): void
-{
-  if (!color) return;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(x1 - w1, y1);
-  ctx.lineTo(x1 + w1, y1);
-  ctx.lineTo(x2 + w2, y2);
-  ctx.lineTo(x2 - w2, y2);
-  ctx.closePath();
-  ctx.fill();
 }
 
 // ── Module-level render-pass functions ────────────────────────────────────────
@@ -1050,7 +1012,7 @@ export class Renderer
     for (let i = this.projCount - 1; i >= 0; i--)
     {
       const p              = this.projPool[i];
-      const { seg, sc1, sx1, sy1, sx2, sy2, sw1, sw2 } = p;
+      const { seg, sc1, sx1, sy1 } = p;
 
       if (sy1 < halfH) continue;
 

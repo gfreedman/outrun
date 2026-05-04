@@ -10,7 +10,6 @@
 
 import { CollisionClass } from './types';
 import {
-  PLAYER_MAX_SPEED,
   PLAYER_ACCEL_LOW, PLAYER_ACCEL_MID,
   PLAYER_COAST_RATE,
   PLAYER_BRAKE_MAX, PLAYER_BRAKE_RAMP,

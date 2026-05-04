@@ -90,9 +90,9 @@ export const PLAYER_ACCEL_MID   = 4320;
 // ── Coasting (lift-off deceleration) ─────────────────────────────────────────
 
 /**
- * Deceleration rate when the player lifts off the throttle, in world units/s².
- * Scales with current speed: 50% at rest → 100% at max speed.
- * Gives a natural aerodynamic-drag feel without feeling sticky at low speeds.
+ * Base coast deceleration multiplied by `Math.max(0.3, speedRatio)` in physics.ts.
+ * At speedRatio=1 (full speed) the effective decel equals this value; at rest it
+ * floors to 30% — giving a natural aerodynamic-drag feel without sticking at low speed.
  */
 export const PLAYER_COAST_RATE  = 2640;
 

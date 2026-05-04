@@ -40,11 +40,11 @@ export class MenuRenderer
    */
   public renderIntro(
     w: number, h: number,
-    selectedItem:  'start' | 'mode' | 'settings',
+    _selectedItem: 'start' | 'mode' | 'settings',
     selectedMode:  string,
     soundEnabled:  boolean,
     subMenu:       'mode' | 'settings' | null,
-    pulse:         boolean,
+    _pulse:        boolean,
     heroImage:     HTMLImageElement | null = null,
     btns?: {
       mode: Button; settings: Button; start: Button;          // main menu
@@ -154,13 +154,11 @@ export class MenuRenderer
 
       ctx.font = `bold ${sideFs}px Impact, sans-serif`;
       const smMode = ctx.measureText('GAME MODE');
-      const smSet  = ctx.measureText('SETTINGS');
 
       // Side buttons are vertically centred with START RACE by aligning ascenders
-      const sideAsc  = smMode.actualBoundingBoxAscent ?? sideFs * 0.78;
-      const sideDesc = smMode.actualBoundingBoxDescent ?? sideFs * 0.14;
+      const sideAsc = smMode.actualBoundingBoxAscent ?? sideFs * 0.78;
       // Offset side baselines so their cap-height lines up with START RACE cap-height
-      const sideY    = baseY - sAsc + sideAsc;
+      const sideY   = baseY - sAsc + sideAsc;
 
       // Centre X positions — all relative to hero image bounds
       const startCx = Math.round(imgX + imgW * 0.50);
@@ -402,7 +400,7 @@ export class MenuRenderer
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText('SELECT DIFFICULTY', imgX + imgW / 2, bandTop - Math.round(h * 0.04));
 
-    MODES.forEach(({ key, label, accent, stars, desc }, i) =>
+    MODES.forEach(({ key, label, accent, desc }, i) =>
     {
       const btn = btns?.[key as 'easy' | 'medium' | 'hard'];
       const sel = selectedMode === key;

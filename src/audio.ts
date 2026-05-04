@@ -134,7 +134,8 @@ export class AudioManager
 
   // ── Tire screech (persistent loop, gain-controlled) ───────────────────
 
-  private screechGain: GainNode | null = null;
+  private screechSrc:  AudioBufferSourceNode | null = null;
+  private screechGain: GainNode              | null = null;
 
   // ── Background music ──────────────────────────────────────────────────
 
@@ -151,6 +152,11 @@ export class AudioManager
     this.initialized = true;
 
     this.ctx = new AudioContext();
+    // iOS Safari can create a context in 'suspended' state even from inside a
+    // touch handler.  Calling resume() here is safe on all browsers; on desktop
+    // it's a no-op, on iOS it unlocks audio output for the session.
+    if (this.ctx.state === 'suspended') void this.ctx.resume();
+
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = this.enabled ? 1 : 0;
     this.masterGain.connect(this.ctx.destination);
@@ -158,6 +164,44 @@ export class AudioManager
     this.startEngineOscillators();
     this.startRumbleOscillator();
     this.startPersistentScreech();
+  }
+
+  /**
+   * Stops all audio and closes the AudioContext.
+   * Call on pagehide or SPA navigation to release the Web Audio quota.
+   */
+  destroy(): void
+  {
+    if (!this.initialized || !this.ctx) return;
+    this.stopMusic();
+
+    const now = this.ctx.currentTime;
+    const stopOsc = (osc: OscillatorNode | null): void =>
+    {
+      if (!osc) return;
+      try { osc.stop(now); } catch { /* already stopped */ }
+      osc.disconnect();
+    };
+
+    stopOsc(this.engFundOsc);
+    stopOsc(this.eng2ndOsc);
+    stopOsc(this.eng3rdOsc);
+    stopOsc(this.rumbleOsc);
+
+    if (this.screechSrc)
+    {
+      try { this.screechSrc.stop(now); } catch { /* already stopped */ }
+      this.screechSrc.disconnect();
+    }
+
+    // Disconnect remaining nodes — ctx.close() handles GC but explicit
+    // disconnect releases references immediately.
+    this.engDistortion?.disconnect();
+    this.masterGain?.disconnect();
+
+    void this.ctx.close();
+    this.ctx         = null;
+    this.initialized = false;
   }
 
   setEnabled(v: boolean): void
@@ -372,6 +416,7 @@ export class AudioManager
     gain.connect(this.masterGain!);
     src.start();
 
+    this.screechSrc  = src;
     this.screechGain = gain;
   }
 
@@ -465,6 +510,9 @@ export class AudioManager
   playBarney(): void
   {
     if (typeof speechSynthesis === 'undefined') return;
+    // cancel() is a global call — intentional here; we don't want a previous
+    // Barney utterance talking over the new one.  (Not a concern for VoiceOver
+    // users since a game is not accessible in screen-reader mode anyway.)
     speechSynthesis.cancel();
     if (this.barneyDeck.length === 0) {
       // Refill with all 4 phrases in a random order (Fisher-Yates shuffle).

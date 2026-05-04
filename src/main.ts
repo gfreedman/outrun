@@ -126,10 +126,14 @@ if (isMobile)
   // during scroll-momentum animation when the address bar is animating.
   if (window.visualViewport)
   {
+    // Coalesce to one rAF tick: iOS fires visualViewport resize at 60 Hz while
+    // the address bar animates, and the equality guard was unreliable post-
+    // letterboxing.  cancelAnimationFrame + rAF collapses every burst to one call.
+    let vpRaf = 0;
     window.visualViewport.addEventListener('resize', () =>
     {
-      if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight)
-        resize();
+      cancelAnimationFrame(vpRaf);
+      vpRaf = requestAnimationFrame(resize);
     });
   }
 
@@ -176,5 +180,9 @@ else
 
 // Read safe-area insets once DOM is ready (also re-read on orientationchange above).
 document.addEventListener('DOMContentLoaded', readSafeInsets);
+
+// pagehide fires reliably on mobile tab-close/navigate; beforeunload doesn't.
+// Tearing down the AudioContext releases the Web Audio quota (Chrome caps ~6/tab).
+window.addEventListener('pagehide', () => game.destroy());
 
 game.start();

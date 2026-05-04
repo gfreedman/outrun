@@ -12,7 +12,7 @@
  */
 
 import { Road }         from './road';
-import { ROAD_DATA, ROAD_DATA_HARD, ROAD_DATA_LEGENDARY } from './road-data';
+import { ROAD_DATA_HARD, ROAD_DATA_LEGENDARY } from './road-data';
 import { Renderer }     from './renderer';
 import { InputManager } from './input';
 import { AudioManager } from './audio';
@@ -38,38 +38,17 @@ import { TouchInput }                        from './touch-input';
 import
 {
   PLAYER_MAX_SPEED,
-  PLAYER_ACCEL_LOW, PLAYER_ACCEL_MID,
-  PLAYER_COAST_RATE,
-  PLAYER_BRAKE_MAX, PLAYER_BRAKE_RAMP,
-  PLAYER_STEERING, PLAYER_STEER_RATE,
-  ACCEL_LOW_BAND, ACCEL_HIGH_BAND,
-  OFFROAD_MAX_RATIO, OFFROAD_DECEL, OFFROAD_RECOVERY_TIME,
-  OFFROAD_CRAWL_RATIO, OFFROAD_JITTER_BLEND, OFFROAD_JITTER_DECAY,
   SEGMENT_LENGTH, DRAW_DISTANCE,
-  CENTRIFUGAL,
-  DRIFT_ONSET, DRIFT_RATE, DRIFT_DECAY, DRIFT_CATCH,
-  HIT_GLANCE_SPEED_MULT, HIT_GLANCE_BUMP, HIT_GLANCE_COOLDOWN,
-  HIT_SMACK_SPEED_MULT, HIT_SMACK_SPEED_CAP,
-  HIT_SMACK_COOLDOWN, HIT_SMACK_RECOVERY_BOOST, HIT_SMACK_RECOVERY_TIME,
-  HIT_SMACK_RESTITUTION, HIT_SMACK_FLICK_BASE,
-  HIT_CRUNCH_SPEED_CAP, HIT_CRUNCH_GRIND_TIME,
-  HIT_CRUNCH_COOLDOWN,
-  HIT_CRUNCH_RECOVERY_BOOST, HIT_CRUNCH_RECOVERY_TIME,
-  HIT_CRUNCH_RESTITUTION, HIT_CRUNCH_FLICK_BASE,
-  HIT_SPEED_FLOOR,
-  SHAKE_GLANCE_INTENSITY, SHAKE_GLANCE_DURATION,
-  SHAKE_SMACK_INTENSITY, SHAKE_SMACK_DURATION,
-  SHAKE_CRUNCH_INTENSITY, SHAKE_CRUNCH_DURATION,
   NEAR_MISS_WOBBLE,
   COLLISION_MIN_OFFSET, ROAD_WIDTH,
   COLLISION_WINDOW, MAX_FRAME_DT,
   RACE_CONFIG, WU_PER_KM,
   RACE_TIME_LIMIT,
-  SCORE_BASE_PER_SEC, SCORE_SPEED_PER_SEC, SCORE_CRASH_PENALTY,
+  SCORE_BASE_PER_SEC, SCORE_SPEED_PER_SEC,
   SCORE_FINISH_BASE, SCORE_TIME_BONUS_PER_SEC,
   TIMEUP_DECEL,
   TIME_PENALTY_HIT,
-  BARNEY_BOOST_MULTIPLIER, BARNEY_BOOST_DURATION, BARNEY_KILL_BONUS,
+  BARNEY_BOOST_DURATION, BARNEY_KILL_BONUS,
   FINISHING_DURATION, FINISHING_DECEL,
 } from './constants';
 
@@ -211,8 +190,6 @@ export class Game
 
   /** Seconds elapsed since crossing the finish line. */
   private finishingTimer       = 0;
-  /** True once the sideways slide has been triggered during finishing. */
-  private finishingSlid        = false;
   /** World units rolled since FINISHING began -- hard-capped to stop near the gate. */
   private finishingTravelledWU = 0;
 
@@ -278,8 +255,6 @@ export class Game
   private btnEndMenu      = new Button();   // GOAL → main menu
 
   // ── Audio state ────────────────────────────────────────────────────────────
-
-  private wasOffRoad   = false;
 
   // ── Loop ───────────────────────────────────────────────────────────────────
 
@@ -460,6 +435,7 @@ export class Game
     this.touchInput?.destroy();
     this.canvas.removeEventListener('mousemove', this.onMouseMove);
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
+    this.audio.destroy();
   }
 
   // ── Main loop ──────────────────────────────────────────────────────────────
@@ -473,7 +449,8 @@ export class Game
    */
   private loop = (timestamp: number): void =>
   {
-    const dt = Math.min((timestamp - this.lastTimestamp) / 1000, MAX_FRAME_DT);
+    // Guard against clock going backward (e.g. after system sleep on macOS).
+    const dt = Math.max(0, Math.min((timestamp - this.lastTimestamp) / 1000, MAX_FRAME_DT));
     this.lastTimestamp = timestamp;
 
     // Refresh touch snapshot once per frame so drawTouchPills and update
@@ -493,15 +470,34 @@ export class Game
       this.mouseY     = tap.y;
     }
 
-    switch (this.phase)
+    try
     {
-      case GamePhase.PRELOADING: this.tickPreload();        break;
-      case GamePhase.INTRO:      this.tickIntro(dt);          break;
-      case GamePhase.COUNTDOWN:  this.tickCountdown(dt);    break;
-      case GamePhase.PLAYING:    this.tickPlaying(dt);      break;
-      case GamePhase.FINISHING:  this.tickFinishing(dt);    break;
-      case GamePhase.GOAL:       this.tickGoal();           break;
-      case GamePhase.TIMEUP:     this.tickTimeUp(dt);       break;
+      switch (this.phase)
+      {
+        case GamePhase.PRELOADING: this.tickPreload();        break;
+        case GamePhase.INTRO:      this.tickIntro(dt);        break;
+        case GamePhase.COUNTDOWN:  this.tickCountdown(dt);    break;
+        case GamePhase.PLAYING:    this.tickPlaying(dt);      break;
+        case GamePhase.FINISHING:  this.tickFinishing(dt);    break;
+        case GamePhase.GOAL:       this.tickGoal();           break;
+        case GamePhase.TIMEUP:     this.tickTimeUp(dt);       break;
+      }
+    }
+    catch (err)
+    {
+      // Freeze on unhandled error rather than looping at 60 fps with the same throw.
+      console.error('[outrun] unhandled loop error — game frozen', err);
+      const ctx = this.canvas.getContext('2d');
+      if (ctx)
+      {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillStyle = '#FF4444';
+        ctx.font = `bold ${Math.round(this.canvas.height * 0.04)}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText('Game error — please refresh', this.canvas.width / 2, this.canvas.height / 2);
+      }
+      return; // do not re-schedule
     }
 
     this.rafId = requestAnimationFrame(this.loop);
@@ -585,7 +581,6 @@ export class Game
     this.barneyBoostTimer  = 0;
     this.barneyKillCount   = 0;
     this.finishingTimer       = 0;
-    this.finishingSlid        = false;
     this.finishingTravelledWU = 0;
 
     // Countdown
@@ -733,7 +728,6 @@ export class Game
 
     // ── Finish detection (checked BEFORE time-up so a simultaneous
     //    crossing-as-clock-hits-zero gives FINISHING, not TIME UP) ──────
-    const cfg = RACE_CONFIG[this.intro.settings.mode];
     if (this.distanceTravelled >= this.finishLineWU)
     {
       // Bank the score now (once); the cinematic runs then GOAL screen shows it
@@ -742,7 +736,6 @@ export class Game
         + this.barneyKillCount * BARNEY_KILL_BONUS;
       this.phase                = GamePhase.FINISHING;
       this.finishingTimer       = 0;
-      this.finishingSlid        = false;
       this.finishingTravelledWU = 0;
       // Kick a sideways skid — car slides in the direction it was already
       // drifting (or away from centre if stopped), then decays to a halt.
@@ -767,6 +760,7 @@ export class Game
     // state), never TIMEUP.
     if (this.timeRemaining <= 0)
     {
+      this.touchInput?.reset();
       this.phase = GamePhase.TIMEUP;
     }
   }
@@ -846,7 +840,12 @@ export class Game
     if (this.isMobile) this.drawTouchPills();
 
     if (this.finishingTimer >= FINISHING_DURATION)
+    {
+      // Clear any stale touch zones so a finger that was steering during the
+      // race doesn't generate an accidental tap on the GOAL screen buttons.
+      this.touchInput?.reset();
       this.phase = GamePhase.GOAL;
+    }
   }
 
   // ── Phase: GOAL ────────────────────────────────────────────────────────────
@@ -858,6 +857,7 @@ export class Game
    */
   private tickGoal(): void
   {
+    this.audio.tickMusic();
     this.drawRace();
     this.renderer.renderGoalScreen(
       this.w, this.h, this.score, this.raceTimer, this.barneyKillCount,
@@ -1037,7 +1037,6 @@ export class Game
 
     if (this.offRoad && !prevOffRoad) this.audio.startRumble();
     if (!this.offRoad && prevOffRoad) this.audio.stopRumble();
-    this.wasOffRoad = this.offRoad;
 
     // ── Collision ──────────────────────────────────────────────────────────
 
@@ -1207,7 +1206,6 @@ export class Game
     const { renderer, road, w, h } = this;
     const driftVisual = -this.slideVelocity * 0.15;
     const renderSteer = Math.max(-1, Math.min(1, this.steerAngle + driftVisual));
-    const cfg         = RACE_CONFIG[this.intro.settings.mode];
 
     renderer.render(
       road.segments, road.count,

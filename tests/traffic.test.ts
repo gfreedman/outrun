@@ -44,7 +44,6 @@ import {
   checkTrafficCollision,
   TrafficType,
   type TrafficCar,
-  type TrafficUpdateConfig,
 } from '../src/traffic';
 import {
   TRAFFIC_COUNT,
@@ -270,20 +269,6 @@ describe('checkTrafficCollision', () =>
       massMult:  1.0,
       hitboxX:   TRAFFIC_HITBOX_X,   // Car type: hitboxMult = 1.0
       behavior:  TrafficBehavior.Standard,
-    };
-  }
-
-  /** Helper: build a default TrafficUpdateConfig for tests. */
-  function makeCfg(overrides: Partial<TrafficUpdateConfig> = {}): TrafficUpdateConfig
-  {
-    return {
-      playerZ:     0,
-      playerX:     0,
-      playerSpeed: 5000,
-      segmentCount: SEG_COUNT,
-      intensity:   0,
-      dt:          0.016,
-      ...overrides,
     };
   }
 
