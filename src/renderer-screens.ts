@@ -1,3 +1,22 @@
+/**
+ * renderer-screens.ts
+ *
+ * ScreenRenderer — full-canvas overlays for non-gameplay phases.
+ *
+ * Covers five screens, each a distinct rendering path:
+ *   renderPreloader  — black fill + "LOADING…" + orange progress bar.
+ *   renderCountdown  — large centred 3-2-1-GO! text, drawn over the live road.
+ *   renderGoal       — finish screen: confetti, score breakdown rows with
+ *                      auto-scaling font when label+value overflow the row width.
+ *   renderTimeUp     — red/white flashing "TIME UP" banner + final score.
+ *   renderConfetti   — deterministic particle system (no mutable per-particle
+ *                      state — all values derived from particle index via integer
+ *                      hashing), particle count scaled to screen size.
+ *
+ * All methods are stateless given their parameters — ScreenRenderer holds only
+ * a reference to the shared CanvasRenderingContext2D.
+ */
+
 import { Button } from './ui';
 
 // ── ScreenRenderer ────────────────────────────────────────────────────────────

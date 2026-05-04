@@ -188,9 +188,17 @@ mode picker sub-menu cards (EASY/MEDIUM/HARD), and settings panel.
 ---
 
 ### `renderer-screens.ts`
-**Goal, countdown, and time-up screen overlays.**
-Full-screen overlays drawn on top of the road during COUNTDOWN, GOAL,
-and TIME_UP phases.
+**Full-canvas overlays for non-gameplay phases.**
+Five rendering paths: `renderPreloader` (black + progress bar), `renderCountdown`
+(large 3-2-1-GO! text), `renderGoal` (finish screen with confetti and score
+breakdown), `renderTimeUp` (flashing banner + final score), `renderConfetti`
+(deterministic particle system — position/colour/rotation derived from particle
+index via integer hashing so no mutable per-particle state is needed; count scales
+with `Math.round(min(w,h)/4)` for mobile performance).
+
+Goal screen rows use `ctx.measureText` to auto-scale the font size when
+label + value would overflow the available row width, preventing the "BARNEY KILL
+BONUS" label from overlapping its value on narrow screens.
 
 ---
 
@@ -272,9 +280,21 @@ descriptor with `bumpDir`, `closingSpeed`, and the struck `hitCar`, or null.
 
 ### `audio.ts`
 **Web Audio engine.**
-Engine growl (two detuned oscillators tracking RPM), off-road screech, OutRun
-BGM synthesis, finish fanfare. All audio is constructed procedurally using the
-Web Audio API — no audio files.
+Engine growl (three harmonics through WaveShaper distortion + RPM-tracked lowpass
+filter), off-road rumble, tire screech (persistent bandpass node, gain-controlled),
+OutRun-style BGM synthesis (lead, bass, chord stabs, arpeggio, full drum kit),
+one-shot crash SFX.  All audio is procedural — no audio files.
+
+`init()` creates the AudioContext and calls `ctx.resume()` if it starts suspended
+(required on iOS Safari even from inside touch handlers).
+
+`destroy()` stops all oscillators, disconnects nodes, and closes the AudioContext.
+Call on `pagehide` to release Chrome's ~6-context-per-tab Web Audio quota.
+
+`playBarney()` speaks one of four phrases through SpeechSynthesis using a
+Fisher-Yates shuffle deck so no phrase repeats until all four have been heard;
+a cross-cycle boundary guard prevents the same phrase playing twice in a row
+across deck refills.
 
 ---
 
