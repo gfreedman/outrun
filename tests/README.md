@@ -29,12 +29,12 @@ Config: `vitest.config.ts` (nested under `tsconfig.json` in the VS Code explorer
 3.  The tests import from src/ — the same source files the game uses.
 4.  No browser, no canvas, no DOM.  Any canvas calls go through a lightweight
     spy object that records method calls instead of drawing pixels.
-5.  Results are printed.  All 237 tests must pass or the exit code is non-zero.
+5.  Results are printed.  All 276 tests must pass or the exit code is non-zero.
 ```
 
 ---
 
-## The seven test suites
+## The ten test suites
 
 ### 1. `constants.test.ts` — Physics invariants and color band geometry
 **What it guards:** Every value in `src/constants.ts` that the game physics
@@ -246,6 +246,68 @@ Uses realistic below-horizon geometry (`sy1=400` / `sy2=280`) because the guard
 fix. `sc2` (far-edge perspective scale) was added to `ProjectedSeg` so Pass 4
 can interpolate within a segment instead of snapping to the segment boundary.
 If `sc2` is accidentally removed from the interface, this test breaks.
+
+---
+
+### 8. `touch-input.test.ts` — Mobile touch controller
+**What it guards:** `src/touch-input.ts` — the dual-zone touch controller that
+maps left-side touches to steering and right-side touches to throttle/brake.
+
+Key contracts:
+- Zone boundary: a touch at `x < w/2` is steer-left, `x >= w/2` is throttle/brake
+- Top half of right zone = throttle; bottom half = brake
+- Multiple simultaneous touches are handled correctly (left + right at once)
+- `reset()` clears all active touch IDs so stale touches from a previous phase
+  cannot carry over and fire as accidental button taps after a phase transition
+
+---
+
+### 9. `check-doc-delta.test.ts` — Pre-commit documentation drift checker
+**What it guards:** The three pure functions exported by `scripts/check-doc-delta.ts`
+— a pre-commit hook that sends staged files to Claude and asks whether the
+corresponding README section is current.
+
+All tests are deterministic (no network, no filesystem, no Claude API calls) —
+inputs are small inline strings.
+
+**`extractSection`** — regex section parser: finds the README block for a named
+file, bounded by the next `### ` heading or a `---` rule.  Tests cover happy path,
+`---` boundary, last section (no trailing boundary), headings without backticks,
+null on missing file, empty input, and regex-metacharacter safety (dots and dashes
+in filenames must be escaped).
+
+**`buildWorkList`** — staged-file classifier: keeps only `src/*.ts` and
+`tests/*.test.ts` files not in the SKIP set, caps at `MAX_FILES`.  Tests cover
+correct README path mapping for src vs tests, ignoring files outside those dirs,
+ignoring `.d.ts` files, ignoring the SKIP set (road-data.ts, main.ts), and the
+MAX_FILES cap (exact, over, under) with a mixed-commit integration test.
+
+**`formatPrompt`** — Claude prompt builder: includes filename, source, README
+section; wraps them in `<source>` / `<readme>` tags; truncates source files
+longer than 10 KB with a `// ... (truncated)` marker.
+
+---
+
+### 10. `audio.test.ts` — Barney phrase shuffle deck
+**What it guards:** `AudioManager.playBarney()` — the Fisher-Yates shuffle deck
+that cycles through four Barney kill phrases without repeating within a cycle
+or at the cycle boundary.
+
+Browser APIs (`speechSynthesis`, `SpeechSynthesisUtterance`) are stubbed via
+`vi.stubGlobal()`.  `AudioManager.init()` is not called so no AudioContext is
+created — deck logic runs entirely in Node.
+
+Invariants tested:
+- **Full-cycle coverage**: every group of 4 consecutive hits is a permutation
+  of all 4 phrases (none skipped, none doubled).
+- **Boundary guard**: the last phrase of one cycle never equals the first phrase
+  of the next; tested across 100 consecutive boundaries (false-pass probability
+  without the guard: (1/4)^100 ≈ 0).
+- **No adjacent repeat**: a single sweep checks all 399 adjacent pairs in 400
+  consecutive calls.
+- **Independence**: three separate `AudioManager` instances each produce a valid
+  first cycle (deck state is per-instance, not shared).
+- **Longevity**: invariants hold after 20 warm-up cycles (aged deck state).
 
 ---
 
